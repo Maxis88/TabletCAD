@@ -12,6 +12,7 @@ import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.text.InputType;
 
 import java.util.ArrayList;
@@ -52,7 +53,14 @@ public final class CadWorkspaceView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final GestureDetector gestures;
     private final ScaleGestureDetector scaleGestures;
-    private final List<String> actions = new ArrayList<>();
+    private static final String[] TOOL_IDS = {
+        "Wybierz", "Szkic", "Linia", "Prostokąt", "Okrąg", "Edytuj",
+        "Wyciągnij", "Głębokość", "Zaokrąglij", "Zmierz", "Rysunek"
+    };
+    private static final String[] TOOL_LABELS = {
+        "Wybierz", "Szkic", "Linia", "Prostokąt", "Okrąg", "Edytuj",
+        "Wyciąg.", "Głęb.", "Zaokr.", "Pomiar", "Rysunek"
+    };
 
     private float density;
     private float zoom = 1f;
@@ -97,6 +105,7 @@ public final class CadWorkspaceView extends View {
     private float touchDownY;
     private float workCenterX;
     private float workCenterY;
+    private String selectedSketchId;
 
     public CadWorkspaceView(Context context, FileRequestListener fileRequestListener) {
         super(context);
@@ -116,18 +125,12 @@ public final class CadWorkspaceView extends View {
         stepStatus = "STEP: moduł zainstalowany";
         setBackgroundColor(BG);
         setFocusable(true);
-        actions.add("Wybierz");
-        actions.add("Szkic");
-        actions.add("Modeluj");
-        actions.add("Rysunek");
-        actions.add("Zmierz");
-
         gestures = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
             @Override public boolean onDown(MotionEvent e) { return true; }
 
             @Override public boolean onSingleTapUp(MotionEvent e) {
-                float historyY = getHeight() - dp(178);
-                if (e.getX() <= dp(96) && e.getY() >= historyY && e.getY() <= historyY + dp(55)) {
+                float historyY = getHeight() - dp(96);
+                if (e.getX() <= dp(104) && e.getY() >= historyY) {
                     if (e.getX() < dp(52)) undo(); else redo();
                     return true;
                 }
@@ -139,38 +142,37 @@ public final class CadWorkspaceView extends View {
                     if (fileRequestListener != null) fileRequestListener.requestOpenStep();
                     return true;
                 }
-                if (mode.equals("Szkic") && sketchPlaneChosen
-                        && e.getY() >= dp(68) && e.getY() <= dp(126)
-                        && e.getX() >= dp(240) && e.getX() <= getWidth() - dp(268)) {
-                    float available = getWidth() - dp(508);
-                    int tool = (int)((e.getX() - dp(240)) / (available / 3f));
-                    if (tool == 0) sketchTool = "Linia";
-                    else if (tool == 1) sketchTool = "Prostokąt";
-                    else if (tool == 2) sketchTool = "Okrąg";
+                if (e.getY() >= dp(60) && e.getY() <= dp(126)
+                        && e.getX() >= dp(224) && e.getX() <= getWidth() - dp(18)) {
+                    float itemWidth = (getWidth() - dp(242)) / TOOL_IDS.length;
+                    int tool = (int)((e.getX() - dp(224)) / itemWidth);
+                    if (tool >= 0 && tool < TOOL_IDS.length) activateTopTool(TOOL_IDS[tool]);
+                    return true;
+                }
+                if (e.getX() < dp(224) && e.getY() >= dp(224) && e.getY() <= dp(266)) {
+                    mode = "Edytuj szkic";
+                    sketchPlaneChosen = true;
+                    selectedSketchId = null;
+                    alignToCurrentSketchPlane();
                     invalidate();
                     return true;
                 }
-                float barTop = getHeight() - dp(120);
-                if (e.getY() >= barTop && e.getY() <= barTop + dp(72)) {
-                    float usable = getWidth() - dp(40);
-                    int index = (int) ((e.getX() - dp(20)) / (usable / actions.size()));
-                    if (index >= 0 && index < actions.size()) {
-                        mode = actions.get(index);
-                        if (mode.equals("Szkic")) {
-                            sketchPlaneChosen = false;
-                            sketchPlane = "Wybierz płaszczyznę";
-                        }
-                        invalidate();
-                    }
-                } else if (mode.equals("Modeluj") && e.getX() > getWidth() - dp(234)) {
-                    if (e.getY() >= dp(318) && e.getY() <= dp(370)) extrudeSketchProfile();
-                    else if (e.getY() >= dp(382) && e.getY() <= dp(440)) showDepthEditor();
-                    else if (e.getY() >= dp(446) && e.getY() <= dp(504)) showFilletEditor();
-                } else if (mode.equals("Szkic") && e.getX() > getWidth() - dp(234)) {
-                    if (e.getY() >= dp(322) && e.getY() <= dp(382)) chooseSketchPlane("XY");
-                    else if (e.getY() >= dp(390) && e.getY() <= dp(450)) chooseSketchPlane("XZ");
-                    else if (e.getY() >= dp(458) && e.getY() <= dp(518)) chooseSketchPlane("YZ");
+                if (mode.equals("Szkic") && e.getX() > getWidth() - dp(234)) {
+                    if (e.getY() >= dp(374) && e.getY() <= dp(426)) chooseSketchPlane("XY");
+                    else if (e.getY() >= dp(432) && e.getY() <= dp(484)) chooseSketchPlane("XZ");
+                    else if (e.getY() >= dp(490) && e.getY() <= dp(542)) chooseSketchPlane("YZ");
                 } else if (isInsideViewport(e.getX(), e.getY())) {
+                    if (mode.equals("Edytuj szkic")) {
+                        SketchPrimitive entity = findSketchAt(e.getX(), e.getY());
+                        if (entity != null) {
+                            selectedSketchId = entity.id;
+                            showSketchEntityEditor(entity);
+                        } else {
+                            operationMessage = "Dotknij elementu szkicu do edycji";
+                            invalidate();
+                        }
+                        return true;
+                    }
                     if (mode.equals("Zmierz")) {
                         handleMeasureTap(e.getX(), e.getY());
                         return true;
@@ -193,7 +195,7 @@ public final class CadWorkspaceView extends View {
                     panY -= dy;
                     invalidate();
                 } else if (!scaleGestures.isInProgress()
-                        && (mode.equals("Wybierz") || mode.equals("Modeluj") || mode.equals("Zmierz"))) {
+                        && (mode.equals("Wybierz") || mode.equals("Zmierz"))) {
                     cameraYaw -= dx * 0.22f;
                     cameraPitch = Math.max(-89f, Math.min(89f, cameraPitch - dy * 0.22f));
                     invalidate();
@@ -252,8 +254,8 @@ public final class CadWorkspaceView extends View {
         super.onDraw(canvas);
         float left = dp(224);
         float right = getWidth() - dp(252);
-        float top = dp(64);
-        float bottom = getHeight() - dp(132);
+        float top = dp(132);
+        float bottom = getHeight() - dp(104);
         workCenterX = (left + right) / 2f + panX;
         workCenterY = (top + bottom) / 2f + panY;
 
@@ -267,88 +269,91 @@ public final class CadWorkspaceView extends View {
             drawTechnicalViews(canvas, left, top, right, bottom);
         } else {
             drawNativeSolid(canvas, (left + right) / 2f + panX, (top + bottom) / 2f + panY);
-            if (mode.equals("Szkic") && sketchPlaneChosen) drawSketch(canvas, left, right);
+            if (!project.sketch.isEmpty() || (mode.equals("Szkic") && sketchPlaneChosen)) {
+                drawSketch(canvas, left, right);
+            }
             if (mode.equals("Zmierz")) drawDimensions(canvas, left, top, right, bottom);
         }
         drawAxis(canvas, right - dp(70), bottom - dp(60));
         canvas.restore();
-        drawBottomBar(canvas);
+        drawTimeline(canvas);
     }
 
     private void drawTopBar(Canvas canvas) {
         paint.setColor(Color.rgb(16, 24, 32));
-        canvas.drawRect(0, 0, getWidth(), dp(56), paint);
+        canvas.drawRect(0, 0, getWidth(), dp(128), paint);
         text(canvas, "TabletCAD", dp(22), dp(35), 20, Color.WHITE, true);
         text(canvas, "Bez nazwy  •  zapisano lokalnie", dp(145), dp(34), 14, Color.rgb(190, 201, 210), false);
         pill(canvas, getWidth() - dp(312), dp(10), dp(124), dp(38), "Otwórz STEP", Color.rgb(44, 58, 70), Color.WHITE);
         pill(canvas, getWidth() - dp(172), dp(10), dp(152), dp(38), "Eksportuj", ACCENT, Color.WHITE);
+        float itemWidth = (getWidth() - dp(242)) / TOOL_IDS.length;
+        for (int i = 0; i < TOOL_IDS.length; i++) {
+            float x = dp(224) + i * itemWidth;
+            boolean active = isToolActive(TOOL_IDS[i]);
+            drawToolButton(canvas, x + dp(2), dp(60), itemWidth - dp(4), dp(62),
+                TOOL_IDS[i], TOOL_LABELS[i], active);
+        }
     }
 
     private void drawLeftPanel(Canvas canvas, float left, float top, float bottom) {
         paint.setColor(PANEL);
-        canvas.drawRect(0, dp(56), left, getHeight(), paint);
-        text(canvas, "MODEL", dp(18), dp(91), 12, MUTED, true);
-        row(canvas, "▾  Dokument", dp(18), dp(126), true);
-        row(canvas, "   ◇  Początek", dp(18), dp(164), false);
-        row(canvas, "   ▱  Szkic 1", dp(18), dp(202), false);
+        canvas.drawRect(0, dp(128), left, getHeight(), paint);
+        text(canvas, "MODEL", dp(18), dp(155), 12, MUTED, true);
+        row(canvas, "▾  Dokument", dp(18), dp(184), true);
+        row(canvas, "   ◇  Początek", dp(18), dp(216), false);
+        row(canvas, "   ▱  Szkic 1  (" + project.sketch.size() + ")", dp(18), dp(250),
+            mode.equals("Szkic") || mode.equals("Edytuj szkic"));
         row(canvas, project.importedStep ? "   ◈  Import STEP"
             : (project.sketchExtruded ? "   ◈  Wyciągnięcie szkicu" : "   ◈  Wyciągnięcie 1"),
-            dp(18), dp(240), true);
+            dp(18), dp(284), true);
         if (project.filletRadius > 0.0) {
             row(canvas, String.format(java.util.Locale.US, "   ◒  Zaokrąglenie R%.2f", project.filletRadius),
-                dp(18), dp(278), true);
+                dp(18), dp(318), true);
         }
-        paint.setColor(Color.rgb(232, 236, 239));
-        canvas.drawRect(dp(18), bottom - dp(74), left - dp(18), bottom - dp(73), paint);
-        text(canvas, "HISTORIA", dp(18), bottom - dp(48), 12, MUTED, true);
-        text(canvas, "◀", dp(18), bottom - dp(17), 16, undoStack.isEmpty() ? MUTED : ACCENT, true);
-        text(canvas, "▶", dp(58), bottom - dp(17), 16, redoStack.isEmpty() ? MUTED : ACCENT, true);
-        text(canvas, "100%", dp(96), bottom - dp(17), 14, INK, false);
     }
 
     private void drawProperties(Canvas canvas, float right, float top, float bottom) {
         paint.setColor(PANEL);
-        canvas.drawRect(right, dp(56), getWidth(), getHeight(), paint);
-        text(canvas, "WŁAŚCIWOŚCI", right + dp(18), dp(91), 12, MUTED, true);
+        canvas.drawRect(right, dp(128), getWidth(), getHeight(), paint);
+        text(canvas, "WŁAŚCIWOŚCI", right + dp(18), dp(155), 12, MUTED, true);
         text(canvas, mode.equals("Szkic") ? "Płaszczyzna szkicu"
+            : (mode.equals("Edytuj szkic") ? "Edycja szkicu"
             : (project.importedStep ? "Zaimportowany STEP"
-            : (project.sketchExtruded ? "Wyciągnięcie szkicu" : "Wyciągnięcie 1")),
-            right + dp(18), dp(127), 18, INK, true);
-        labelValue(canvas, right, "Głębokość", String.format(java.util.Locale.US, "%.2f mm", modelDepth), dp(174));
-        labelValue(canvas, right, "Operacja", "Nowa bryła", dp(238));
-        if (mode.equals("Modeluj")) {
-            pill(canvas, right + dp(18), dp(318), dp(202), dp(48), "Wyciągnij szkic", ACCENT, Color.WHITE);
-            pill(canvas, right + dp(18), dp(382), dp(202), dp(48), "Wpisz głębokość", Color.rgb(226, 232, 236), INK);
-            pill(canvas, right + dp(18), dp(446), dp(202), dp(48), "Zaokrąglij krawędzie", Color.rgb(226, 232, 236), INK);
-            text(canvas, selectedFace >= 0 ? "Wybrano: ściana " + (selectedFace + 1) : "Dotknij ściany lub krawędzi",
-                right + dp(18), dp(526), 11, selectedFace >= 0 ? ACCENT : MUTED, selectedFace >= 0);
-            if (!operationMessage.isEmpty()) text(canvas, operationMessage,
-                right + dp(18), dp(554), 10, operationMessage.startsWith("Gotowe") ? ACCENT : Color.rgb(190, 70, 55), true);
-        } else if (mode.equals("Szkic")) {
-            text(canvas, sketchPlane, right + dp(18), dp(292), 12,
+            : (project.sketchExtruded ? "Wyciągnięcie szkicu" : "Wyciągnięcie 1"))),
+            right + dp(18), dp(191), 18, INK, true);
+        labelValue(canvas, right, "Głębokość", String.format(java.util.Locale.US, "%.2f mm", modelDepth), dp(226));
+        labelValue(canvas, right, "Operacja", "Nowa bryła", dp(290));
+        if (mode.equals("Szkic")) {
+            text(canvas, sketchPlane, right + dp(18), dp(354), 12,
                 sketchPlaneChosen ? ACCENT : MUTED, true);
-            pill(canvas, right + dp(18), dp(322), dp(202), dp(52), "Płaszczyzna XY", Color.rgb(226, 232, 236), INK);
-            pill(canvas, right + dp(18), dp(390), dp(202), dp(52), "Płaszczyzna XZ", Color.rgb(226, 232, 236), INK);
-            pill(canvas, right + dp(18), dp(458), dp(202), dp(52), "Płaszczyzna YZ", Color.rgb(226, 232, 236), INK);
-            text(canvas, "lub dotknij płaskiej ściany bryły", right + dp(18), dp(542), 10, MUTED, false);
+            pill(canvas, right + dp(18), dp(374), dp(202), dp(48), "Płaszczyzna XY", Color.rgb(226, 232, 236), INK);
+            pill(canvas, right + dp(18), dp(432), dp(202), dp(48), "Płaszczyzna XZ", Color.rgb(226, 232, 236), INK);
+            pill(canvas, right + dp(18), dp(490), dp(202), dp(48), "Płaszczyzna YZ", Color.rgb(226, 232, 236), INK);
+            text(canvas, "lub dotknij płaskiej ściany bryły", right + dp(18), dp(562), 10, MUTED, false);
+        } else if (mode.equals("Edytuj szkic")) {
+            text(canvas, selectedSketchId == null ? "Dotknij elementu szkicu" : "Wybrano element szkicu",
+                right + dp(18), dp(374), 12, selectedSketchId == null ? MUTED : ACCENT, true);
+            text(canvas, "Współrzędne można wpisać numerycznie.", right + dp(18), dp(400), 10, MUTED, false);
         } else if (mode.equals("Zmierz")) {
-            text(canvas, "Wybierz dwa wierzchołki", right + dp(18), dp(332), 11, MUTED, true);
-            text(canvas, "lub punkty na krawędziach", right + dp(18), dp(352), 11, MUTED, false);
-            if (measureA != null) labelValue(canvas, right, "Punkt A", measureA.kind, dp(382));
+            text(canvas, "Wybierz dwa wierzchołki", right + dp(18), dp(374), 11, MUTED, true);
+            text(canvas, "lub punkty na krawędziach", right + dp(18), dp(394), 11, MUTED, false);
+            if (measureA != null) labelValue(canvas, right, "Punkt A", measureA.kind, dp(414));
             if (measureA != null && measureB != null) {
-                labelValue(canvas, right, "Odległość", formatMm(measureA.distanceTo(measureB)), dp(452));
+                labelValue(canvas, right, "Odległość", formatMm(measureA.distanceTo(measureB)), dp(480));
             } else if (!measuredEdgeText.isEmpty()) {
-                labelValue(canvas, right, "Krawędź", measuredEdgeText, dp(452));
+                labelValue(canvas, right, "Krawędź", measuredEdgeText, dp(480));
             }
             SketchPrimitive profile = latestClosedProfile();
             if (profile != null && profile.type.equals("Okrąg")) {
                 double radius = Math.hypot(profile.x2 - profile.x1, profile.y2 - profile.y1);
-                text(canvas, "R = " + formatMm(radius), right + dp(18), dp(532), 12, ACCENT, true);
-                text(canvas, "Ø = " + formatMm(radius * 2.0), right + dp(18), dp(556), 12, ACCENT, true);
+                text(canvas, "R = " + formatMm(radius), right + dp(18), dp(550), 12, ACCENT, true);
+                text(canvas, "Ø = " + formatMm(radius * 2.0), right + dp(18), dp(574), 12, ACCENT, true);
             }
         } else {
-            labelValue(canvas, right, "Tryb", mode, dp(302));
+            labelValue(canvas, right, "Tryb", mode, dp(366));
         }
+        if (!operationMessage.isEmpty()) text(canvas, operationMessage,
+            right + dp(18), dp(614), 10, operationMessage.startsWith("Gotowe") ? ACCENT : Color.rgb(190, 70, 55), true);
         text(canvas, "RDZEŃ GEOMETRII", right + dp(18), bottom - dp(106), 11, MUTED, true);
         text(canvas, kernelStatus, right + dp(18), bottom - dp(82), 12,
             nativePrism.length == 24 ? ACCENT : Color.rgb(205, 65, 65), true);
@@ -404,17 +409,10 @@ public final class CadWorkspaceView extends View {
                 sketchRect.right, sketchRect.bottom);
         }
 
-        float toolbarLeft = dp(240);
-        float toolbarRight = getWidth() - dp(268);
-        float itemWidth = (toolbarRight - toolbarLeft) / 3f;
-        String[] tools = {"Linia", "Prostokąt", "Okrąg"};
-        for (int i = 0; i < tools.length; i++) {
-            boolean active = tools[i].equals(sketchTool);
-            pill(canvas, toolbarLeft + i * itemWidth + dp(4), dp(70), itemWidth - dp(8), dp(48),
-                tools[i], active ? ACCENT : Color.rgb(226, 232, 236), active ? Color.WHITE : INK);
+        if (mode.equals("Szkic") || mode.equals("Edytuj szkic")) {
+            text(canvas, (mode.equals("Edytuj szkic") ? "Edytuj szkic na: " : "Szkic na: ") + sketchPlane,
+                (left + right) / 2f, dp(151), 12, ACCENT, true, Paint.Align.CENTER);
         }
-        text(canvas, "Szkic na: " + sketchPlane, (left + right) / 2f, dp(144),
-            12, ACCENT, true, Paint.Align.CENTER);
     }
 
     private void drawSketchEntity(Canvas canvas, SketchPrimitive entity) {
@@ -423,13 +421,19 @@ public final class CadWorkspaceView extends View {
         float y1 = workCenterY - (float)entity.y1 * scale;
         float x2 = workCenterX + (float)entity.x2 * scale;
         float y2 = workCenterY - (float)entity.y2 * scale;
-        drawSketchPreview(canvas, entity.type, x1, y1, x2, y2);
+        drawSketchPreview(canvas, entity.type, x1, y1, x2, y2,
+            entity.id.equals(selectedSketchId));
     }
 
     private void drawSketchPreview(Canvas canvas, String type, float x1, float y1, float x2, float y2) {
+        drawSketchPreview(canvas, type, x1, y1, x2, y2, false);
+    }
+
+    private void drawSketchPreview(Canvas canvas, String type, float x1, float y1, float x2, float y2,
+            boolean selected) {
         paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(dp(2));
-        paint.setColor(Color.rgb(30, 105, 210));
+        paint.setStrokeWidth(dp(selected ? 3.5f : 2f));
+        paint.setColor(selected ? Color.rgb(245, 145, 20) : Color.rgb(30, 105, 210));
         if (type.equals("Linia")) {
             canvas.drawLine(x1, y1, x2, y2, paint);
         } else if (type.equals("Okrąg")) {
@@ -440,6 +444,11 @@ public final class CadWorkspaceView extends View {
                 Math.max(x1, x2), Math.max(y1, y2), paint);
         }
         paint.setStyle(Paint.Style.FILL);
+        if (selected) {
+            paint.setColor(Color.rgb(245, 145, 20));
+            canvas.drawCircle(x1, y1, dp(5), paint);
+            canvas.drawCircle(x2, y2, dp(5), paint);
+        }
     }
 
     private void sketchEntitiesAdd(String type, float screenX1, float screenY1,
@@ -453,6 +462,121 @@ public final class CadWorkspaceView extends View {
         project.sketch.add(new SketchPrimitive(UUID.randomUUID().toString(), type, x1, y1, x2, y2));
         project.sketchExtruded = false;
         projectRepository.save(project);
+    }
+
+    private SketchPrimitive findSketchAt(float sx, float sy) {
+        float scale = dp(3.2f) * zoom;
+        float tolerance = dp(16);
+        SketchPrimitive best = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (SketchPrimitive entity : project.sketch) {
+            float x1 = workCenterX + (float)entity.x1 * scale;
+            float y1 = workCenterY - (float)entity.y1 * scale;
+            float x2 = workCenterX + (float)entity.x2 * scale;
+            float y2 = workCenterY - (float)entity.y2 * scale;
+            double distance;
+            if (entity.type.equals("Okrąg")) {
+                double radius = Math.hypot(x2 - x1, y2 - y1);
+                distance = Math.abs(Math.hypot(sx - x1, sy - y1) - radius);
+            } else if (entity.type.equals("Prostokąt")) {
+                float minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+                float minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+                distance = Math.min(Math.min(
+                    distanceToSegment(sx, sy, minX, minY, maxX, minY),
+                    distanceToSegment(sx, sy, maxX, minY, maxX, maxY)), Math.min(
+                    distanceToSegment(sx, sy, maxX, maxY, minX, maxY),
+                    distanceToSegment(sx, sy, minX, maxY, minX, minY)));
+            } else {
+                distance = distanceToSegment(sx, sy, x1, y1, x2, y2);
+            }
+            if (distance <= tolerance && distance < bestDistance) {
+                best = entity;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    private double distanceToSegment(float px, float py, float x1, float y1, float x2, float y2) {
+        double dx = x2 - x1, dy = y2 - y1;
+        if (dx * dx + dy * dy < 1.0e-9) return Math.hypot(px - x1, py - y1);
+        double t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+        t = Math.max(0.0, Math.min(1.0, t));
+        return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+    }
+
+    private void showSketchEntityEditor(SketchPrimitive entity) {
+        LinearLayout form = new LinearLayout(getContext());
+        form.setOrientation(LinearLayout.VERTICAL);
+        int padding = (int)dp(18);
+        form.setPadding(padding, 0, padding, 0);
+        EditText x1 = coordinateInput("X1 [mm]", entity.x1);
+        EditText y1 = coordinateInput("Y1 [mm]", entity.y1);
+        EditText x2 = coordinateInput(entity.type.equals("Okrąg") ? "X na promieniu [mm]" : "X2 [mm]", entity.x2);
+        EditText y2 = coordinateInput(entity.type.equals("Okrąg") ? "Y na promieniu [mm]" : "Y2 [mm]", entity.y2);
+        form.addView(x1); form.addView(y1); form.addView(x2); form.addView(y2);
+        new AlertDialog.Builder(getContext())
+            .setTitle("Edytuj: " + entity.type)
+            .setView(form)
+            .setNeutralButton("Usuń", (dialog, which) -> deleteSketchEntity(entity.id))
+            .setNegativeButton("Anuluj", null)
+            .setPositiveButton("Zastosuj", (dialog, which) -> {
+                try {
+                    SketchPrimitive changed = new SketchPrimitive(entity.id, entity.type,
+                        parseCoordinate(x1), parseCoordinate(y1), parseCoordinate(x2), parseCoordinate(y2));
+                    replaceSketchEntity(entity, changed);
+                } catch (NumberFormatException ignored) {
+                    operationMessage = "Niepoprawne współrzędne szkicu";
+                    invalidate();
+                }
+            }).show();
+    }
+
+    private EditText coordinateInput(String hint, double value) {
+        EditText input = new EditText(getContext());
+        input.setHint(hint);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
+            | InputType.TYPE_NUMBER_FLAG_SIGNED);
+        input.setText(String.format(java.util.Locale.US, "%.3f", value));
+        input.setSelectAllOnFocus(true);
+        return input;
+    }
+
+    private double parseCoordinate(EditText input) {
+        return Double.parseDouble(input.getText().toString().replace(',', '.'));
+    }
+
+    private void replaceSketchEntity(SketchPrimitive oldEntity, SketchPrimitive changed) {
+        int index = project.sketch.indexOf(oldEntity);
+        if (index < 0) return;
+        checkpoint();
+        project.sketch.set(index, changed);
+        updateNativeModel();
+        if (project.sketchExtruded && nativeMesh.length == 0) {
+            project.sketch.set(index, oldEntity);
+            updateNativeModel();
+            operationMessage = "Zmiana tworzy niepoprawną bryłę";
+        } else {
+            selectedSketchId = changed.id;
+            projectRepository.save(project);
+            operationMessage = "Gotowe: zaktualizowano szkic i model";
+        }
+        invalidate();
+    }
+
+    private void deleteSketchEntity(String id) {
+        for (int i = 0; i < project.sketch.size(); i++) {
+            if (!project.sketch.get(i).id.equals(id)) continue;
+            checkpoint();
+            project.sketch.remove(i);
+            selectedSketchId = null;
+            if (latestClosedProfile() == null) project.sketchExtruded = false;
+            updateNativeModel();
+            projectRepository.save(project);
+            operationMessage = "Gotowe: usunięto element szkicu";
+            invalidate();
+            return;
+        }
     }
 
     private void projectNativeMesh(float cx, float cy) {
@@ -755,7 +879,7 @@ public final class CadWorkspaceView extends View {
 
     private boolean isInsideViewport(float x, float y) {
         return x >= dp(224) && x <= getWidth() - dp(252)
-            && y >= dp(64) && y <= getHeight() - dp(132);
+            && y >= dp(132) && y <= getHeight() - dp(104);
     }
 
     private void updateNativeModel() {
@@ -1041,20 +1165,143 @@ public final class CadWorkspaceView extends View {
         text(canvas, "Z", x - dp(29), y + dp(27), 11, Color.rgb(55, 105, 210), true);
     }
 
-    private void drawBottomBar(Canvas canvas) {
-        float top = getHeight() - dp(120);
+    private void drawTimeline(Canvas canvas) {
+        float top = getHeight() - dp(96);
         paint.setColor(Color.rgb(16, 24, 32));
         canvas.drawRect(0, top, getWidth(), getHeight(), paint);
-        float itemW = (getWidth() - dp(40)) / actions.size();
-        for (int i = 0; i < actions.size(); i++) {
-            float x = dp(20) + i * itemW;
-            boolean selected = actions.get(i).equals(mode);
-            if (selected) {
-                paint.setColor(ACCENT);
-                canvas.drawRoundRect(new RectF(x + dp(5), top + dp(10), x + itemW - dp(5), top + dp(61)), dp(12), dp(12), paint);
-            }
-            text(canvas, actions.get(i), x + itemW / 2, top + dp(43), 15,
-                selected ? Color.WHITE : Color.rgb(205, 214, 221), true, Paint.Align.CENTER);
+        text(canvas, "↶", dp(30), top + dp(42), 25, undoStack.isEmpty() ? MUTED : Color.WHITE, true, Paint.Align.CENTER);
+        text(canvas, "↷", dp(76), top + dp(42), 25, redoStack.isEmpty() ? MUTED : Color.WHITE, true, Paint.Align.CENTER);
+        text(canvas, "HISTORIA MODELU", dp(118), top + dp(24), 10, Color.rgb(145, 160, 172), true);
+        List<String> features = new ArrayList<>();
+        features.add("Początek");
+        if (!project.sketch.isEmpty()) features.add("Szkic");
+        if (project.importedStep) features.add("Import STEP");
+        else if (project.sketchExtruded) features.add("Wyciągnięcie");
+        if (project.filletRadius > 0.0) features.add("R" + String.format(java.util.Locale.US, "%.1f", project.filletRadius));
+        float startX = dp(130);
+        float gap = dp(92);
+        paint.setStrokeWidth(dp(2));
+        paint.setColor(Color.rgb(70, 86, 98));
+        if (features.size() > 1) {
+            canvas.drawLine(startX + dp(22), top + dp(53),
+                startX + (features.size() - 1) * gap + dp(22), top + dp(53), paint);
+        }
+        for (int i = 0; i < features.size(); i++) {
+            float x = startX + i * gap;
+            paint.setColor(i == features.size() - 1 ? ACCENT : Color.rgb(55, 72, 85));
+            canvas.drawRoundRect(new RectF(x, top + dp(32), x + dp(44), top + dp(74)), dp(8), dp(8), paint);
+            drawFeatureIcon(canvas, features.get(i), x + dp(22), top + dp(53), Color.WHITE);
+            text(canvas, features.get(i), x + dp(22), top + dp(88), 9,
+                Color.rgb(205, 214, 221), false, Paint.Align.CENTER);
+        }
+    }
+
+    private boolean isToolActive(String tool) {
+        if (tool.equals("Linia") || tool.equals("Prostokąt") || tool.equals("Okrąg")) {
+            return mode.equals("Szkic") && sketchTool.equals(tool);
+        }
+        if (tool.equals("Edytuj")) return mode.equals("Edytuj szkic");
+        if (tool.equals("Zmierz")) return mode.equals("Zmierz");
+        if (tool.equals("Rysunek")) return mode.equals("Rysunek");
+        return tool.equals("Wybierz") && mode.equals("Wybierz")
+            || tool.equals("Szkic") && mode.equals("Szkic") && !sketchPlaneChosen;
+    }
+
+    private void activateTopTool(String tool) {
+        selectedSketchId = null;
+        if (tool.equals("Wybierz")) mode = "Wybierz";
+        else if (tool.equals("Szkic")) {
+            mode = "Szkic";
+            sketchPlaneChosen = !project.sketch.isEmpty();
+            if (sketchPlaneChosen) alignToCurrentSketchPlane();
+            else sketchPlane = "Wybierz płaszczyznę";
+        } else if (tool.equals("Linia") || tool.equals("Prostokąt") || tool.equals("Okrąg")) {
+            mode = "Szkic";
+            sketchTool = tool;
+            sketchPlaneChosen = project.sketchPlane != null && !project.sketchPlane.isEmpty();
+            if (sketchPlaneChosen) alignToCurrentSketchPlane();
+        } else if (tool.equals("Edytuj")) {
+            mode = "Edytuj szkic";
+            sketchPlaneChosen = true;
+            alignToCurrentSketchPlane();
+            operationMessage = project.sketch.isEmpty() ? "Brak elementów szkicu" : "Dotknij elementu szkicu";
+        } else if (tool.equals("Wyciągnij")) {
+            extrudeSketchProfile();
+            mode = "Wybierz";
+        } else if (tool.equals("Głębokość")) showDepthEditor();
+        else if (tool.equals("Zaokrąglij")) showFilletEditor();
+        else if (tool.equals("Zmierz")) {
+            mode = "Zmierz";
+            measureA = measureB = null;
+        } else if (tool.equals("Rysunek")) mode = "Rysunek";
+        invalidate();
+    }
+
+    private void alignToCurrentSketchPlane() {
+        String plane = project.sketchPlane;
+        sketchPlane = plane;
+        if ("XY".equals(plane)) { cameraYaw = 0f; cameraPitch = 0f; }
+        else if ("XZ".equals(plane)) { cameraYaw = 0f; cameraPitch = 89f; }
+        else if ("YZ".equals(plane)) { cameraYaw = 90f; cameraPitch = 0f; }
+    }
+
+    private void drawToolButton(Canvas canvas, float x, float y, float w, float h,
+            String id, String label, boolean active) {
+        paint.setColor(active ? ACCENT : Color.rgb(28, 40, 51));
+        canvas.drawRoundRect(new RectF(x, y, x + w, y + h), dp(7), dp(7), paint);
+        drawToolIcon(canvas, id, x + w / 2f, y + dp(20), active ? Color.WHITE : Color.rgb(210, 220, 228));
+        text(canvas, label, x + w / 2f, y + dp(50), 8.5f,
+            active ? Color.WHITE : Color.rgb(190, 201, 210), false, Paint.Align.CENTER);
+    }
+
+    private void drawToolIcon(Canvas canvas, String id, float x, float y, int color) {
+        paint.setColor(color);
+        paint.setStrokeWidth(dp(1.7f));
+        paint.setStyle(Paint.Style.STROKE);
+        if (id.equals("Linia")) canvas.drawLine(x - dp(10), y + dp(7), x + dp(10), y - dp(7), paint);
+        else if (id.equals("Prostokąt")) canvas.drawRect(x - dp(10), y - dp(7), x + dp(10), y + dp(7), paint);
+        else if (id.equals("Okrąg")) canvas.drawCircle(x, y, dp(9), paint);
+        else if (id.equals("Szkic")) {
+            canvas.drawRect(x - dp(10), y - dp(8), x + dp(8), y + dp(8), paint);
+            canvas.drawLine(x - dp(7), y + dp(4), x + dp(5), y - dp(5), paint);
+        } else if (id.equals("Wyciągnij")) {
+            canvas.drawRect(x - dp(9), y - dp(2), x + dp(5), y + dp(9), paint);
+            canvas.drawLine(x - dp(2), y - dp(2), x - dp(2), y - dp(11), paint);
+            canvas.drawLine(x - dp(6), y - dp(7), x - dp(2), y - dp(11), paint);
+            canvas.drawLine(x + dp(2), y - dp(7), x - dp(2), y - dp(11), paint);
+        } else if (id.equals("Głębokość")) {
+            canvas.drawLine(x - dp(9), y, x + dp(9), y, paint);
+            canvas.drawLine(x - dp(9), y, x - dp(4), y - dp(5), paint);
+            canvas.drawLine(x + dp(9), y, x + dp(4), y + dp(5), paint);
+        } else if (id.equals("Zaokrąglij")) {
+            Path p = new Path(); p.moveTo(x - dp(10), y + dp(8));
+            p.quadTo(x - dp(10), y - dp(8), x + dp(8), y - dp(8)); canvas.drawPath(p, paint);
+        } else if (id.equals("Zmierz")) {
+            canvas.drawLine(x - dp(10), y + dp(7), x + dp(10), y - dp(7), paint);
+            canvas.drawLine(x - dp(10), y + dp(2), x - dp(10), y + dp(11), paint);
+            canvas.drawLine(x + dp(10), y - dp(11), x + dp(10), y - dp(2), paint);
+        } else if (id.equals("Rysunek")) {
+            canvas.drawRect(x - dp(9), y - dp(10), x + dp(9), y + dp(10), paint);
+            canvas.drawLine(x - dp(6), y - dp(4), x + dp(6), y - dp(4), paint);
+            canvas.drawLine(x - dp(6), y + dp(2), x + dp(4), y + dp(2), paint);
+        } else if (id.equals("Edytuj")) {
+            canvas.drawLine(x - dp(8), y + dp(8), x + dp(7), y - dp(7), paint);
+            canvas.drawCircle(x - dp(9), y + dp(9), dp(2), paint);
+        } else {
+            Path p = new Path(); p.moveTo(x - dp(8), y - dp(10)); p.lineTo(x + dp(8), y);
+            p.lineTo(x, y + dp(2)); p.lineTo(x + dp(4), y + dp(10)); p.lineTo(x, y + dp(12));
+            p.lineTo(x - dp(4), y + dp(4)); p.lineTo(x - dp(8), y + dp(8)); p.close(); canvas.drawPath(p, paint);
+        }
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawFeatureIcon(Canvas canvas, String feature, float x, float y, int color) {
+        if (feature.equals("Szkic")) drawToolIcon(canvas, "Szkic", x, y, color);
+        else if (feature.startsWith("Wyciąg")) drawToolIcon(canvas, "Wyciągnij", x, y, color);
+        else if (feature.startsWith("R")) drawToolIcon(canvas, "Zaokrąglij", x, y, color);
+        else if (feature.startsWith("Import")) drawToolIcon(canvas, "Rysunek", x, y, color);
+        else {
+            paint.setColor(color); canvas.drawCircle(x, y, dp(5), paint);
         }
     }
 
