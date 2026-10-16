@@ -38,10 +38,12 @@ odzyskania historii z programu źródłowego.
 
 ## Etap bieżący
 
-Wersja `0.6.1-sketch-workplane` zawiera interaktywny interfejs, selekcję topologii,
+Wersja `0.7.0-project-storage` zawiera interaktywny interfejs, selekcję topologii,
 kamerę orbitującą, lokalny układ płaszczyzny szkicu, JNI oraz Open CASCADE 8.0.1.
 Rdzeń tworzy prawdziwą bryłę B-Rep, waliduje jej topologię i raportuje liczbę
 ścian, krawędzi oraz wierzchołków. Natywny autotest wykonuje zapis bryły do STEP,
 ponowny import i kontrolę poprawności topologii. Udostępnienie wyboru pliku STEP
-w UI, edytor parametryczny oraz pozostałe formaty są kolejnymi funkcjami; ta
-wersja ich jeszcze nie deklaruje.
+w UI, edytor parametryczny oraz pozostałe formaty są kolejnymi funkcjami. Dokument
+projektu ma wersjonowany manifest JSON, UUID encji, atomowy autosave i kopię
+odzyskiwania. Obecnie przechowuje jedną płaszczyznę szkicu, encje linii,
+prostokąta i okręgu oraz parametry bazowego wyciągnięcia.

@@ -31,7 +31,7 @@ Copy-Item (Join-Path $Root "third_party\occt\LICENSE_LGPL_21.txt") (Join-Path $B
 
 & $Aapt2 compile --dir (Join-Path $Root "app\src\main\res") -o (Join-Path $Build "res.zip")
 Assert-ExitCode "Resource compilation"
-& $Aapt2 link -o (Join-Path $Build "unsigned.apk") -I $AndroidJar --manifest (Join-Path $Root "app\src\main\AndroidManifest.xml") (Join-Path $Build "res.zip") -A (Join-Path $Build "assets") --min-sdk-version 34 --target-sdk-version 36 --version-code 10 --version-name "0.6.1-sketch-workplane" --java (Join-Path $Build "generated") --auto-add-overlay
+& $Aapt2 link -o (Join-Path $Build "unsigned.apk") -I $AndroidJar --manifest (Join-Path $Root "app\src\main\AndroidManifest.xml") (Join-Path $Build "res.zip") -A (Join-Path $Build "assets") --min-sdk-version 34 --target-sdk-version 36 --version-code 11 --version-name "0.7.0-project-storage" --java (Join-Path $Build "generated") --auto-add-overlay
 Assert-ExitCode "Resource linking"
 
 $Sources = Get-ChildItem (Join-Path $Root "app\src\main\java") -Recurse -Filter "*.java" | ForEach-Object { $_.FullName }
@@ -77,7 +77,7 @@ if (-not (Test-Path $Keystore)) {
     Assert-ExitCode "Debug key creation"
 }
 
-$Apk = Join-Path $Out "TabletCAD-0.6.1-sketch-workplane.apk"
+$Apk = Join-Path $Out "TabletCAD-0.7.0-project-storage.apk"
 Copy-Item (Join-Path $Build "unsigned.apk") $Apk -Force
 & $Signer sign --ks $Keystore --ks-pass pass:android --key-pass pass:android --ks-key-alias tabletcad $Apk
 Assert-ExitCode "APK signing"

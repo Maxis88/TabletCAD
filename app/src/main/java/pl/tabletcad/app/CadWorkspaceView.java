@@ -16,6 +16,11 @@ import android.text.InputType;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+
+import pl.tabletcad.app.model.CadProject;
+import pl.tabletcad.app.model.SketchPrimitive;
+import pl.tabletcad.app.storage.ProjectRepository;
 
 /**
  * Touch-first foundation viewport. It deliberately renders a demonstrator model;
@@ -53,7 +58,8 @@ public final class CadWorkspaceView extends View {
     private float sketchStartY;
     private boolean sketching;
     private String sketchTool = "Prostokąt";
-    private final List<SketchEntity> sketchEntities = new ArrayList<>();
+    private final ProjectRepository projectRepository;
+    private final CadProject project;
     private boolean sketchPlaneChosen;
     private String sketchPlane = "Nie wybrano";
     private int selectedFace = -1;
@@ -62,23 +68,23 @@ public final class CadWorkspaceView extends View {
     private final float[] projectedZ = new float[8];
     private float touchDownX;
     private float touchDownY;
+    private float workCenterX;
+    private float workCenterY;
     private static final int[][] BOX_FACES = {
         {0, 1, 2, 3}, {4, 5, 6, 7}, {0, 4, 7, 3},
         {1, 5, 6, 2}, {3, 2, 6, 7}, {0, 1, 5, 4}
     };
 
-    private static final class SketchEntity {
-        final String type;
-        final float x1, y1, x2, y2;
-        SketchEntity(String type, float x1, float y1, float x2, float y2) {
-            this.type = type;
-            this.x1 = x1; this.y1 = y1; this.x2 = x2; this.y2 = y2;
-        }
-    }
-
     public CadWorkspaceView(Context context) {
         super(context);
         density = getResources().getDisplayMetrics().density;
+        projectRepository = new ProjectRepository(context);
+        project = projectRepository.loadOrCreate();
+        modelWidth = project.width;
+        modelHeight = project.height;
+        modelDepth = project.depth;
+        sketchPlane = project.sketchPlane;
+        projectRepository.save(project);
         kernelStatus = NativeCadEngine.status();
         updateNativeModel();
         // STEP is deliberately not exercised during Activity construction. A native
@@ -186,8 +192,8 @@ public final class CadWorkspaceView extends View {
             if (event.getActionMasked() == MotionEvent.ACTION_UP && sketching) {
                 sketching = false;
                 if (Math.hypot(event.getX() - sketchStartX, event.getY() - sketchStartY) > dp(4)) {
-                    sketchEntities.add(new SketchEntity(sketchTool, sketchStartX, sketchStartY,
-                        event.getX(), event.getY()));
+                    sketchEntitiesAdd(sketchTool, sketchStartX, sketchStartY,
+                        event.getX(), event.getY());
                 }
                 sketchRect = null;
                 invalidate();
@@ -205,6 +211,8 @@ public final class CadWorkspaceView extends View {
         float right = getWidth() - dp(252);
         float top = dp(64);
         float bottom = getHeight() - dp(132);
+        workCenterX = (left + right) / 2f + panX;
+        workCenterY = (top + bottom) / 2f + panY;
 
         drawTopBar(canvas);
         drawLeftPanel(canvas, left, top, bottom);
@@ -309,10 +317,10 @@ public final class CadWorkspaceView extends View {
     }
 
     private void drawSketch(Canvas canvas, float left, float right) {
-        for (SketchEntity entity : sketchEntities) drawSketchEntity(canvas, entity);
+        for (SketchPrimitive entity : project.sketch) drawSketchEntity(canvas, entity);
         if (sketchRect != null && sketching) {
-            drawSketchEntity(canvas, new SketchEntity(sketchTool, sketchStartX, sketchStartY,
-                sketchRect.right, sketchRect.bottom));
+            drawSketchPreview(canvas, sketchTool, sketchStartX, sketchStartY,
+                sketchRect.right, sketchRect.bottom);
         }
 
         float toolbarLeft = dp(240);
@@ -328,20 +336,40 @@ public final class CadWorkspaceView extends View {
             12, ACCENT, true, Paint.Align.CENTER);
     }
 
-    private void drawSketchEntity(Canvas canvas, SketchEntity entity) {
+    private void drawSketchEntity(Canvas canvas, SketchPrimitive entity) {
+        float scale = dp(3.2f) * zoom;
+        float x1 = workCenterX + (float)entity.x1 * scale;
+        float y1 = workCenterY - (float)entity.y1 * scale;
+        float x2 = workCenterX + (float)entity.x2 * scale;
+        float y2 = workCenterY - (float)entity.y2 * scale;
+        drawSketchPreview(canvas, entity.type, x1, y1, x2, y2);
+    }
+
+    private void drawSketchPreview(Canvas canvas, String type, float x1, float y1, float x2, float y2) {
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(dp(2));
         paint.setColor(Color.rgb(30, 105, 210));
-        if (entity.type.equals("Linia")) {
-            canvas.drawLine(entity.x1, entity.y1, entity.x2, entity.y2, paint);
-        } else if (entity.type.equals("Okrąg")) {
-            float radius = (float)Math.hypot(entity.x2 - entity.x1, entity.y2 - entity.y1);
-            canvas.drawCircle(entity.x1, entity.y1, radius, paint);
+        if (type.equals("Linia")) {
+            canvas.drawLine(x1, y1, x2, y2, paint);
+        } else if (type.equals("Okrąg")) {
+            float radius = (float)Math.hypot(x2 - x1, y2 - y1);
+            canvas.drawCircle(x1, y1, radius, paint);
         } else {
-            canvas.drawRect(Math.min(entity.x1, entity.x2), Math.min(entity.y1, entity.y2),
-                Math.max(entity.x1, entity.x2), Math.max(entity.y1, entity.y2), paint);
+            canvas.drawRect(Math.min(x1, x2), Math.min(y1, y2),
+                Math.max(x1, x2), Math.max(y1, y2), paint);
         }
         paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void sketchEntitiesAdd(String type, float screenX1, float screenY1,
+                                   float screenX2, float screenY2) {
+        float scale = dp(3.2f) * zoom;
+        double x1 = (screenX1 - workCenterX) / scale;
+        double y1 = (workCenterY - screenY1) / scale;
+        double x2 = (screenX2 - workCenterX) / scale;
+        double y2 = (workCenterY - screenY2) / scale;
+        project.sketch.add(new SketchPrimitive(UUID.randomUUID().toString(), type, x1, y1, x2, y2));
+        projectRepository.save(project);
     }
 
     private void projectBox(float cx, float cy) {
@@ -418,7 +446,8 @@ public final class CadWorkspaceView extends View {
         sketchPlane = plane;
         sketchPlaneChosen = true;
         sketchRect = null;
-        sketchEntities.clear();
+        if (!plane.equals(project.sketchPlane)) project.sketch.clear();
+        project.sketchPlane = plane;
         if (plane.equals("XY")) {
             cameraYaw = 0f; cameraPitch = 0f; selectedFace = -1;
         } else if (plane.equals("XZ")) {
@@ -438,6 +467,7 @@ public final class CadWorkspaceView extends View {
         } else if (selectedFace == 5) {
             cameraYaw = 0f; cameraPitch = 89f;
         }
+        projectRepository.save(project);
         invalidate();
     }
 
@@ -455,7 +485,9 @@ public final class CadWorkspaceView extends View {
                     double value = Double.parseDouble(input.getText().toString().replace(',', '.'));
                     if (value >= 0.1 && value <= 5000.0) {
                         modelDepth = value;
+                        project.depth = value;
                         updateNativeModel();
+                        projectRepository.save(project);
                         invalidate();
                     }
                 } catch (NumberFormatException ignored) {

@@ -1,14 +1,15 @@
 # TabletCAD
 
 Tabletowa aplikacja CAD dla Androida 14+. Repozytorium zawiera obecnie etap
-`0.6.1-sketch-workplane`: interaktywny interfejs obszaru roboczego, JNI/C++ dla
+`0.7.0-project-storage`: interaktywny interfejs obszaru roboczego, trwały dokument
+projektu, JNI/C++ dla
 `arm64-v8a` oraz Open CASCADE 8.0.1. Rdzeń tworzy i waliduje rzeczywistą bryłę
 B-Rep oraz wykonuje autotest zapisu i ponownego odczytu STEP.
 
-Gotowy APK znajduje się w `dist/TabletCAD-0.6.1-sketch-workplane.apk`. Jest to podpisana
+Gotowy APK znajduje się w `dist/TabletCAD-0.7.0-project-storage.apk`. Jest to podpisana
 wersja deweloperska dla tabletów ARM64 z Androidem 14 lub nowszym.
 
-Wersja 0.6.1 została zainstalowana i przetestowana dotykowo na HONOR MagicPad4 z MagicOS 10.
+Wersja 0.7.0 została zainstalowana i przetestowana dotykowo na HONOR MagicPad4 z MagicOS 10.
 Naprawia błąd inicjalizacji `WindowInsetsController` występujący przed utworzeniem
 widoku dekoracyjnego okna na tym urządzeniu.
 
@@ -37,6 +38,8 @@ automatyczne ustawienie kamery prostopadle do płaszczyzny oraz niezależne
 elementy szkicu: linia, prostokąt i okrąg,
 prostokątny szkic tworzony przeciągnięciem, zmiana głębokości wyciągnięcia,
 rzuty prostokątne, podstawowy pomiar, natywny model B-Rep i techniczny
-zapis/odczyt STEP. Pełny solver szkicu, rozbudowane operacje
+zapis/odczyt STEP. Parametry bryły i encje szkicu mają UUID, są automatycznie
+zapisywane w wersjonowanym pliku `.tcad` i odtwarzane po ponownym uruchomieniu.
+Zapis używa pliku tymczasowego, synchronizacji i kopii odzyskiwania. Pełny solver szkicu, rozbudowane operacje
 parametryczne, selektor plików, STL, DXF i arkusze techniczne pozostają kolejnymi
 etapami implementacji.

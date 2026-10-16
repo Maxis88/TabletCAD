@@ -7,3 +7,4 @@ app/build/
 *.iml
 third_party/occt/
 dist/*.apk
+dist/*.apk.idsig
