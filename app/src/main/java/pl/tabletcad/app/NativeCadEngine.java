@@ -43,6 +43,16 @@ public final class NativeCadEngine {
             : new double[0];
     }
 
+    public static double[] filletPrism(double width, double height, double depth, double radius) {
+        return LOADED ? nativeFilletPrism(width, height, depth, radius) : new double[0];
+    }
+
+    public static double[] filletSketchExtrusion(String type, double x1, double y1,
+            double x2, double y2, double depth, String plane, double radius) {
+        return LOADED ? nativeFilletSketchExtrusion(type, x1, y1, x2, y2, depth, plane, radius)
+            : new double[0];
+    }
+
     public static double[] tessellateStep(String path) {
         return LOADED ? nativeTessellateStep(path) : new double[0];
     }
@@ -53,9 +63,9 @@ public final class NativeCadEngine {
 
     public static boolean exportStep(String path, double width, double height, double depth,
             boolean sketchExtruded, String type, double x1, double y1, double x2, double y2,
-            String plane) {
+            String plane, double filletRadius) {
         return LOADED && nativeExportStep(path, width, height, depth, sketchExtruded, type,
-            x1, y1, x2, y2, plane);
+            x1, y1, x2, y2, plane, filletRadius);
     }
 
     private static native String nativeKernelStatus();
@@ -64,9 +74,13 @@ public final class NativeCadEngine {
     private static native double[] nativeTessellatePrism(double width, double height, double depth);
     private static native double[] nativeTessellateSketchExtrusion(String type, double x1,
         double y1, double x2, double y2, double depth, String plane);
+    private static native double[] nativeFilletPrism(double width, double height, double depth,
+        double radius);
+    private static native double[] nativeFilletSketchExtrusion(String type, double x1,
+        double y1, double x2, double y2, double depth, String plane, double radius);
     private static native String nativeStepRoundTrip(String path);
     private static native boolean nativeExportStep(String path, double width, double height,
         double depth, boolean sketchExtruded, String type, double x1, double y1, double x2,
-        double y2, String plane);
+        double y2, String plane, double filletRadius);
     private static native double[] nativeTessellateStep(String path);
 }

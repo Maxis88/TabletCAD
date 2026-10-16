@@ -165,6 +165,7 @@ public final class CadWorkspaceView extends View {
                 } else if (mode.equals("Modeluj") && e.getX() > getWidth() - dp(234)) {
                     if (e.getY() >= dp(318) && e.getY() <= dp(370)) extrudeSketchProfile();
                     else if (e.getY() >= dp(382) && e.getY() <= dp(440)) showDepthEditor();
+                    else if (e.getY() >= dp(446) && e.getY() <= dp(504)) showFilletEditor();
                 } else if (mode.equals("Szkic") && e.getX() > getWidth() - dp(234)) {
                     if (e.getY() >= dp(322) && e.getY() <= dp(382)) chooseSketchPlane("XY");
                     else if (e.getY() >= dp(390) && e.getY() <= dp(450)) chooseSketchPlane("XZ");
@@ -293,6 +294,10 @@ public final class CadWorkspaceView extends View {
         row(canvas, project.importedStep ? "   ◈  Import STEP"
             : (project.sketchExtruded ? "   ◈  Wyciągnięcie szkicu" : "   ◈  Wyciągnięcie 1"),
             dp(18), dp(240), true);
+        if (project.filletRadius > 0.0) {
+            row(canvas, String.format(java.util.Locale.US, "   ◒  Zaokrąglenie R%.2f", project.filletRadius),
+                dp(18), dp(278), true);
+        }
         paint.setColor(Color.rgb(232, 236, 239));
         canvas.drawRect(dp(18), bottom - dp(74), left - dp(18), bottom - dp(73), paint);
         text(canvas, "HISTORIA", dp(18), bottom - dp(48), 12, MUTED, true);
@@ -314,10 +319,11 @@ public final class CadWorkspaceView extends View {
         if (mode.equals("Modeluj")) {
             pill(canvas, right + dp(18), dp(318), dp(202), dp(48), "Wyciągnij szkic", ACCENT, Color.WHITE);
             pill(canvas, right + dp(18), dp(382), dp(202), dp(48), "Wpisz głębokość", Color.rgb(226, 232, 236), INK);
+            pill(canvas, right + dp(18), dp(446), dp(202), dp(48), "Zaokrąglij krawędzie", Color.rgb(226, 232, 236), INK);
             text(canvas, selectedFace >= 0 ? "Wybrano: ściana " + (selectedFace + 1) : "Dotknij ściany lub krawędzi",
-                right + dp(18), dp(454), 11, selectedFace >= 0 ? ACCENT : MUTED, selectedFace >= 0);
+                right + dp(18), dp(526), 11, selectedFace >= 0 ? ACCENT : MUTED, selectedFace >= 0);
             if (!operationMessage.isEmpty()) text(canvas, operationMessage,
-                right + dp(18), dp(482), 10, operationMessage.startsWith("Gotowe") ? ACCENT : Color.rgb(190, 70, 55), true);
+                right + dp(18), dp(554), 10, operationMessage.startsWith("Gotowe") ? ACCENT : Color.rgb(190, 70, 55), true);
         } else if (mode.equals("Szkic")) {
             text(canvas, sketchPlane, right + dp(18), dp(292), 12,
                 sketchPlaneChosen ? ACCENT : MUTED, true);
@@ -592,6 +598,51 @@ public final class CadWorkspaceView extends View {
             .show();
     }
 
+    private void showFilletEditor() {
+        if (project.importedStep) {
+            operationMessage = "Zaokrąglanie importu STEP: kolejny etap";
+            invalidate();
+            return;
+        }
+        EditText input = new EditText(getContext());
+        input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        input.setText(String.format(java.util.Locale.US, "%.2f",
+            project.filletRadius > 0.0 ? project.filletRadius : 3.0));
+        input.setSelectAllOnFocus(true);
+        new AlertDialog.Builder(getContext())
+            .setTitle("Promień zaokrąglenia wszystkich krawędzi [mm]")
+            .setView(input)
+            .setNegativeButton("Anuluj", null)
+            .setPositiveButton("Zastosuj", (dialog, which) -> {
+                try {
+                    double value = Double.parseDouble(input.getText().toString().replace(',', '.'));
+                    if (value < 0.1 || value > 1000.0) {
+                        operationMessage = "Promień musi mieścić się w zakresie 0,1–1000 mm";
+                        invalidate();
+                        return;
+                    }
+                    checkpoint();
+                    double oldRadius = project.filletRadius;
+                    project.filletRadius = value;
+                    updateNativeModel();
+                    if (nativeMesh.length == 0) {
+                        project.filletRadius = oldRadius;
+                        updateNativeModel();
+                        operationMessage = "Promień jest za duży dla tej bryły";
+                    } else {
+                        projectRepository.save(project);
+                        operationMessage = String.format(java.util.Locale.US,
+                            "Gotowe: zaokrąglenie R%.2f mm", value);
+                    }
+                    invalidate();
+                } catch (NumberFormatException ignored) {
+                    operationMessage = "Niepoprawna wartość promienia";
+                    invalidate();
+                }
+            })
+            .show();
+    }
+
     private void drawDimensions(Canvas canvas, float left, float top, float right, float bottom) {
         if (measureA == null) {
             text(canvas, "Dotknij wierzchołka lub krawędzi", (left + right) / 2f,
@@ -713,10 +764,15 @@ public final class CadWorkspaceView extends View {
         if (project.importedStep && projectRepository.importedStepFile().isFile()) {
             nativeMesh = NativeCadEngine.tessellateStep(projectRepository.importedStepFile().getAbsolutePath());
         } else if (project.sketchExtruded && profile != null) {
-            nativeMesh = NativeCadEngine.tessellateSketchExtrusion(profile.type, profile.x1,
-                profile.y1, profile.x2, profile.y2, modelDepth, project.sketchPlane);
+            nativeMesh = project.filletRadius > 0.0
+                ? NativeCadEngine.filletSketchExtrusion(profile.type, profile.x1, profile.y1,
+                    profile.x2, profile.y2, modelDepth, project.sketchPlane, project.filletRadius)
+                : NativeCadEngine.tessellateSketchExtrusion(profile.type, profile.x1,
+                    profile.y1, profile.x2, profile.y2, modelDepth, project.sketchPlane);
         } else {
-            nativeMesh = NativeCadEngine.tessellatePrism(modelWidth, modelHeight, modelDepth);
+            nativeMesh = project.filletRadius > 0.0
+                ? NativeCadEngine.filletPrism(modelWidth, modelHeight, modelDepth, project.filletRadius)
+                : NativeCadEngine.tessellatePrism(modelWidth, modelHeight, modelDepth);
         }
         updateMeshCenter();
         modelInfo = project.importedStep ? "Zaimportowany i zweryfikowany model STEP"
@@ -742,6 +798,7 @@ public final class CadWorkspaceView extends View {
             checkpoint();
             project.sketchExtruded = true;
             project.importedStep = false;
+            project.filletRadius = 0.0;
             updateNativeModel();
             if (nativeMesh.length == 0) {
                 project.sketchExtruded = false;
@@ -809,7 +866,8 @@ public final class CadWorkspaceView extends View {
         double x2 = profile == null ? modelWidth : profile.x2;
         double y2 = profile == null ? modelHeight : profile.y2;
         return NativeCadEngine.exportStep(path, modelWidth, modelHeight, modelDepth,
-            project.sketchExtruded && profile != null, type, x1, y1, x2, y2, project.sketchPlane);
+            project.sketchExtruded && profile != null, type, x1, y1, x2, y2, project.sketchPlane,
+            project.filletRadius);
     }
 
     public File importedStepFile() { return projectRepository.importedStepFile(); }
@@ -821,6 +879,7 @@ public final class CadWorkspaceView extends View {
         nativeMesh = imported;
         project.importedStep = true;
         project.sketchExtruded = false;
+        project.filletRadius = 0.0;
         selectedFace = -1;
         operationMessage = "Gotowe: otwarto STEP";
         updateMeshCenter();

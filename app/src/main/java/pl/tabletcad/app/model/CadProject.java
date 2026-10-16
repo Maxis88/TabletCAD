@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /** Versioned, geometry-independent source of truth for a TabletCAD document. */
 public final class CadProject {
-    public static final int CURRENT_SCHEMA = 3;
+    public static final int CURRENT_SCHEMA = 4;
 
     public final String id;
     public String name;
@@ -21,6 +21,7 @@ public final class CadProject {
     public String sketchPlane;
     public boolean sketchExtruded;
     public boolean importedStep;
+    public double filletRadius;
     public final List<SketchPrimitive> sketch = new ArrayList<>();
 
     public CadProject() {
@@ -47,6 +48,7 @@ public final class CadProject {
         root.put("sketchPlane", sketchPlane);
         root.put("sketchExtruded", sketchExtruded);
         root.put("importedStep", importedStep);
+        root.put("filletRadius", filletRadius);
         JSONObject feature = new JSONObject();
         feature.put("type", "extrude");
         feature.put("width", width);
@@ -70,6 +72,7 @@ public final class CadProject {
             root.optString("sketchPlane", "XY"));
         project.sketchExtruded = schema >= 2 && root.optBoolean("sketchExtruded", false);
         project.importedStep = schema >= 3 && root.optBoolean("importedStep", false);
+        project.filletRadius = schema >= 4 ? root.optDouble("filletRadius", 0.0) : 0.0;
         JSONArray entities = root.optJSONArray("sketch");
         if (entities != null) {
             for (int i = 0; i < entities.length(); i++) {

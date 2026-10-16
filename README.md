@@ -1,15 +1,15 @@
 # TabletCAD
 
 Tabletowa aplikacja CAD dla Androida 14+. Repozytorium zawiera obecnie etap
-`0.10.0-measure`: interaktywny interfejs obszaru roboczego, trwały dokument
+`0.11.0-fillet`: interaktywny interfejs obszaru roboczego, trwały dokument
 projektu, JNI/C++ dla
 `arm64-v8a` oraz Open CASCADE 8.0.1. Rdzeń tworzy i waliduje rzeczywistą bryłę
 B-Rep oraz wykonuje autotest zapisu i ponownego odczytu STEP.
 
-Gotowy APK znajduje się w `dist/TabletCAD-0.10.0-measure.apk`. Jest to podpisana
+Gotowy APK znajduje się w `dist/TabletCAD-0.11.0-fillet.apk`. Jest to podpisana
 wersja deweloperska dla tabletów ARM64 z Androidem 14 lub nowszym.
 
-Wersja 0.10.0 została zainstalowana i przetestowana dotykowo na HONOR MagicPad4 z MagicOS 10.
+Wersja 0.11.0 została zainstalowana i przetestowana dotykowo na HONOR MagicPad4 z MagicOS 10.
 Naprawia błąd inicjalizacji `WindowInsetsController` występujący przed utworzeniem
 widoku dekoracyjnego okna na tym urządzeniu.
 
@@ -41,8 +41,7 @@ rzuty prostokątne, podstawowy pomiar, natywny model B-Rep i techniczny
 zapis/odczyt STEP. Parametry bryły i encje szkicu mają UUID, są automatycznie
 zapisywane w wersjonowanym pliku `.tcad` i odtwarzane po ponownym uruchomieniu.
 Zapis używa pliku tymczasowego, synchronizacji i kopii odzyskiwania. Pełny solver szkicu, rozbudowane operacje
-parametryczne, selektor plików, STL, DXF i arkusze techniczne pozostają kolejnymi
-etapami implementacji.
+parametryczne i pełne arkusze techniczne pozostają kolejnymi etapami implementacji.
 
 Widok 3D korzysta z tessellacji rzeczywistej bryły `TopoDS_Shape` wykonanej przez
 OCCT. Selekcja ścian działa na trójkątach tej tessellacji, a normalna wybranej
@@ -61,3 +60,10 @@ Tryb pomiaru wybiera wierzchołki i punkty na widocznych krawędziach tessellacj
 oblicza odległość w przestrzeni 3D i wyświetla asocjacyjną linię wymiarową. Pomiar
 pozostaje przywiązany do modelu podczas obrotu kamery. Dla profilu kołowego panel
 pokazuje również promień i średnicę.
+
+Tryb modelowania udostępnia rzeczywiste zaokrąglenie wszystkich krawędzi brył
+utworzonych w TabletCAD. Promień jest podawany numerycznie w milimetrach,
+walidowany przez OCCT, zapisywany w dokumencie, obsługiwany przez undo/redo i
+uwzględniany w eksporcie STEP. Nieudana operacja nie zastępuje ostatniej poprawnej
+geometrii. Zaokrąglanie dowolnej topologii z importowanego STEP nie jest jeszcze
+udostępnione.

@@ -38,12 +38,12 @@ odzyskania historii z programu źródłowego.
 
 ## Etap bieżący
 
-Wersja `0.9.0-model-io` zawiera interaktywny interfejs, selekcję topologii,
+Wersja `0.11.0-fillet` zawiera interaktywny interfejs, selekcję topologii,
 kamerę orbitującą, lokalny układ płaszczyzny szkicu, JNI oraz Open CASCADE 8.0.1.
 Rdzeń tworzy prawdziwą bryłę B-Rep, waliduje jej topologię i raportuje liczbę
 ścian, krawędzi oraz wierzchołków. Natywny autotest wykonuje zapis bryły do STEP,
-ponowny import i kontrolę poprawności topologii. Udostępnienie wyboru pliku STEP
-w UI, edytor parametryczny oraz pozostałe formaty są kolejnymi funkcjami. Dokument
+ponowny import i kontrolę poprawności topologii. Edytor parametryczny i pełny
+moduł dokumentacji technicznej są kolejnymi funkcjami. Dokument
 projektu ma wersjonowany manifest JSON, UUID encji, atomowy autosave i kopię
 odzyskiwania. Obecnie przechowuje jedną płaszczyznę szkicu, encje linii,
 prostokąta i okręgu oraz parametry bazowego wyciągnięcia.
@@ -57,3 +57,9 @@ Warstwa plików używa Android Storage Access Framework. STEP jest tworzony i
 ponownie walidowany w OCCT, STL jest zapisywany binarnie z bieżącej tessellacji,
 a DXF zawiera encje szkicu w milimetrach. Import STEP trafia najpierw do pliku
 tymczasowego, przechodzi walidację B-Rep i dopiero potem atomowo zastępuje model.
+
+Zaokrąglenie jest parametryczną cechą dokumentu (`filletRadius`) wykonywaną przez
+`BRepFilletAPI_MakeFillet` na wszystkich krawędziach bryły utworzonej lokalnie.
+Wynik przechodzi analizę `BRepCheck_Analyzer` przed pokazaniem i zapisem. Ta sama
+rekonstrukcja cech jest używana przez tessellację, odtworzenie dokumentu i eksport
+STEP, dzięki czemu plik wymiany odpowiada geometrii widocznej w obszarze roboczym.

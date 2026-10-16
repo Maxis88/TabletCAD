@@ -31,7 +31,7 @@ Copy-Item (Join-Path $Root "third_party\occt\LICENSE_LGPL_21.txt") (Join-Path $B
 
 & $Aapt2 compile --dir (Join-Path $Root "app\src\main\res") -o (Join-Path $Build "res.zip")
 Assert-ExitCode "Resource compilation"
-& $Aapt2 link -o (Join-Path $Build "unsigned.apk") -I $AndroidJar --manifest (Join-Path $Root "app\src\main\AndroidManifest.xml") (Join-Path $Build "res.zip") -A (Join-Path $Build "assets") --min-sdk-version 34 --target-sdk-version 36 --version-code 15 --version-name "0.10.0-measure" --java (Join-Path $Build "generated") --auto-add-overlay
+& $Aapt2 link -o (Join-Path $Build "unsigned.apk") -I $AndroidJar --manifest (Join-Path $Root "app\src\main\AndroidManifest.xml") (Join-Path $Build "res.zip") -A (Join-Path $Build "assets") --min-sdk-version 34 --target-sdk-version 36 --version-code 16 --version-name "0.11.0-fillet" --java (Join-Path $Build "generated") --auto-add-overlay
 Assert-ExitCode "Resource linking"
 
 $Sources = Get-ChildItem (Join-Path $Root "app\src\main\java") -Recurse -Filter "*.java" | ForEach-Object { $_.FullName }
@@ -62,7 +62,7 @@ New-Item -ItemType Directory -Force -Path $NativePackage | Out-Null
 Copy-Item (Join-Path $NativeBuild "libtabletcad.so") $NativePackage -Force
 $OcctLibDir = Join-Path $Root "build\occt-arm64\lin64\clang\lib"
 $OcctLibraries = Get-ChildItem $OcctLibDir -Filter "*.so"
-if ($OcctLibraries.Count -ne 23) { throw "Expected 23 OCCT STEP dependency libraries, found $($OcctLibraries.Count)" }
+if ($OcctLibraries.Count -ne 25) { throw "Expected 25 OCCT STEP and fillet dependency libraries, found $($OcctLibraries.Count)" }
 $OcctLibraries | Copy-Item -Destination $NativePackage -Force
 Push-Location (Join-Path $Build "native-package")
 try {
@@ -77,7 +77,7 @@ if (-not (Test-Path $Keystore)) {
     Assert-ExitCode "Debug key creation"
 }
 
-$Apk = Join-Path $Out "TabletCAD-0.10.0-measure.apk"
+$Apk = Join-Path $Out "TabletCAD-0.11.0-fillet.apk"
 Copy-Item (Join-Path $Build "unsigned.apk") $Apk -Force
 & $Signer sign --ks $Keystore --ks-pass pass:android --key-pass pass:android --ks-key-alias tabletcad $Apk
 Assert-ExitCode "APK signing"

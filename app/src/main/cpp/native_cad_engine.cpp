@@ -11,6 +11,7 @@
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
@@ -20,6 +21,7 @@
 #include <TopoDS_Shape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopoDS_Edge.hxx>
 #include <TopLoc_Location.hxx>
 #include <Poly_Triangulation.hxx>
 #include <Poly_Triangle.hxx>
@@ -116,6 +118,29 @@ TopoDS_Shape extrudedProfile(const std::string& type, double x1, double y1,
     polygon.Close();
     const TopoDS_Face face = BRepBuilderAPI_MakeFace(polygon.Wire());
     return BRepPrimAPI_MakePrism(face, gp_Vec(normal) * depth).Shape();
+}
+
+TopoDS_Shape filletAllEdges(const TopoDS_Shape& source, double radius) {
+    if (source.IsNull() || radius <= 0.0) return {};
+    BRepFilletAPI_MakeFillet maker(source);
+    for (TopExp_Explorer explorer(source, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+        maker.Add(radius, TopoDS::Edge(explorer.Current()));
+    }
+    maker.Build();
+    if (!maker.IsDone()) return {};
+    const TopoDS_Shape result = maker.Shape();
+    if (result.IsNull() || !BRepCheck_Analyzer(result).IsValid()) return {};
+    return result;
+}
+
+jdoubleArray meshResult(JNIEnv* env, const TopoDS_Shape& shape) {
+    if (shape.IsNull() || !BRepCheck_Analyzer(shape).IsValid()) return env->NewDoubleArray(0);
+    const std::vector<double> mesh = tessellatedTriangles(shape);
+    jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(mesh.size()));
+    if (result != nullptr && !mesh.empty()) {
+        env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(mesh.size()), mesh.data());
+    }
+    return result;
 }
 }
 
@@ -243,6 +268,43 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeTessellateStep(
     }
 }
 
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_pl_tabletcad_app_NativeCadEngine_nativeFilletPrism(
+        JNIEnv* env, jclass, jdouble width, jdouble height, jdouble depth, jdouble radius) {
+    if (width <= 0.0 || height <= 0.0 || depth <= 0.0 || radius <= 0.0) {
+        return env->NewDoubleArray(0);
+    }
+    try {
+        return meshResult(env, filletAllEdges(BRepPrimAPI_MakeBox(width, height, depth).Shape(), radius));
+    } catch (const Standard_Failure&) {
+        return env->NewDoubleArray(0);
+    }
+}
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_pl_tabletcad_app_NativeCadEngine_nativeFilletSketchExtrusion(
+        JNIEnv* env, jclass, jstring javaType, jdouble x1, jdouble y1, jdouble x2,
+        jdouble y2, jdouble depth, jstring javaPlane, jdouble radius) {
+    if (javaType == nullptr || javaPlane == nullptr || depth <= 0.0 || radius <= 0.0) {
+        return env->NewDoubleArray(0);
+    }
+    const char* typeChars = env->GetStringUTFChars(javaType, nullptr);
+    const char* planeChars = env->GetStringUTFChars(javaPlane, nullptr);
+    if (typeChars == nullptr || planeChars == nullptr) {
+        if (typeChars != nullptr) env->ReleaseStringUTFChars(javaType, typeChars);
+        if (planeChars != nullptr) env->ReleaseStringUTFChars(javaPlane, planeChars);
+        return env->NewDoubleArray(0);
+    }
+    const std::string type(typeChars), plane(planeChars);
+    env->ReleaseStringUTFChars(javaType, typeChars);
+    env->ReleaseStringUTFChars(javaPlane, planeChars);
+    try {
+        return meshResult(env, filletAllEdges(extrudedProfile(type, x1, y1, x2, y2, depth, plane), radius));
+    } catch (const Standard_Failure&) {
+        return env->NewDoubleArray(0);
+    }
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_pl_tabletcad_app_NativeCadEngine_nativeStepRoundTrip(
         JNIEnv* env, jclass, jstring javaPath) {
@@ -282,7 +344,7 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_pl_tabletcad_app_NativeCadEngine_nativeExportStep(
         JNIEnv* env, jclass, jstring javaPath, jdouble width, jdouble height, jdouble depth,
         jboolean useProfile, jstring javaType, jdouble x1, jdouble y1, jdouble x2, jdouble y2,
-        jstring javaPlane) {
+        jstring javaPlane, jdouble filletRadius) {
     if (javaPath == nullptr || javaType == nullptr || javaPlane == nullptr || depth <= 0.0) {
         return JNI_FALSE;
     }
@@ -304,6 +366,10 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeExportStep(
         if (useProfile == JNI_TRUE) shape = extrudedProfile(type, x1, y1, x2, y2, depth, plane);
         else shape = BRepPrimAPI_MakeBox(width, height, depth).Shape();
         if (shape.IsNull() || !BRepCheck_Analyzer(shape).IsValid()) return JNI_FALSE;
+        if (filletRadius > 0.0) {
+            shape = filletAllEdges(shape, filletRadius);
+            if (shape.IsNull()) return JNI_FALSE;
+        }
         STEPControl_Writer writer;
         if (writer.Transfer(shape, STEPControl_AsIs) != IFSelect_RetDone
                 || writer.Write(path.c_str()) != IFSelect_RetDone) return JNI_FALSE;
