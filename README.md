@@ -1,15 +1,15 @@
 # TabletCAD
 
 Tabletowa aplikacja CAD dla Androida 14+. Repozytorium zawiera obecnie etap
-`0.12.0-toolbar`: interaktywny interfejs obszaru roboczego, trwały dokument
+`0.13.0-sketch-plane`: interaktywny interfejs obszaru roboczego, trwały dokument
 projektu, JNI/C++ dla
 `arm64-v8a` oraz Open CASCADE 8.0.1. Rdzeń tworzy i waliduje rzeczywistą bryłę
 B-Rep oraz wykonuje autotest zapisu i ponownego odczytu STEP.
 
-Gotowy APK znajduje się w `dist/TabletCAD-0.12.0-toolbar.apk`. Jest to podpisana
+Gotowy APK znajduje się w `dist/TabletCAD-0.13.0-sketch-plane.apk`. Jest to podpisana
 wersja deweloperska dla tabletów ARM64 z Androidem 14 lub nowszym.
 
-Wersja 0.12.0 została zainstalowana i przetestowana dotykowo na HONOR MagicPad4 z MagicOS 10.
+Wersja 0.13.0 została zainstalowana i przetestowana dotykowo na HONOR MagicPad4 z MagicOS 10.
 Naprawia błąd inicjalizacji `WindowInsetsController` występujący przed utworzeniem
 widoku dekoracyjnego okna na tym urządzeniu.
 
@@ -72,6 +72,10 @@ Narzędzia wyboru, tworzenia i edycji szkicu, wyciągnięcia, głębokości,
 zaokrąglenia, pomiaru i rysunku są dostępne jako kompaktowe ikony na górnym
 pasku. Dolny pasek jest osią historii cech modelu z miniaturami początku,
 szkicu, wyciągnięcia/importu i zaokrąglenia oraz kontrolkami undo/redo. Encje
-szkicu pozostają widoczne po opuszczeniu trybu szkicu. Narzędzie Edytuj pozwala
-wskazać linię, prostokąt lub okrąg, zmienić jego współrzędne numerycznie albo go
-usunąć; zmiana od razu przebudowuje powiązaną geometrię.
+szkicu są widoczne wyłącznie podczas tworzenia lub edycji właściwego szkicu.
+Każdy szkic zapisuje punkt początku oraz dwie osie lokalnej płaszczyzny, dlatego
+jest rzutowany razem z modelem, a nie nakładany na ekran. Zakrzywione ściany są
+odrzucane jako płaszczyzny szkicu. Narzędzie Edytuj pozwala wskazać linię,
+prostokąt lub okrąg, zmienić jego współrzędne numerycznie albo go usunąć; zmiana
+od razu przebudowuje powiązaną geometrię. Drzewo po lewej jest aktywne: otwiera
+szkic, wybiera model, edytuje zaokrąglenie i przywraca widok bazowy.

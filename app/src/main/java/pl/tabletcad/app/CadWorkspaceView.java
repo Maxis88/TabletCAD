@@ -6,6 +6,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PointF;
 import android.graphics.RectF;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
@@ -97,6 +98,9 @@ public final class CadWorkspaceView extends View {
     private double selectedNormalX;
     private double selectedNormalY;
     private double selectedNormalZ = 1.0;
+    private double selectedPointX;
+    private double selectedPointY;
+    private double selectedPointZ;
     private final List<ProjectedTriangle> projectedTriangles = new ArrayList<>();
     private MeasurePoint measureA;
     private MeasurePoint measureB;
@@ -106,6 +110,7 @@ public final class CadWorkspaceView extends View {
     private float workCenterX;
     private float workCenterY;
     private String selectedSketchId;
+    private String treeSelection = "Model";
 
     public CadWorkspaceView(Context context, FileRequestListener fileRequestListener) {
         super(context);
@@ -113,6 +118,15 @@ public final class CadWorkspaceView extends View {
         density = getResources().getDisplayMetrics().density;
         projectRepository = new ProjectRepository(context);
         project = projectRepository.loadOrCreate();
+        if (project.sketchPlane.startsWith("Ściana")
+                && Math.abs(project.sketchOriginX) < 1.0e-9
+                && Math.abs(project.sketchOriginY) < 1.0e-9
+                && Math.abs(project.sketchOriginZ) < 1.0e-9
+                && Math.abs(project.sketchUx - 1.0) < 1.0e-9
+                && Math.abs(project.sketchVy - 1.0) < 1.0e-9) {
+            project.sketchPlane = "XY";
+            project.setPrincipalSketchFrame("XY");
+        }
         modelWidth = project.width;
         modelHeight = project.height;
         modelDepth = project.depth;
@@ -129,9 +143,9 @@ public final class CadWorkspaceView extends View {
             @Override public boolean onDown(MotionEvent e) { return true; }
 
             @Override public boolean onSingleTapUp(MotionEvent e) {
-                float historyY = getHeight() - dp(96);
-                if (e.getX() <= dp(104) && e.getY() >= historyY) {
-                    if (e.getX() < dp(52)) undo(); else redo();
+                float historyY = getHeight() - dp(78);
+                if (e.getX() >= dp(224) && e.getX() <= dp(328) && e.getY() >= historyY) {
+                    if (e.getX() < dp(276)) undo(); else redo();
                     return true;
                 }
                 if (e.getY() <= dp(58) && e.getX() >= getWidth() - dp(190)) {
@@ -142,19 +156,40 @@ public final class CadWorkspaceView extends View {
                     if (fileRequestListener != null) fileRequestListener.requestOpenStep();
                     return true;
                 }
-                if (e.getY() >= dp(60) && e.getY() <= dp(126)
-                        && e.getX() >= dp(224) && e.getX() <= getWidth() - dp(18)) {
-                    float itemWidth = (getWidth() - dp(242)) / TOOL_IDS.length;
+                if (e.getY() >= dp(54) && e.getY() <= dp(104)
+                        && e.getX() >= dp(224) && e.getX() <= dp(224 + 68 * TOOL_IDS.length)) {
+                    float itemWidth = dp(68);
                     int tool = (int)((e.getX() - dp(224)) / itemWidth);
                     if (tool >= 0 && tool < TOOL_IDS.length) activateTopTool(TOOL_IDS[tool]);
                     return true;
                 }
-                if (e.getX() < dp(224) && e.getY() >= dp(224) && e.getY() <= dp(266)) {
+                if (e.getX() < dp(224) && e.getY() >= dp(180) && e.getY() <= dp(216)) {
+                    cameraYaw = -28f; cameraPitch = 22f; zoom = 1f; panX = panY = 0f;
+                    treeSelection = "Początek";
+                    mode = "Wybierz";
+                    invalidate();
+                    return true;
+                }
+                if (e.getX() < dp(224) && e.getY() >= dp(216) && e.getY() <= dp(252)) {
                     mode = "Edytuj szkic";
                     sketchPlaneChosen = true;
                     selectedSketchId = null;
+                    treeSelection = "Szkic";
                     alignToCurrentSketchPlane();
                     invalidate();
+                    return true;
+                }
+                if (e.getX() < dp(224) && e.getY() >= dp(252) && e.getY() <= dp(286)) {
+                    treeSelection = "Model";
+                    mode = "Wybierz";
+                    selectedSketchId = null;
+                    invalidate();
+                    return true;
+                }
+                if (project.filletRadius > 0.0 && e.getX() < dp(224)
+                        && e.getY() >= dp(286) && e.getY() <= dp(322)) {
+                    treeSelection = "Zaokrąglenie";
+                    showFilletEditor();
                     return true;
                 }
                 if (mode.equals("Szkic") && e.getX() > getWidth() - dp(234)) {
@@ -181,7 +216,8 @@ public final class CadWorkspaceView extends View {
                     if (face >= 0) {
                         selectedFace = face;
                         if (mode.equals("Szkic") && !sketchPlaneChosen) {
-                            chooseSketchPlane("Ściana " + (face + 1));
+                            if (isFacePlanar(face)) chooseSketchPlane("Ściana " + (face + 1));
+                            else operationMessage = "Wybierz płaską ścianę — powierzchnia jest zakrzywiona";
                         }
                         invalidate();
                     }
@@ -254,8 +290,8 @@ public final class CadWorkspaceView extends View {
         super.onDraw(canvas);
         float left = dp(224);
         float right = getWidth() - dp(252);
-        float top = dp(132);
-        float bottom = getHeight() - dp(104);
+        float top = dp(110);
+        float bottom = getHeight() - dp(84);
         workCenterX = (left + right) / 2f + panX;
         workCenterY = (top + bottom) / 2f + panY;
 
@@ -269,7 +305,7 @@ public final class CadWorkspaceView extends View {
             drawTechnicalViews(canvas, left, top, right, bottom);
         } else {
             drawNativeSolid(canvas, (left + right) / 2f + panX, (top + bottom) / 2f + panY);
-            if (!project.sketch.isEmpty() || (mode.equals("Szkic") && sketchPlaneChosen)) {
+            if ((mode.equals("Szkic") && sketchPlaneChosen) || mode.equals("Edytuj szkic")) {
                 drawSketch(canvas, left, right);
             }
             if (mode.equals("Zmierz")) drawDimensions(canvas, left, top, right, bottom);
@@ -281,41 +317,42 @@ public final class CadWorkspaceView extends View {
 
     private void drawTopBar(Canvas canvas) {
         paint.setColor(Color.rgb(16, 24, 32));
-        canvas.drawRect(0, 0, getWidth(), dp(128), paint);
+        canvas.drawRect(0, 0, getWidth(), dp(108), paint);
         text(canvas, "TabletCAD", dp(22), dp(35), 20, Color.WHITE, true);
         text(canvas, "Bez nazwy  •  zapisano lokalnie", dp(145), dp(34), 14, Color.rgb(190, 201, 210), false);
         pill(canvas, getWidth() - dp(312), dp(10), dp(124), dp(38), "Otwórz STEP", Color.rgb(44, 58, 70), Color.WHITE);
         pill(canvas, getWidth() - dp(172), dp(10), dp(152), dp(38), "Eksportuj", ACCENT, Color.WHITE);
-        float itemWidth = (getWidth() - dp(242)) / TOOL_IDS.length;
+        float itemWidth = dp(68);
         for (int i = 0; i < TOOL_IDS.length; i++) {
             float x = dp(224) + i * itemWidth;
             boolean active = isToolActive(TOOL_IDS[i]);
-            drawToolButton(canvas, x + dp(2), dp(60), itemWidth - dp(4), dp(62),
+            drawToolButton(canvas, x + dp(2), dp(54), itemWidth - dp(4), dp(48),
                 TOOL_IDS[i], TOOL_LABELS[i], active);
         }
     }
 
     private void drawLeftPanel(Canvas canvas, float left, float top, float bottom) {
         paint.setColor(PANEL);
-        canvas.drawRect(0, dp(128), left, getHeight(), paint);
-        text(canvas, "MODEL", dp(18), dp(155), 12, MUTED, true);
-        row(canvas, "▾  Dokument", dp(18), dp(184), true);
-        row(canvas, "   ◇  Początek", dp(18), dp(216), false);
-        row(canvas, "   ▱  Szkic 1  (" + project.sketch.size() + ")", dp(18), dp(250),
-            mode.equals("Szkic") || mode.equals("Edytuj szkic"));
-        row(canvas, project.importedStep ? "   ◈  Import STEP"
+        canvas.drawRect(0, dp(108), left, getHeight(), paint);
+        text(canvas, "MODEL", dp(18), dp(137), 12, MUTED, true);
+        row(canvas, "▾  Dokument", dp(18), dp(168), true);
+        treeRow(canvas, "Początek", "◇  Widok bazowy", dp(184), dp(216));
+        treeRow(canvas, "Szkic", "▱  Szkic 1  (" + project.sketch.size() + ")", dp(218), dp(252));
+        treeRow(canvas, "Model", project.importedStep ? "◈  Import STEP"
             : (project.sketchExtruded ? "   ◈  Wyciągnięcie szkicu" : "   ◈  Wyciągnięcie 1"),
-            dp(18), dp(284), true);
+            dp(252), dp(286));
         if (project.filletRadius > 0.0) {
-            row(canvas, String.format(java.util.Locale.US, "   ◒  Zaokrąglenie R%.2f", project.filletRadius),
-                dp(18), dp(318), true);
+            treeRow(canvas, "Zaokrąglenie",
+                String.format(java.util.Locale.US, "◒  Zaokrąglenie R%.2f", project.filletRadius),
+                dp(286), dp(322));
         }
+        text(canvas, "Dotknij elementu, aby go otworzyć", dp(18), dp(350), 9.5f, MUTED, false);
     }
 
     private void drawProperties(Canvas canvas, float right, float top, float bottom) {
         paint.setColor(PANEL);
-        canvas.drawRect(right, dp(128), getWidth(), getHeight(), paint);
-        text(canvas, "WŁAŚCIWOŚCI", right + dp(18), dp(155), 12, MUTED, true);
+        canvas.drawRect(right, dp(108), getWidth(), getHeight(), paint);
+        text(canvas, "WŁAŚCIWOŚCI", right + dp(18), dp(137), 12, MUTED, true);
         text(canvas, mode.equals("Szkic") ? "Płaszczyzna szkicu"
             : (mode.equals("Edytuj szkic") ? "Edycja szkicu"
             : (project.importedStep ? "Zaimportowany STEP"
@@ -359,8 +396,6 @@ public final class CadWorkspaceView extends View {
             nativePrism.length == 24 ? ACCENT : Color.rgb(205, 65, 65), true);
         text(canvas, modelInfo, right + dp(18), bottom - dp(60), 10, MUTED, false);
         text(canvas, stepStatus, right + dp(18), bottom - dp(38), 10, MUTED, false);
-        pill(canvas, right + dp(18), bottom + dp(2), dp(100), dp(38), "Zatwierdź", ACCENT, Color.WHITE);
-        pill(canvas, right + dp(128), bottom + dp(2), dp(92), dp(38), "Anuluj", Color.rgb(226, 232, 236), INK);
     }
 
     private void drawGrid(Canvas canvas, float left, float top, float right, float bottom) {
@@ -416,13 +451,55 @@ public final class CadWorkspaceView extends View {
     }
 
     private void drawSketchEntity(Canvas canvas, SketchPrimitive entity) {
+        boolean selected = entity.id.equals(selectedSketchId);
+        PointF p1 = projectSketchPoint(entity.x1, entity.y1);
+        PointF p2 = projectSketchPoint(entity.x2, entity.y2);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(selected ? 3.5f : 2f));
+        paint.setColor(selected ? Color.rgb(245, 145, 20) : Color.rgb(30, 105, 210));
+        if (entity.type.equals("Linia")) {
+            canvas.drawLine(p1.x, p1.y, p2.x, p2.y, paint);
+        } else if (entity.type.equals("Prostokąt")) {
+            PointF p3 = projectSketchPoint(entity.x2, entity.y1);
+            PointF p4 = projectSketchPoint(entity.x1, entity.y2);
+            Path path = new Path(); path.moveTo(p1.x, p1.y); path.lineTo(p3.x, p3.y);
+            path.lineTo(p2.x, p2.y); path.lineTo(p4.x, p4.y); path.close();
+            canvas.drawPath(path, paint);
+        } else {
+            double radius = Math.hypot(entity.x2 - entity.x1, entity.y2 - entity.y1);
+            Path circle = new Path();
+            for (int i = 0; i <= 48; i++) {
+                double angle = Math.PI * 2.0 * i / 48.0;
+                PointF point = projectSketchPoint(entity.x1 + radius * Math.cos(angle),
+                    entity.y1 + radius * Math.sin(angle));
+                if (i == 0) circle.moveTo(point.x, point.y); else circle.lineTo(point.x, point.y);
+            }
+            canvas.drawPath(circle, paint);
+        }
+        paint.setStyle(Paint.Style.FILL);
+        if (selected) {
+            paint.setColor(Color.rgb(245, 145, 20));
+            canvas.drawCircle(p1.x, p1.y, dp(5), paint);
+            canvas.drawCircle(p2.x, p2.y, dp(5), paint);
+        }
+    }
+
+    private PointF projectSketchPoint(double u, double v) {
+        double x = project.sketchOriginX + u * project.sketchUx + v * project.sketchVx;
+        double y = project.sketchOriginY + u * project.sketchUy + v * project.sketchVy;
+        double z = project.sketchOriginZ + u * project.sketchUz + v * project.sketchVz;
+        double yaw = Math.toRadians(cameraYaw), pitch = Math.toRadians(cameraPitch);
+        double cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
+        double cpitch = Math.cos(pitch), spitch = Math.sin(pitch);
+        x -= meshCenterX; y -= meshCenterY; z -= meshCenterZ;
+        double rx = x * cyaw + z * syaw;
+        double rz = -x * syaw + z * cyaw;
+        double ry = y * cpitch - rz * spitch;
+        double finalZ = y * spitch + rz * cpitch;
+        double perspective = 420.0 / (420.0 - finalZ);
         float scale = dp(3.2f) * zoom;
-        float x1 = workCenterX + (float)entity.x1 * scale;
-        float y1 = workCenterY - (float)entity.y1 * scale;
-        float x2 = workCenterX + (float)entity.x2 * scale;
-        float y2 = workCenterY - (float)entity.y2 * scale;
-        drawSketchPreview(canvas, entity.type, x1, y1, x2, y2,
-            entity.id.equals(selectedSketchId));
+        return new PointF(workCenterX + (float)(rx * scale * perspective),
+            workCenterY - (float)(ry * scale * perspective));
     }
 
     private void drawSketchPreview(Canvas canvas, String type, float x1, float y1, float x2, float y2) {
@@ -454,38 +531,56 @@ public final class CadWorkspaceView extends View {
     private void sketchEntitiesAdd(String type, float screenX1, float screenY1,
                                    float screenX2, float screenY2) {
         checkpoint();
-        float scale = dp(3.2f) * zoom;
-        double x1 = (screenX1 - workCenterX) / scale;
-        double y1 = (workCenterY - screenY1) / scale;
-        double x2 = (screenX2 - workCenterX) / scale;
-        double y2 = (workCenterY - screenY2) / scale;
+        double[] first = screenToSketch(screenX1, screenY1);
+        double[] second = screenToSketch(screenX2, screenY2);
+        double x1 = first[0], y1 = first[1], x2 = second[0], y2 = second[1];
         project.sketch.add(new SketchPrimitive(UUID.randomUUID().toString(), type, x1, y1, x2, y2));
         project.sketchExtruded = false;
         projectRepository.save(project);
     }
 
+    private double[] screenToSketch(float sx, float sy) {
+        PointF origin = projectSketchPoint(0.0, 0.0);
+        PointF unitU = projectSketchPoint(1.0, 0.0);
+        PointF unitV = projectSketchPoint(0.0, 1.0);
+        double ax = unitU.x - origin.x, ay = unitU.y - origin.y;
+        double bx = unitV.x - origin.x, by = unitV.y - origin.y;
+        double dx = sx - origin.x, dy = sy - origin.y;
+        double determinant = ax * by - ay * bx;
+        if (Math.abs(determinant) < 1.0e-9) return new double[] {0.0, 0.0};
+        return new double[] {(dx * by - dy * bx) / determinant,
+            (ax * dy - ay * dx) / determinant};
+    }
+
     private SketchPrimitive findSketchAt(float sx, float sy) {
-        float scale = dp(3.2f) * zoom;
         float tolerance = dp(16);
         SketchPrimitive best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
         for (SketchPrimitive entity : project.sketch) {
-            float x1 = workCenterX + (float)entity.x1 * scale;
-            float y1 = workCenterY - (float)entity.y1 * scale;
-            float x2 = workCenterX + (float)entity.x2 * scale;
-            float y2 = workCenterY - (float)entity.y2 * scale;
+            PointF first = projectSketchPoint(entity.x1, entity.y1);
+            PointF second = projectSketchPoint(entity.x2, entity.y2);
+            float x1 = first.x, y1 = first.y, x2 = second.x, y2 = second.y;
             double distance;
             if (entity.type.equals("Okrąg")) {
-                double radius = Math.hypot(x2 - x1, y2 - y1);
-                distance = Math.abs(Math.hypot(sx - x1, sy - y1) - radius);
+                double radius = Math.hypot(entity.x2 - entity.x1, entity.y2 - entity.y1);
+                distance = Double.POSITIVE_INFINITY;
+                PointF previous = projectSketchPoint(entity.x1 + radius, entity.y1);
+                for (int segment = 1; segment <= 32; segment++) {
+                    double angle = Math.PI * 2.0 * segment / 32.0;
+                    PointF next = projectSketchPoint(entity.x1 + radius * Math.cos(angle),
+                        entity.y1 + radius * Math.sin(angle));
+                    distance = Math.min(distance,
+                        distanceToSegment(sx, sy, previous.x, previous.y, next.x, next.y));
+                    previous = next;
+                }
             } else if (entity.type.equals("Prostokąt")) {
-                float minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
-                float minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+                PointF third = projectSketchPoint(entity.x2, entity.y1);
+                PointF fourth = projectSketchPoint(entity.x1, entity.y2);
                 distance = Math.min(Math.min(
-                    distanceToSegment(sx, sy, minX, minY, maxX, minY),
-                    distanceToSegment(sx, sy, maxX, minY, maxX, maxY)), Math.min(
-                    distanceToSegment(sx, sy, maxX, maxY, minX, maxY),
-                    distanceToSegment(sx, sy, minX, maxY, minX, minY)));
+                    distanceToSegment(sx, sy, x1, y1, third.x, third.y),
+                    distanceToSegment(sx, sy, third.x, third.y, x2, y2)), Math.min(
+                    distanceToSegment(sx, sy, x2, y2, fourth.x, fourth.y),
+                    distanceToSegment(sx, sy, fourth.x, fourth.y, x1, y1)));
             } else {
                 distance = distanceToSegment(sx, sy, x1, y1, x2, y2);
             }
@@ -644,9 +739,26 @@ public final class CadWorkspaceView extends View {
             selectedNormalX = best.nx;
             selectedNormalY = best.ny;
             selectedNormalZ = best.nz;
+            selectedPointX = (best.wx[0] + best.wx[1] + best.wx[2]) / 3.0 + meshCenterX;
+            selectedPointY = (best.wy[0] + best.wy[1] + best.wy[2]) / 3.0 + meshCenterY;
+            selectedPointZ = (best.wz[0] + best.wz[1] + best.wz[2]) / 3.0 + meshCenterZ;
             return best.faceId;
         }
         return -1;
+    }
+
+    private boolean isFacePlanar(int faceId) {
+        ProjectedTriangle reference = null;
+        for (ProjectedTriangle triangle : projectedTriangles) {
+            if (triangle.faceId != faceId) continue;
+            if (reference == null) reference = triangle;
+            else {
+                double dot = reference.nx * triangle.nx + reference.ny * triangle.ny
+                    + reference.nz * triangle.nz;
+                if (dot < 0.9995) return false;
+            }
+        }
+        return reference != null;
     }
 
     private boolean isVisibleCadEdge(ProjectedTriangle source, int edge) {
@@ -680,12 +792,16 @@ public final class CadWorkspaceView extends View {
         if (!plane.equals(project.sketchPlane)) project.sketch.clear();
         project.sketchPlane = plane;
         if (plane.equals("XY")) {
+            project.setPrincipalSketchFrame("XY");
             cameraYaw = 0f; cameraPitch = 0f; selectedFace = -1;
         } else if (plane.equals("XZ")) {
+            project.setPrincipalSketchFrame("XZ");
             cameraYaw = 0f; cameraPitch = 89f; selectedFace = -1;
         } else if (plane.equals("YZ")) {
+            project.setPrincipalSketchFrame("YZ");
             cameraYaw = 90f; cameraPitch = 0f; selectedFace = -1;
         } else {
+            setSelectedFaceSketchFrame();
             double yaw = Math.atan2(-selectedNormalX, selectedNormalZ);
             double rz = -selectedNormalX * Math.sin(yaw) + selectedNormalZ * Math.cos(yaw);
             cameraYaw = (float)Math.toDegrees(yaw);
@@ -693,6 +809,30 @@ public final class CadWorkspaceView extends View {
         }
         projectRepository.save(project);
         invalidate();
+    }
+
+    private void setSelectedFaceSketchFrame() {
+        double nx = selectedNormalX, ny = selectedNormalY, nz = selectedNormalZ;
+        double length = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        if (length < 1.0e-9) return;
+        nx /= length; ny /= length; nz /= length;
+        double rx = Math.abs(nz) < 0.9 ? 0.0 : 0.0;
+        double ry = Math.abs(nz) < 0.9 ? 0.0 : 1.0;
+        double rz = Math.abs(nz) < 0.9 ? 1.0 : 0.0;
+        double ux = ry * nz - rz * ny;
+        double uy = rz * nx - rx * nz;
+        double uz = rx * ny - ry * nx;
+        double uLength = Math.sqrt(ux * ux + uy * uy + uz * uz);
+        if (uLength < 1.0e-9) return;
+        ux /= uLength; uy /= uLength; uz /= uLength;
+        double vx = ny * uz - nz * uy;
+        double vy = nz * ux - nx * uz;
+        double vz = nx * uy - ny * ux;
+        project.sketchOriginX = selectedPointX;
+        project.sketchOriginY = selectedPointY;
+        project.sketchOriginZ = selectedPointZ;
+        project.sketchUx = ux; project.sketchUy = uy; project.sketchUz = uz;
+        project.sketchVx = vx; project.sketchVy = vy; project.sketchVz = vz;
     }
 
     private void showDepthEditor() {
@@ -879,7 +1019,7 @@ public final class CadWorkspaceView extends View {
 
     private boolean isInsideViewport(float x, float y) {
         return x >= dp(224) && x <= getWidth() - dp(252)
-            && y >= dp(132) && y <= getHeight() - dp(104);
+            && y >= dp(110) && y <= getHeight() - dp(84);
     }
 
     private void updateNativeModel() {
@@ -1166,32 +1306,34 @@ public final class CadWorkspaceView extends View {
     }
 
     private void drawTimeline(Canvas canvas) {
-        float top = getHeight() - dp(96);
+        float top = getHeight() - dp(78);
+        float left = dp(224);
+        float right = getWidth() - dp(252);
         paint.setColor(Color.rgb(16, 24, 32));
-        canvas.drawRect(0, top, getWidth(), getHeight(), paint);
-        text(canvas, "↶", dp(30), top + dp(42), 25, undoStack.isEmpty() ? MUTED : Color.WHITE, true, Paint.Align.CENTER);
-        text(canvas, "↷", dp(76), top + dp(42), 25, redoStack.isEmpty() ? MUTED : Color.WHITE, true, Paint.Align.CENTER);
-        text(canvas, "HISTORIA MODELU", dp(118), top + dp(24), 10, Color.rgb(145, 160, 172), true);
+        canvas.drawRect(left, top, right, getHeight(), paint);
+        text(canvas, "↶", left + dp(30), top + dp(37), 23, undoStack.isEmpty() ? MUTED : Color.WHITE, true, Paint.Align.CENTER);
+        text(canvas, "↷", left + dp(76), top + dp(37), 23, redoStack.isEmpty() ? MUTED : Color.WHITE, true, Paint.Align.CENTER);
+        text(canvas, "HISTORIA MODELU", left + dp(106), top + dp(18), 9, Color.rgb(145, 160, 172), true);
         List<String> features = new ArrayList<>();
         features.add("Początek");
         if (!project.sketch.isEmpty()) features.add("Szkic");
         if (project.importedStep) features.add("Import STEP");
         else if (project.sketchExtruded) features.add("Wyciągnięcie");
         if (project.filletRadius > 0.0) features.add("R" + String.format(java.util.Locale.US, "%.1f", project.filletRadius));
-        float startX = dp(130);
-        float gap = dp(92);
+        float startX = left + dp(116);
+        float gap = dp(82);
         paint.setStrokeWidth(dp(2));
         paint.setColor(Color.rgb(70, 86, 98));
         if (features.size() > 1) {
-            canvas.drawLine(startX + dp(22), top + dp(53),
-                startX + (features.size() - 1) * gap + dp(22), top + dp(53), paint);
+            canvas.drawLine(startX + dp(19), top + dp(43),
+                startX + (features.size() - 1) * gap + dp(19), top + dp(43), paint);
         }
         for (int i = 0; i < features.size(); i++) {
             float x = startX + i * gap;
             paint.setColor(i == features.size() - 1 ? ACCENT : Color.rgb(55, 72, 85));
-            canvas.drawRoundRect(new RectF(x, top + dp(32), x + dp(44), top + dp(74)), dp(8), dp(8), paint);
-            drawFeatureIcon(canvas, features.get(i), x + dp(22), top + dp(53), Color.WHITE);
-            text(canvas, features.get(i), x + dp(22), top + dp(88), 9,
+            canvas.drawRoundRect(new RectF(x, top + dp(24), x + dp(38), top + dp(62)), dp(7), dp(7), paint);
+            drawFeatureIcon(canvas, features.get(i), x + dp(19), top + dp(43), Color.WHITE);
+            text(canvas, features.get(i), x + dp(19), top + dp(73), 8,
                 Color.rgb(205, 214, 221), false, Paint.Align.CENTER);
         }
     }
@@ -1212,9 +1354,9 @@ public final class CadWorkspaceView extends View {
         if (tool.equals("Wybierz")) mode = "Wybierz";
         else if (tool.equals("Szkic")) {
             mode = "Szkic";
-            sketchPlaneChosen = !project.sketch.isEmpty();
-            if (sketchPlaneChosen) alignToCurrentSketchPlane();
-            else sketchPlane = "Wybierz płaszczyznę";
+            sketchPlaneChosen = false;
+            sketchPlane = "Wybierz płaszczyznę";
+            operationMessage = "Wybierz płaszczyznę lub ścianę modelu";
         } else if (tool.equals("Linia") || tool.equals("Prostokąt") || tool.equals("Okrąg")) {
             mode = "Szkic";
             sketchTool = tool;
@@ -1249,8 +1391,8 @@ public final class CadWorkspaceView extends View {
             String id, String label, boolean active) {
         paint.setColor(active ? ACCENT : Color.rgb(28, 40, 51));
         canvas.drawRoundRect(new RectF(x, y, x + w, y + h), dp(7), dp(7), paint);
-        drawToolIcon(canvas, id, x + w / 2f, y + dp(20), active ? Color.WHITE : Color.rgb(210, 220, 228));
-        text(canvas, label, x + w / 2f, y + dp(50), 8.5f,
+        drawToolIcon(canvas, id, x + w / 2f, y + dp(14), active ? Color.WHITE : Color.rgb(210, 220, 228));
+        text(canvas, label, x + w / 2f, y + dp(38), 7.5f,
             active ? Color.WHITE : Color.rgb(190, 201, 210), false, Paint.Align.CENTER);
     }
 
@@ -1314,6 +1456,17 @@ public final class CadWorkspaceView extends View {
 
     private void row(Canvas canvas, String value, float x, float y, boolean strong) {
         text(canvas, value, x, y, 14, INK, strong);
+    }
+
+    private void treeRow(Canvas canvas, String id, String value, float top, float bottom) {
+        if (id.equals(treeSelection)) {
+            paint.setColor(Color.rgb(226, 242, 240));
+            canvas.drawRoundRect(new RectF(dp(10), top, dp(214), bottom), dp(7), dp(7), paint);
+            paint.setColor(ACCENT);
+            canvas.drawRoundRect(new RectF(dp(10), top, dp(14), bottom), dp(2), dp(2), paint);
+        }
+        text(canvas, value, dp(26), top + dp(23), 12.5f, INK, id.equals(treeSelection));
+        text(canvas, "›", dp(198), top + dp(23), 15, MUTED, true, Paint.Align.CENTER);
     }
 
     private void pill(Canvas canvas, float x, float y, float w, float h, String value, int color, int textColor) {

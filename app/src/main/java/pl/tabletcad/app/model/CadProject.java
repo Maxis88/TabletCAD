@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /** Versioned, geometry-independent source of truth for a TabletCAD document. */
 public final class CadProject {
-    public static final int CURRENT_SCHEMA = 4;
+    public static final int CURRENT_SCHEMA = 5;
 
     public final String id;
     public String name;
@@ -22,6 +22,9 @@ public final class CadProject {
     public boolean sketchExtruded;
     public boolean importedStep;
     public double filletRadius;
+    public double sketchOriginX, sketchOriginY, sketchOriginZ;
+    public double sketchUx = 1.0, sketchUy, sketchUz;
+    public double sketchVx, sketchVy = 1.0, sketchVz;
     public final List<SketchPrimitive> sketch = new ArrayList<>();
 
     public CadProject() {
@@ -49,6 +52,11 @@ public final class CadProject {
         root.put("sketchExtruded", sketchExtruded);
         root.put("importedStep", importedStep);
         root.put("filletRadius", filletRadius);
+        JSONObject planeFrame = new JSONObject();
+        planeFrame.put("ox", sketchOriginX).put("oy", sketchOriginY).put("oz", sketchOriginZ);
+        planeFrame.put("ux", sketchUx).put("uy", sketchUy).put("uz", sketchUz);
+        planeFrame.put("vx", sketchVx).put("vy", sketchVy).put("vz", sketchVz);
+        root.put("sketchFrame", planeFrame);
         JSONObject feature = new JSONObject();
         feature.put("type", "extrude");
         feature.put("width", width);
@@ -73,6 +81,20 @@ public final class CadProject {
         project.sketchExtruded = schema >= 2 && root.optBoolean("sketchExtruded", false);
         project.importedStep = schema >= 3 && root.optBoolean("importedStep", false);
         project.filletRadius = schema >= 4 ? root.optDouble("filletRadius", 0.0) : 0.0;
+        if (schema >= 5 && root.has("sketchFrame")) {
+            JSONObject frame = root.getJSONObject("sketchFrame");
+            project.sketchOriginX = frame.optDouble("ox", 0.0);
+            project.sketchOriginY = frame.optDouble("oy", 0.0);
+            project.sketchOriginZ = frame.optDouble("oz", 0.0);
+            project.sketchUx = frame.optDouble("ux", 1.0);
+            project.sketchUy = frame.optDouble("uy", 0.0);
+            project.sketchUz = frame.optDouble("uz", 0.0);
+            project.sketchVx = frame.optDouble("vx", 0.0);
+            project.sketchVy = frame.optDouble("vy", 1.0);
+            project.sketchVz = frame.optDouble("vz", 0.0);
+        } else {
+            project.setPrincipalSketchFrame(project.sketchPlane);
+        }
         JSONArray entities = root.optJSONArray("sketch");
         if (entities != null) {
             for (int i = 0; i < entities.length(); i++) {
@@ -80,5 +102,19 @@ public final class CadProject {
             }
         }
         return project;
+    }
+
+    public void setPrincipalSketchFrame(String plane) {
+        sketchOriginX = sketchOriginY = sketchOriginZ = 0.0;
+        if ("XZ".equals(plane)) {
+            sketchUx = 1.0; sketchUy = 0.0; sketchUz = 0.0;
+            sketchVx = 0.0; sketchVy = 0.0; sketchVz = 1.0;
+        } else if ("YZ".equals(plane)) {
+            sketchUx = 0.0; sketchUy = 1.0; sketchUz = 0.0;
+            sketchVx = 0.0; sketchVy = 0.0; sketchVz = 1.0;
+        } else {
+            sketchUx = 1.0; sketchUy = 0.0; sketchUz = 0.0;
+            sketchVx = 0.0; sketchVy = 1.0; sketchVz = 0.0;
+        }
     }
 }

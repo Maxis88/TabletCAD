@@ -38,7 +38,7 @@ odzyskania historii z programu źródłowego.
 
 ## Etap bieżący
 
-Wersja `0.12.0-toolbar` zawiera interaktywny interfejs, selekcję topologii,
+Wersja `0.13.0-sketch-plane` zawiera interaktywny interfejs, selekcję topologii,
 kamerę orbitującą, lokalny układ płaszczyzny szkicu, JNI oraz Open CASCADE 8.0.1.
 Rdzeń tworzy prawdziwą bryłę B-Rep, waliduje jej topologię i raportuje liczbę
 ścian, krawędzi oraz wierzchołków. Natywny autotest wykonuje zapis bryły do STEP,
@@ -66,7 +66,8 @@ STEP, dzięki czemu plik wymiany odpowiada geometrii widocznej w obszarze robocz
 
 Interfejs operacji jest rozdzielony na górny pasek ikon narzędzi oraz dolną oś
 cech dokumentu. Oś nie przełącza trybów — pokazuje trwałą kolejność Początek →
-Szkic → Wyciągnięcie/Import → Zaokrąglenie. Szkic nie jest ukrywany po zmianie
-narzędzia. Wskazanie encji w trybie Edytuj otwiera edycję jej lokalnych
+Szkic → Wyciągnięcie/Import → Zaokrąglenie. Szkic jest renderowany tylko podczas
+tworzenia lub edycji i używa zapisanego układu `origin + u * U + v * V`, więc
+pozostaje geometrycznie związany ze swoją płaszczyzną. Wskazanie encji w trybie Edytuj otwiera edycję jej lokalnych
 współrzędnych; zapis tworzy migawkę undo, przebudowuje OCCT i dopiero po poprawnej
 walidacji utrwala dokument.
