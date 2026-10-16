@@ -1,15 +1,15 @@
 # TabletCAD
 
 Tabletowa aplikacja CAD dla Androida 14+. Repozytorium zawiera obecnie etap
-`0.9.1-history`: interaktywny interfejs obszaru roboczego, trwały dokument
+`0.10.0-measure`: interaktywny interfejs obszaru roboczego, trwały dokument
 projektu, JNI/C++ dla
 `arm64-v8a` oraz Open CASCADE 8.0.1. Rdzeń tworzy i waliduje rzeczywistą bryłę
 B-Rep oraz wykonuje autotest zapisu i ponownego odczytu STEP.
 
-Gotowy APK znajduje się w `dist/TabletCAD-0.9.1-history.apk`. Jest to podpisana
+Gotowy APK znajduje się w `dist/TabletCAD-0.10.0-measure.apk`. Jest to podpisana
 wersja deweloperska dla tabletów ARM64 z Androidem 14 lub nowszym.
 
-Wersja 0.9.1 została zainstalowana i przetestowana dotykowo na HONOR MagicPad4 z MagicOS 10.
+Wersja 0.10.0 została zainstalowana i przetestowana dotykowo na HONOR MagicPad4 z MagicOS 10.
 Naprawia błąd inicjalizacji `WindowInsetsController` występujący przed utworzeniem
 widoku dekoracyjnego okna na tym urządzeniu.
 
@@ -56,3 +56,8 @@ tessellowany przez OCCT i zachowywany w dokumencie projektu.
 Strzałki historii wykonują rzeczywiste undo/redo całego dokumentu (do 50 migawek)
 dla szkicu, płaszczyzny, parametrów, wyciągnięcia i importu. Przywrócenie historii
 ponownie przelicza geometrię OCCT i zapisuje odzyskany stan.
+
+Tryb pomiaru wybiera wierzchołki i punkty na widocznych krawędziach tessellacji,
+oblicza odległość w przestrzeni 3D i wyświetla asocjacyjną linię wymiarową. Pomiar
+pozostaje przywiązany do modelu podczas obrotu kamery. Dla profilu kołowego panel
+pokazuje również promień i średnicę.

@@ -90,6 +90,9 @@ public final class CadWorkspaceView extends View {
     private double selectedNormalY;
     private double selectedNormalZ = 1.0;
     private final List<ProjectedTriangle> projectedTriangles = new ArrayList<>();
+    private MeasurePoint measureA;
+    private MeasurePoint measureB;
+    private String measuredEdgeText = "";
     private float touchDownX;
     private float touchDownY;
     private float workCenterX;
@@ -167,6 +170,10 @@ public final class CadWorkspaceView extends View {
                     else if (e.getY() >= dp(390) && e.getY() <= dp(450)) chooseSketchPlane("XZ");
                     else if (e.getY() >= dp(458) && e.getY() <= dp(518)) chooseSketchPlane("YZ");
                 } else if (isInsideViewport(e.getX(), e.getY())) {
+                    if (mode.equals("Zmierz")) {
+                        handleMeasureTap(e.getX(), e.getY());
+                        return true;
+                    }
                     int face = findFaceAt(e.getX(), e.getY());
                     if (face >= 0) {
                         selectedFace = face;
@@ -185,7 +192,7 @@ public final class CadWorkspaceView extends View {
                     panY -= dy;
                     invalidate();
                 } else if (!scaleGestures.isInProgress()
-                        && (mode.equals("Wybierz") || mode.equals("Modeluj"))) {
+                        && (mode.equals("Wybierz") || mode.equals("Modeluj") || mode.equals("Zmierz"))) {
                     cameraYaw -= dx * 0.22f;
                     cameraPitch = Math.max(-89f, Math.min(89f, cameraPitch - dy * 0.22f));
                     invalidate();
@@ -318,6 +325,21 @@ public final class CadWorkspaceView extends View {
             pill(canvas, right + dp(18), dp(390), dp(202), dp(52), "Płaszczyzna XZ", Color.rgb(226, 232, 236), INK);
             pill(canvas, right + dp(18), dp(458), dp(202), dp(52), "Płaszczyzna YZ", Color.rgb(226, 232, 236), INK);
             text(canvas, "lub dotknij płaskiej ściany bryły", right + dp(18), dp(542), 10, MUTED, false);
+        } else if (mode.equals("Zmierz")) {
+            text(canvas, "Wybierz dwa wierzchołki", right + dp(18), dp(332), 11, MUTED, true);
+            text(canvas, "lub punkty na krawędziach", right + dp(18), dp(352), 11, MUTED, false);
+            if (measureA != null) labelValue(canvas, right, "Punkt A", measureA.kind, dp(382));
+            if (measureA != null && measureB != null) {
+                labelValue(canvas, right, "Odległość", formatMm(measureA.distanceTo(measureB)), dp(452));
+            } else if (!measuredEdgeText.isEmpty()) {
+                labelValue(canvas, right, "Krawędź", measuredEdgeText, dp(452));
+            }
+            SketchPrimitive profile = latestClosedProfile();
+            if (profile != null && profile.type.equals("Okrąg")) {
+                double radius = Math.hypot(profile.x2 - profile.x1, profile.y2 - profile.y1);
+                text(canvas, "R = " + formatMm(radius), right + dp(18), dp(532), 12, ACCENT, true);
+                text(canvas, "Ø = " + formatMm(radius * 2.0), right + dp(18), dp(556), 12, ACCENT, true);
+            }
         } else {
             labelValue(canvas, right, "Tryb", mode, dp(302));
         }
@@ -461,6 +483,20 @@ public final class CadWorkspaceView extends View {
             }
             projectedTriangles.add(triangle);
         }
+        projectMeasurePoint(measureA, cx, cy, scale, cyaw, syaw, cpitch, spitch);
+        projectMeasurePoint(measureB, cx, cy, scale, cyaw, syaw, cpitch, spitch);
+    }
+
+    private void projectMeasurePoint(MeasurePoint point, float cx, float cy, float scale,
+            double cyaw, double syaw, double cpitch, double spitch) {
+        if (point == null) return;
+        double rx = point.x * cyaw + point.z * syaw;
+        double rz = -point.x * syaw + point.z * cyaw;
+        double ry = point.y * cpitch - rz * spitch;
+        double finalZ = point.y * spitch + rz * cpitch;
+        double perspective = 420.0 / (420.0 - finalZ);
+        point.sx = cx + (float)(rx * scale * perspective);
+        point.sy = cy - (float)(ry * scale * perspective);
     }
 
     private int meshFaceColor(ProjectedTriangle triangle) {
@@ -557,19 +593,95 @@ public final class CadWorkspaceView extends View {
     }
 
     private void drawDimensions(Canvas canvas, float left, float top, float right, float bottom) {
-        float cx = (left + right) / 2f + panX;
-        float cy = (top + bottom) / 2f + panY;
-        float w = dp((float)Math.min(320.0, modelWidth * 3.0)) * zoom;
-        float h = dp((float)Math.min(230.0, modelHeight * 3.0)) * zoom;
+        if (measureA == null) {
+            text(canvas, "Dotknij wierzchołka lub krawędzi", (left + right) / 2f,
+                top + dp(68), 14, INK, true, Paint.Align.CENTER);
+            return;
+        }
         paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(dp(1.5f));
+        paint.setStrokeWidth(dp(2f));
         paint.setColor(Color.rgb(45, 90, 190));
-        canvas.drawLine(cx - w / 2, cy + h / 2 + dp(32), cx + w / 2, cy + h / 2 + dp(32), paint);
-        canvas.drawLine(cx - w / 2, cy + h / 2 + dp(22), cx - w / 2, cy + h / 2 + dp(42), paint);
-        canvas.drawLine(cx + w / 2, cy + h / 2 + dp(22), cx + w / 2, cy + h / 2 + dp(42), paint);
+        canvas.drawCircle(measureA.sx, measureA.sy, dp(7), paint);
+        if (measureB != null) {
+            canvas.drawCircle(measureB.sx, measureB.sy, dp(7), paint);
+            canvas.drawLine(measureA.sx, measureA.sy, measureB.sx, measureB.sy, paint);
+        }
         paint.setStyle(Paint.Style.FILL);
-        text(canvas, String.format(java.util.Locale.US, "%.2f mm", modelWidth), cx, cy + h / 2 + dp(27),
-            12, Color.rgb(45, 90, 190), true, Paint.Align.CENTER);
+        if (measureB != null) {
+            float mx = (measureA.sx + measureB.sx) / 2f;
+            float my = (measureA.sy + measureB.sy) / 2f - dp(12);
+            text(canvas, formatMm(measureA.distanceTo(measureB)), mx, my,
+                12, Color.rgb(45, 90, 190), true, Paint.Align.CENTER);
+        }
+    }
+
+    private void handleMeasureTap(float x, float y) {
+        MeasurePoint picked = nearestMeasurePoint(x, y);
+        if (picked == null) {
+            measuredEdgeText = "Brak krawędzi w zasięgu";
+            invalidate();
+            return;
+        }
+        if (measureA == null || measureB != null) {
+            measureA = picked;
+            measureB = null;
+        } else {
+            measureB = picked;
+        }
+        measuredEdgeText = picked.edgeLength > 0.0 ? formatMm(picked.edgeLength) : "";
+        invalidate();
+    }
+
+    private MeasurePoint nearestMeasurePoint(float x, float y) {
+        MeasurePoint bestVertex = null;
+        double bestVertexDistance = dp(15);
+        for (ProjectedTriangle triangle : projectedTriangles) {
+            for (int i = 0; i < 3; i++) {
+                double screenDistance = Math.hypot(x - triangle.sx[i], y - triangle.sy[i]);
+                if (screenDistance < bestVertexDistance) {
+                    bestVertexDistance = screenDistance;
+                    bestVertex = new MeasurePoint(triangle.wx[i], triangle.wy[i], triangle.wz[i],
+                        triangle.sx[i], triangle.sy[i], "Wierzchołek", 0.0);
+                }
+            }
+        }
+        if (bestVertex != null) return bestVertex;
+
+        MeasurePoint bestEdge = null;
+        double bestEdgeDistance = dp(13);
+        for (ProjectedTriangle triangle : projectedTriangles) {
+            for (int edge = 0; edge < 3; edge++) {
+                if (!isVisibleCadEdge(triangle, edge)) continue;
+                int next = (edge + 1) % 3;
+                double dx = triangle.sx[next] - triangle.sx[edge];
+                double dy = triangle.sy[next] - triangle.sy[edge];
+                double lengthSquared = dx * dx + dy * dy;
+                if (lengthSquared < 1.0e-8) continue;
+                double t = ((x - triangle.sx[edge]) * dx + (y - triangle.sy[edge]) * dy) / lengthSquared;
+                t = Math.max(0.0, Math.min(1.0, t));
+                float sx = triangle.sx[edge] + (float)(t * dx);
+                float sy = triangle.sy[edge] + (float)(t * dy);
+                double screenDistance = Math.hypot(x - sx, y - sy);
+                if (screenDistance < bestEdgeDistance) {
+                    double wx = triangle.wx[edge] + t * (triangle.wx[next] - triangle.wx[edge]);
+                    double wy = triangle.wy[edge] + t * (triangle.wy[next] - triangle.wy[edge]);
+                    double wz = triangle.wz[edge] + t * (triangle.wz[next] - triangle.wz[edge]);
+                    double edgeLength = Math.sqrt(
+                        square(triangle.wx[next] - triangle.wx[edge])
+                        + square(triangle.wy[next] - triangle.wy[edge])
+                        + square(triangle.wz[next] - triangle.wz[edge]));
+                    bestEdgeDistance = screenDistance;
+                    bestEdge = new MeasurePoint(wx, wy, wz, sx, sy, "Krawędź", edgeLength);
+                }
+            }
+        }
+        return bestEdge;
+    }
+
+    private static double square(double value) { return value * value; }
+
+    private String formatMm(double value) {
+        return String.format(java.util.Locale.US, "%.3f mm", value);
     }
 
     private void drawTechnicalViews(Canvas canvas, float left, float top, float right, float bottom) {
@@ -839,6 +951,24 @@ public final class CadWorkspaceView extends View {
 
         private static float sign(float px, float py, float ax, float ay, float bx, float by) {
             return (px - bx) * (ay - by) - (ax - bx) * (py - by);
+        }
+    }
+
+    private static final class MeasurePoint {
+        final double x, y, z;
+        float sx, sy;
+        final String kind;
+        final double edgeLength;
+
+        MeasurePoint(double x, double y, double z, float sx, float sy, String kind, double edgeLength) {
+            this.x = x; this.y = y; this.z = z;
+            this.sx = sx; this.sy = sy;
+            this.kind = kind;
+            this.edgeLength = edgeLength;
+        }
+
+        double distanceTo(MeasurePoint other) {
+            return Math.sqrt(square(other.x - x) + square(other.y - y) + square(other.z - z));
         }
     }
 
