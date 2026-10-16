@@ -17,6 +17,8 @@ import android.text.InputType;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -77,7 +79,9 @@ public final class CadWorkspaceView extends View {
     private boolean sketching;
     private String sketchTool = "Prostokąt";
     private final ProjectRepository projectRepository;
-    private final CadProject project;
+    private CadProject project;
+    private final Deque<String> undoStack = new ArrayDeque<>();
+    private final Deque<String> redoStack = new ArrayDeque<>();
     private final FileRequestListener fileRequestListener;
     private boolean sketchPlaneChosen;
     private String sketchPlane = "Nie wybrano";
@@ -119,6 +123,11 @@ public final class CadWorkspaceView extends View {
             @Override public boolean onDown(MotionEvent e) { return true; }
 
             @Override public boolean onSingleTapUp(MotionEvent e) {
+                float historyY = getHeight() - dp(178);
+                if (e.getX() <= dp(96) && e.getY() >= historyY && e.getY() <= historyY + dp(55)) {
+                    if (e.getX() < dp(52)) undo(); else redo();
+                    return true;
+                }
                 if (e.getY() <= dp(58) && e.getX() >= getWidth() - dp(190)) {
                     showExportPicker();
                     return true;
@@ -280,7 +289,9 @@ public final class CadWorkspaceView extends View {
         paint.setColor(Color.rgb(232, 236, 239));
         canvas.drawRect(dp(18), bottom - dp(74), left - dp(18), bottom - dp(73), paint);
         text(canvas, "HISTORIA", dp(18), bottom - dp(48), 12, MUTED, true);
-        text(canvas, "◀   ▶     100%", dp(18), bottom - dp(17), 14, INK, false);
+        text(canvas, "◀", dp(18), bottom - dp(17), 16, undoStack.isEmpty() ? MUTED : ACCENT, true);
+        text(canvas, "▶", dp(58), bottom - dp(17), 16, redoStack.isEmpty() ? MUTED : ACCENT, true);
+        text(canvas, "100%", dp(96), bottom - dp(17), 14, INK, false);
     }
 
     private void drawProperties(Canvas canvas, float right, float top, float bottom) {
@@ -405,6 +416,7 @@ public final class CadWorkspaceView extends View {
 
     private void sketchEntitiesAdd(String type, float screenX1, float screenY1,
                                    float screenX2, float screenY2) {
+        checkpoint();
         float scale = dp(3.2f) * zoom;
         double x1 = (screenX1 - workCenterX) / scale;
         double y1 = (workCenterY - screenY1) / scale;
@@ -495,6 +507,7 @@ public final class CadWorkspaceView extends View {
     }
 
     private void chooseSketchPlane(String plane) {
+        if (!plane.equals(project.sketchPlane) || !sketchPlaneChosen) checkpoint();
         sketchPlane = plane;
         sketchPlaneChosen = true;
         sketchRect = null;
@@ -529,6 +542,7 @@ public final class CadWorkspaceView extends View {
                 try {
                     double value = Double.parseDouble(input.getText().toString().replace(',', '.'));
                     if (value >= 0.1 && value <= 5000.0) {
+                        checkpoint();
                         modelDepth = value;
                         project.depth = value;
                         updateNativeModel();
@@ -613,6 +627,7 @@ public final class CadWorkspaceView extends View {
                 || project.sketchPlane.equals("YZ"))) {
             operationMessage = "Wyciąganie na ścianie: kolejny etap";
         } else {
+            checkpoint();
             project.sketchExtruded = true;
             project.importedStep = false;
             updateNativeModel();
@@ -690,6 +705,7 @@ public final class CadWorkspaceView extends View {
     public boolean activateImportedStep() {
         double[] imported = NativeCadEngine.tessellateStep(projectRepository.importedStepFile().getAbsolutePath());
         if (imported.length == 0) return false;
+        checkpoint();
         nativeMesh = imported;
         project.importedStep = true;
         project.sketchExtruded = false;
@@ -700,6 +716,50 @@ public final class CadWorkspaceView extends View {
         projectRepository.save(project);
         invalidate();
         return true;
+    }
+
+    private void checkpoint() {
+        try {
+            undoStack.push(project.toJson().toString());
+            while (undoStack.size() > 50) undoStack.removeLast();
+            redoStack.clear();
+        } catch (Exception ignored) {
+            // A failed snapshot must not corrupt the current document.
+        }
+    }
+
+    private void undo() {
+        if (undoStack.isEmpty()) return;
+        try {
+            redoStack.push(project.toJson().toString());
+            restoreSnapshot(undoStack.pop());
+        } catch (Exception ignored) {
+            operationMessage = "Nie udało się cofnąć operacji";
+        }
+    }
+
+    private void redo() {
+        if (redoStack.isEmpty()) return;
+        try {
+            undoStack.push(project.toJson().toString());
+            restoreSnapshot(redoStack.pop());
+        } catch (Exception ignored) {
+            operationMessage = "Nie udało się ponowić operacji";
+        }
+    }
+
+    private void restoreSnapshot(String snapshot) throws Exception {
+        project = CadProject.fromJson(new org.json.JSONObject(snapshot));
+        modelWidth = project.width;
+        modelHeight = project.height;
+        modelDepth = project.depth;
+        sketchPlane = project.sketchPlane;
+        sketchPlaneChosen = true;
+        selectedFace = -1;
+        updateNativeModel();
+        projectRepository.save(project);
+        operationMessage = "Gotowe: historia przywrócona";
+        invalidate();
     }
 
     public void writeBinaryStl(OutputStream output) throws IOException {
