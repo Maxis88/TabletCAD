@@ -7,6 +7,10 @@
 #include <BRepBndLib.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
@@ -19,6 +23,10 @@
 #include <TopLoc_Location.hxx>
 #include <Poly_Triangulation.hxx>
 #include <Poly_Triangle.hxx>
+#include <gp_Ax2.hxx>
+#include <gp_Dir.hxx>
+#include <gp_Pnt.hxx>
+#include <gp_Vec.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
 #include <IFSelect_ReturnStatus.hxx>
@@ -77,6 +85,37 @@ std::vector<double> tessellatedTriangles(const TopoDS_Shape& shape) {
         }
     }
     return packed;
+}
+
+TopoDS_Shape extrudedProfile(const std::string& type, double x1, double y1,
+                            double x2, double y2, double depth, const std::string& plane) {
+    gp_Dir normal(0.0, 0.0, 1.0);
+    if (plane == "XZ") normal = gp_Dir(0.0, 1.0, 0.0);
+    else if (plane == "YZ") normal = gp_Dir(1.0, 0.0, 0.0);
+
+    auto pointOnPlane = [&plane](double u, double v) {
+        if (plane == "XZ") return gp_Pnt(u, 0.0, v);
+        if (plane == "YZ") return gp_Pnt(0.0, u, v);
+        return gp_Pnt(u, v, 0.0);
+    };
+
+    if (type == "Okrąg") {
+        const double radius = std::hypot(x2 - x1, y2 - y1);
+        if (radius <= 1.0e-6) return {};
+        return BRepPrimAPI_MakeCylinder(gp_Ax2(pointOnPlane(x1, y1), normal), radius, depth).Shape();
+    }
+
+    const double xmin = std::min(x1, x2), xmax = std::max(x1, x2);
+    const double ymin = std::min(y1, y2), ymax = std::max(y1, y2);
+    if (xmax - xmin <= 1.0e-6 || ymax - ymin <= 1.0e-6) return {};
+    BRepBuilderAPI_MakePolygon polygon;
+    polygon.Add(pointOnPlane(xmin, ymin));
+    polygon.Add(pointOnPlane(xmax, ymin));
+    polygon.Add(pointOnPlane(xmax, ymax));
+    polygon.Add(pointOnPlane(xmin, ymax));
+    polygon.Close();
+    const TopoDS_Face face = BRepBuilderAPI_MakeFace(polygon.Wire());
+    return BRepPrimAPI_MakePrism(face, gp_Vec(normal) * depth).Shape();
 }
 }
 
@@ -149,6 +188,61 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeTessellatePrism(
     }
 }
 
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_pl_tabletcad_app_NativeCadEngine_nativeTessellateSketchExtrusion(
+        JNIEnv* env, jclass, jstring javaType, jdouble x1, jdouble y1, jdouble x2,
+        jdouble y2, jdouble depth, jstring javaPlane) {
+    if (javaType == nullptr || javaPlane == nullptr || depth <= 0.0) return env->NewDoubleArray(0);
+    const char* typeChars = env->GetStringUTFChars(javaType, nullptr);
+    const char* planeChars = env->GetStringUTFChars(javaPlane, nullptr);
+    if (typeChars == nullptr || planeChars == nullptr) {
+        if (typeChars != nullptr) env->ReleaseStringUTFChars(javaType, typeChars);
+        if (planeChars != nullptr) env->ReleaseStringUTFChars(javaPlane, planeChars);
+        return env->NewDoubleArray(0);
+    }
+    const std::string type(typeChars), plane(planeChars);
+    env->ReleaseStringUTFChars(javaType, typeChars);
+    env->ReleaseStringUTFChars(javaPlane, planeChars);
+    try {
+        const TopoDS_Shape shape = extrudedProfile(type, x1, y1, x2, y2, depth, plane);
+        if (shape.IsNull() || !BRepCheck_Analyzer(shape).IsValid()) return env->NewDoubleArray(0);
+        const std::vector<double> mesh = tessellatedTriangles(shape);
+        jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(mesh.size()));
+        if (result != nullptr && !mesh.empty()) {
+            env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(mesh.size()), mesh.data());
+        }
+        return result;
+    } catch (const Standard_Failure&) {
+        return env->NewDoubleArray(0);
+    }
+}
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_pl_tabletcad_app_NativeCadEngine_nativeTessellateStep(
+        JNIEnv* env, jclass, jstring javaPath) {
+    if (javaPath == nullptr) return env->NewDoubleArray(0);
+    const char* pathChars = env->GetStringUTFChars(javaPath, nullptr);
+    if (pathChars == nullptr) return env->NewDoubleArray(0);
+    const std::string path(pathChars);
+    env->ReleaseStringUTFChars(javaPath, pathChars);
+    try {
+        STEPControl_Reader reader;
+        if (reader.ReadFile(path.c_str()) != IFSelect_RetDone || reader.TransferRoots() <= 0) {
+            return env->NewDoubleArray(0);
+        }
+        const TopoDS_Shape shape = reader.OneShape();
+        if (shape.IsNull() || !BRepCheck_Analyzer(shape).IsValid()) return env->NewDoubleArray(0);
+        const std::vector<double> mesh = tessellatedTriangles(shape);
+        jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(mesh.size()));
+        if (result != nullptr && !mesh.empty()) {
+            env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(mesh.size()), mesh.data());
+        }
+        return result;
+    } catch (const Standard_Failure&) {
+        return env->NewDoubleArray(0);
+    }
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_pl_tabletcad_app_NativeCadEngine_nativeStepRoundTrip(
         JNIEnv* env, jclass, jstring javaPath) {
@@ -181,5 +275,45 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeStepRoundTrip(
         return env->NewStringUTF("STEP: zapis i odczyt aktywne");
     } catch (const Standard_Failure&) {
         return env->NewStringUTF("STEP: wyjątek jądra CAD");
+    }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_pl_tabletcad_app_NativeCadEngine_nativeExportStep(
+        JNIEnv* env, jclass, jstring javaPath, jdouble width, jdouble height, jdouble depth,
+        jboolean useProfile, jstring javaType, jdouble x1, jdouble y1, jdouble x2, jdouble y2,
+        jstring javaPlane) {
+    if (javaPath == nullptr || javaType == nullptr || javaPlane == nullptr || depth <= 0.0) {
+        return JNI_FALSE;
+    }
+    const char* pathChars = env->GetStringUTFChars(javaPath, nullptr);
+    const char* typeChars = env->GetStringUTFChars(javaType, nullptr);
+    const char* planeChars = env->GetStringUTFChars(javaPlane, nullptr);
+    if (pathChars == nullptr || typeChars == nullptr || planeChars == nullptr) {
+        if (pathChars != nullptr) env->ReleaseStringUTFChars(javaPath, pathChars);
+        if (typeChars != nullptr) env->ReleaseStringUTFChars(javaType, typeChars);
+        if (planeChars != nullptr) env->ReleaseStringUTFChars(javaPlane, planeChars);
+        return JNI_FALSE;
+    }
+    const std::string path(pathChars), type(typeChars), plane(planeChars);
+    env->ReleaseStringUTFChars(javaPath, pathChars);
+    env->ReleaseStringUTFChars(javaType, typeChars);
+    env->ReleaseStringUTFChars(javaPlane, planeChars);
+    try {
+        TopoDS_Shape shape;
+        if (useProfile == JNI_TRUE) shape = extrudedProfile(type, x1, y1, x2, y2, depth, plane);
+        else shape = BRepPrimAPI_MakeBox(width, height, depth).Shape();
+        if (shape.IsNull() || !BRepCheck_Analyzer(shape).IsValid()) return JNI_FALSE;
+        STEPControl_Writer writer;
+        if (writer.Transfer(shape, STEPControl_AsIs) != IFSelect_RetDone
+                || writer.Write(path.c_str()) != IFSelect_RetDone) return JNI_FALSE;
+        STEPControl_Reader verifier;
+        if (verifier.ReadFile(path.c_str()) != IFSelect_RetDone || verifier.TransferRoots() <= 0) {
+            return JNI_FALSE;
+        }
+        const TopoDS_Shape verified = verifier.OneShape();
+        return !verified.IsNull() && BRepCheck_Analyzer(verified).IsValid() ? JNI_TRUE : JNI_FALSE;
+    } catch (const Standard_Failure&) {
+        return JNI_FALSE;
     }
 }

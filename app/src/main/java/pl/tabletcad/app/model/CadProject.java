@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /** Versioned, geometry-independent source of truth for a TabletCAD document. */
 public final class CadProject {
-    public static final int CURRENT_SCHEMA = 1;
+    public static final int CURRENT_SCHEMA = 3;
 
     public final String id;
     public String name;
@@ -19,6 +19,8 @@ public final class CadProject {
     public double height;
     public double depth;
     public String sketchPlane;
+    public boolean sketchExtruded;
+    public boolean importedStep;
     public final List<SketchPrimitive> sketch = new ArrayList<>();
 
     public CadProject() {
@@ -43,6 +45,8 @@ public final class CadProject {
         root.put("name", name);
         root.put("units", units);
         root.put("sketchPlane", sketchPlane);
+        root.put("sketchExtruded", sketchExtruded);
+        root.put("importedStep", importedStep);
         JSONObject feature = new JSONObject();
         feature.put("type", "extrude");
         feature.put("width", width);
@@ -57,13 +61,15 @@ public final class CadProject {
 
     public static CadProject fromJson(JSONObject root) throws JSONException {
         int schema = root.getInt("schema");
-        if (schema != CURRENT_SCHEMA) throw new JSONException("Unsupported schema: " + schema);
+        if (schema < 1 || schema > CURRENT_SCHEMA) throw new JSONException("Unsupported schema: " + schema);
         JSONObject feature = root.getJSONObject("baseFeature");
         CadProject project = new CadProject(
             root.getString("id"), root.optString("name", "Bez nazwy"),
             root.optString("units", "mm"), feature.getDouble("width"),
             feature.getDouble("height"), feature.getDouble("depth"),
             root.optString("sketchPlane", "XY"));
+        project.sketchExtruded = schema >= 2 && root.optBoolean("sketchExtruded", false);
+        project.importedStep = schema >= 3 && root.optBoolean("importedStep", false);
         JSONArray entities = root.optJSONArray("sketch");
         if (entities != null) {
             for (int i = 0; i < entities.length(); i++) {

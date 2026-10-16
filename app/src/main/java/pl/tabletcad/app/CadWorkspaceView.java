@@ -17,6 +17,16 @@ import android.text.InputType;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 
 import pl.tabletcad.app.model.CadProject;
 import pl.tabletcad.app.model.SketchPrimitive;
@@ -26,6 +36,10 @@ import pl.tabletcad.app.storage.ProjectRepository;
  * Touch-first CAD viewport backed by tessellated Open CASCADE B-Rep geometry.
  */
 public final class CadWorkspaceView extends View {
+    public interface FileRequestListener {
+        void requestExport(String format);
+        void requestOpenStep();
+    }
     private static final int BG = Color.rgb(242, 245, 247);
     private static final int PANEL = Color.rgb(255, 255, 255);
     private static final int INK = Color.rgb(28, 39, 49);
@@ -49,10 +63,14 @@ public final class CadWorkspaceView extends View {
     private double[] nativePrism;
     private double[] nativeMesh = new double[0];
     private String modelInfo;
+    private String operationMessage = "";
     private final String stepStatus;
     private double modelWidth = 80.0;
     private double modelHeight = 48.0;
     private double modelDepth = 32.0;
+    private double meshCenterX;
+    private double meshCenterY;
+    private double meshCenterZ;
     private RectF sketchRect;
     private float sketchStartX;
     private float sketchStartY;
@@ -60,6 +78,7 @@ public final class CadWorkspaceView extends View {
     private String sketchTool = "Prostokąt";
     private final ProjectRepository projectRepository;
     private final CadProject project;
+    private final FileRequestListener fileRequestListener;
     private boolean sketchPlaneChosen;
     private String sketchPlane = "Nie wybrano";
     private int selectedFace = -1;
@@ -72,8 +91,9 @@ public final class CadWorkspaceView extends View {
     private float workCenterX;
     private float workCenterY;
 
-    public CadWorkspaceView(Context context) {
+    public CadWorkspaceView(Context context, FileRequestListener fileRequestListener) {
         super(context);
+        this.fileRequestListener = fileRequestListener;
         density = getResources().getDisplayMetrics().density;
         projectRepository = new ProjectRepository(context);
         project = projectRepository.loadOrCreate();
@@ -99,6 +119,14 @@ public final class CadWorkspaceView extends View {
             @Override public boolean onDown(MotionEvent e) { return true; }
 
             @Override public boolean onSingleTapUp(MotionEvent e) {
+                if (e.getY() <= dp(58) && e.getX() >= getWidth() - dp(190)) {
+                    showExportPicker();
+                    return true;
+                }
+                if (e.getY() <= dp(58) && e.getX() >= getWidth() - dp(330)) {
+                    if (fileRequestListener != null) fileRequestListener.requestOpenStep();
+                    return true;
+                }
                 if (mode.equals("Szkic") && sketchPlaneChosen
                         && e.getY() >= dp(68) && e.getY() <= dp(126)
                         && e.getX() >= dp(240) && e.getX() <= getWidth() - dp(268)) {
@@ -123,7 +151,8 @@ public final class CadWorkspaceView extends View {
                         invalidate();
                     }
                 } else if (mode.equals("Modeluj") && e.getX() > getWidth() - dp(234)) {
-                    if (e.getY() >= dp(332) && e.getY() <= dp(400)) showDepthEditor();
+                    if (e.getY() >= dp(318) && e.getY() <= dp(370)) extrudeSketchProfile();
+                    else if (e.getY() >= dp(382) && e.getY() <= dp(440)) showDepthEditor();
                 } else if (mode.equals("Szkic") && e.getX() > getWidth() - dp(234)) {
                     if (e.getY() >= dp(322) && e.getY() <= dp(382)) chooseSketchPlane("XY");
                     else if (e.getY() >= dp(390) && e.getY() <= dp(450)) chooseSketchPlane("XZ");
@@ -234,6 +263,7 @@ public final class CadWorkspaceView extends View {
         canvas.drawRect(0, 0, getWidth(), dp(56), paint);
         text(canvas, "TabletCAD", dp(22), dp(35), 20, Color.WHITE, true);
         text(canvas, "Bez nazwy  •  zapisano lokalnie", dp(145), dp(34), 14, Color.rgb(190, 201, 210), false);
+        pill(canvas, getWidth() - dp(312), dp(10), dp(124), dp(38), "Otwórz STEP", Color.rgb(44, 58, 70), Color.WHITE);
         pill(canvas, getWidth() - dp(172), dp(10), dp(152), dp(38), "Eksportuj", ACCENT, Color.WHITE);
     }
 
@@ -244,7 +274,9 @@ public final class CadWorkspaceView extends View {
         row(canvas, "▾  Dokument", dp(18), dp(126), true);
         row(canvas, "   ◇  Początek", dp(18), dp(164), false);
         row(canvas, "   ▱  Szkic 1", dp(18), dp(202), false);
-        row(canvas, "   ◈  Wyciągnięcie 1", dp(18), dp(240), true);
+        row(canvas, project.importedStep ? "   ◈  Import STEP"
+            : (project.sketchExtruded ? "   ◈  Wyciągnięcie szkicu" : "   ◈  Wyciągnięcie 1"),
+            dp(18), dp(240), true);
         paint.setColor(Color.rgb(232, 236, 239));
         canvas.drawRect(dp(18), bottom - dp(74), left - dp(18), bottom - dp(73), paint);
         text(canvas, "HISTORIA", dp(18), bottom - dp(48), 12, MUTED, true);
@@ -255,13 +287,19 @@ public final class CadWorkspaceView extends View {
         paint.setColor(PANEL);
         canvas.drawRect(right, dp(56), getWidth(), getHeight(), paint);
         text(canvas, "WŁAŚCIWOŚCI", right + dp(18), dp(91), 12, MUTED, true);
-        text(canvas, mode.equals("Szkic") ? "Płaszczyzna szkicu" : "Wyciągnięcie 1", right + dp(18), dp(127), 18, INK, true);
+        text(canvas, mode.equals("Szkic") ? "Płaszczyzna szkicu"
+            : (project.importedStep ? "Zaimportowany STEP"
+            : (project.sketchExtruded ? "Wyciągnięcie szkicu" : "Wyciągnięcie 1")),
+            right + dp(18), dp(127), 18, INK, true);
         labelValue(canvas, right, "Głębokość", String.format(java.util.Locale.US, "%.2f mm", modelDepth), dp(174));
         labelValue(canvas, right, "Operacja", "Nowa bryła", dp(238));
         if (mode.equals("Modeluj")) {
-            pill(canvas, right + dp(18), dp(332), dp(202), dp(58), "Wpisz wartość", ACCENT, Color.WHITE);
+            pill(canvas, right + dp(18), dp(318), dp(202), dp(48), "Wyciągnij szkic", ACCENT, Color.WHITE);
+            pill(canvas, right + dp(18), dp(382), dp(202), dp(48), "Wpisz głębokość", Color.rgb(226, 232, 236), INK);
             text(canvas, selectedFace >= 0 ? "Wybrano: ściana " + (selectedFace + 1) : "Dotknij ściany lub krawędzi",
-                right + dp(18), dp(430), 11, selectedFace >= 0 ? ACCENT : MUTED, selectedFace >= 0);
+                right + dp(18), dp(454), 11, selectedFace >= 0 ? ACCENT : MUTED, selectedFace >= 0);
+            if (!operationMessage.isEmpty()) text(canvas, operationMessage,
+                right + dp(18), dp(482), 10, operationMessage.startsWith("Gotowe") ? ACCENT : Color.rgb(190, 70, 55), true);
         } else if (mode.equals("Szkic")) {
             text(canvas, sketchPlane, right + dp(18), dp(292), 12,
                 sketchPlaneChosen ? ACCENT : MUTED, true);
@@ -373,6 +411,7 @@ public final class CadWorkspaceView extends View {
         double x2 = (screenX2 - workCenterX) / scale;
         double y2 = (workCenterY - screenY2) / scale;
         project.sketch.add(new SketchPrimitive(UUID.randomUUID().toString(), type, x1, y1, x2, y2));
+        project.sketchExtruded = false;
         projectRepository.save(project);
     }
 
@@ -393,9 +432,9 @@ public final class CadWorkspaceView extends View {
             double cameraNormalZ = triangle.ny * spitch + normalRz * cpitch;
             if (cameraNormalZ <= 1.0e-7) continue;
             for (int vertex = 0; vertex < 3; vertex++) {
-                double x = nativeMesh[offset + vertex * 3] - modelWidth / 2.0;
-                double y = nativeMesh[offset + vertex * 3 + 1] - modelHeight / 2.0;
-                double z = nativeMesh[offset + vertex * 3 + 2] - modelDepth / 2.0;
+                double x = nativeMesh[offset + vertex * 3] - meshCenterX;
+                double y = nativeMesh[offset + vertex * 3 + 1] - meshCenterY;
+                double z = nativeMesh[offset + vertex * 3 + 2] - meshCenterZ;
                 triangle.wx[vertex] = x;
                 triangle.wy[vertex] = y;
                 triangle.wz[vertex] = z;
@@ -544,8 +583,170 @@ public final class CadWorkspaceView extends View {
 
     private void updateNativeModel() {
         nativePrism = NativeCadEngine.createPrism(modelWidth, modelHeight, modelDepth);
-        nativeMesh = NativeCadEngine.tessellatePrism(modelWidth, modelHeight, modelDepth);
-        modelInfo = NativeCadEngine.modelInfo(modelWidth, modelHeight, modelDepth);
+        SketchPrimitive profile = latestClosedProfile();
+        if (project.importedStep && projectRepository.importedStepFile().isFile()) {
+            nativeMesh = NativeCadEngine.tessellateStep(projectRepository.importedStepFile().getAbsolutePath());
+        } else if (project.sketchExtruded && profile != null) {
+            nativeMesh = NativeCadEngine.tessellateSketchExtrusion(profile.type, profile.x1,
+                profile.y1, profile.x2, profile.y2, modelDepth, project.sketchPlane);
+        } else {
+            nativeMesh = NativeCadEngine.tessellatePrism(modelWidth, modelHeight, modelDepth);
+        }
+        updateMeshCenter();
+        modelInfo = project.importedStep ? "Zaimportowany i zweryfikowany model STEP"
+            : NativeCadEngine.modelInfo(modelWidth, modelHeight, modelDepth);
+    }
+
+    private SketchPrimitive latestClosedProfile() {
+        for (int i = project.sketch.size() - 1; i >= 0; i--) {
+            SketchPrimitive primitive = project.sketch.get(i);
+            if (primitive.type.equals("Prostokąt") || primitive.type.equals("Okrąg")) return primitive;
+        }
+        return null;
+    }
+
+    private void extrudeSketchProfile() {
+        SketchPrimitive profile = latestClosedProfile();
+        if (profile == null) {
+            operationMessage = "Najpierw narysuj zamknięty profil";
+        } else if (!(project.sketchPlane.equals("XY") || project.sketchPlane.equals("XZ")
+                || project.sketchPlane.equals("YZ"))) {
+            operationMessage = "Wyciąganie na ścianie: kolejny etap";
+        } else {
+            project.sketchExtruded = true;
+            project.importedStep = false;
+            updateNativeModel();
+            if (nativeMesh.length == 0) {
+                project.sketchExtruded = false;
+                operationMessage = "Błąd tworzenia bryły B-Rep";
+            } else {
+                operationMessage = "Gotowe: profil wyciągnięty";
+                projectRepository.save(project);
+            }
+        }
+        invalidate();
+    }
+
+    private void updateMeshCenter() {
+        if (nativeMesh.length < 13) {
+            meshCenterX = meshCenterY = meshCenterZ = 0.0;
+            return;
+        }
+        double xmin = Double.POSITIVE_INFINITY, ymin = Double.POSITIVE_INFINITY, zmin = Double.POSITIVE_INFINITY;
+        double xmax = Double.NEGATIVE_INFINITY, ymax = Double.NEGATIVE_INFINITY, zmax = Double.NEGATIVE_INFINITY;
+        for (int offset = 0; offset + 12 < nativeMesh.length; offset += 13) {
+            for (int vertex = 0; vertex < 3; vertex++) {
+                double x = nativeMesh[offset + vertex * 3];
+                double y = nativeMesh[offset + vertex * 3 + 1];
+                double z = nativeMesh[offset + vertex * 3 + 2];
+                xmin = Math.min(xmin, x); xmax = Math.max(xmax, x);
+                ymin = Math.min(ymin, y); ymax = Math.max(ymax, y);
+                zmin = Math.min(zmin, z); zmax = Math.max(zmax, z);
+            }
+        }
+        meshCenterX = (xmin + xmax) / 2.0;
+        meshCenterY = (ymin + ymax) / 2.0;
+        meshCenterZ = (zmin + zmax) / 2.0;
+    }
+
+    private void showExportPicker() {
+        String[] formats = {"STEP — precyzyjna bryła", "STL — siatka binarna", "DXF — szkic 2D"};
+        new AlertDialog.Builder(getContext())
+            .setTitle("Eksportuj projekt")
+            .setItems(formats, (dialog, which) -> {
+                if (fileRequestListener != null) {
+                    fileRequestListener.requestExport(which == 0 ? "step" : which == 1 ? "stl" : "dxf");
+                }
+            })
+            .setNegativeButton("Anuluj", null)
+            .show();
+    }
+
+    public boolean exportStep(String path) {
+        if (project.importedStep && projectRepository.importedStepFile().isFile()) {
+            try (FileInputStream input = new FileInputStream(projectRepository.importedStepFile());
+                 FileOutputStream output = new FileOutputStream(path)) {
+                byte[] buffer = new byte[64 * 1024];
+                int read;
+                while ((read = input.read(buffer)) >= 0) output.write(buffer, 0, read);
+                output.getFD().sync();
+                return true;
+            } catch (IOException error) {
+                return false;
+            }
+        }
+        SketchPrimitive profile = latestClosedProfile();
+        String type = profile == null ? "Prostokąt" : profile.type;
+        double x1 = profile == null ? 0.0 : profile.x1;
+        double y1 = profile == null ? 0.0 : profile.y1;
+        double x2 = profile == null ? modelWidth : profile.x2;
+        double y2 = profile == null ? modelHeight : profile.y2;
+        return NativeCadEngine.exportStep(path, modelWidth, modelHeight, modelDepth,
+            project.sketchExtruded && profile != null, type, x1, y1, x2, y2, project.sketchPlane);
+    }
+
+    public File importedStepFile() { return projectRepository.importedStepFile(); }
+
+    public boolean activateImportedStep() {
+        double[] imported = NativeCadEngine.tessellateStep(projectRepository.importedStepFile().getAbsolutePath());
+        if (imported.length == 0) return false;
+        nativeMesh = imported;
+        project.importedStep = true;
+        project.sketchExtruded = false;
+        selectedFace = -1;
+        operationMessage = "Gotowe: otwarto STEP";
+        updateMeshCenter();
+        modelInfo = "Zaimportowany i zweryfikowany model STEP";
+        projectRepository.save(project);
+        invalidate();
+        return true;
+    }
+
+    public void writeBinaryStl(OutputStream output) throws IOException {
+        int count = nativeMesh.length / 13;
+        byte[] header = new byte[80];
+        byte[] title = "TabletCAD binary STL".getBytes(StandardCharsets.US_ASCII);
+        System.arraycopy(title, 0, header, 0, title.length);
+        output.write(header);
+        ByteBuffer countBuffer = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+        countBuffer.putInt(count);
+        output.write(countBuffer.array());
+        ByteBuffer triangle = ByteBuffer.allocate(50).order(ByteOrder.LITTLE_ENDIAN);
+        for (int offset = 0; offset + 12 < nativeMesh.length; offset += 13) {
+            triangle.clear();
+            triangle.putFloat((float)nativeMesh[offset + 9]);
+            triangle.putFloat((float)nativeMesh[offset + 10]);
+            triangle.putFloat((float)nativeMesh[offset + 11]);
+            for (int value = 0; value < 9; value++) triangle.putFloat((float)nativeMesh[offset + value]);
+            triangle.putShort((short)0);
+            output.write(triangle.array());
+        }
+    }
+
+    public void writeDxf(OutputStream output) throws IOException {
+        Writer writer = new OutputStreamWriter(output, StandardCharsets.US_ASCII);
+        writer.write("0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
+        for (SketchPrimitive primitive : project.sketch) {
+            if (primitive.type.equals("Okrąg")) {
+                double radius = Math.hypot(primitive.x2 - primitive.x1, primitive.y2 - primitive.y1);
+                writer.write("0\nCIRCLE\n8\nSKETCH\n10\n" + primitive.x1 + "\n20\n" + primitive.y1
+                    + "\n30\n0\n40\n" + radius + "\n");
+            } else if (primitive.type.equals("Prostokąt")) {
+                writeDxfLine(writer, primitive.x1, primitive.y1, primitive.x2, primitive.y1);
+                writeDxfLine(writer, primitive.x2, primitive.y1, primitive.x2, primitive.y2);
+                writeDxfLine(writer, primitive.x2, primitive.y2, primitive.x1, primitive.y2);
+                writeDxfLine(writer, primitive.x1, primitive.y2, primitive.x1, primitive.y1);
+            } else {
+                writeDxfLine(writer, primitive.x1, primitive.y1, primitive.x2, primitive.y2);
+            }
+        }
+        writer.write("0\nENDSEC\n0\nEOF\n");
+        writer.flush();
+    }
+
+    private void writeDxfLine(Writer writer, double x1, double y1, double x2, double y2) throws IOException {
+        writer.write("0\nLINE\n8\nSKETCH\n10\n" + x1 + "\n20\n" + y1 + "\n30\n0\n11\n"
+            + x2 + "\n21\n" + y2 + "\n31\n0\n");
     }
 
     private static final class ProjectedTriangle {

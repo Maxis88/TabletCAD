@@ -15,16 +15,21 @@ import pl.tabletcad.app.model.CadProject;
 
 /** Atomic local persistence with a last-known-good recovery copy. */
 public final class ProjectRepository {
+    private final File folder;
     private final File document;
     private final File temporary;
     private final File recovery;
 
     public ProjectRepository(Context context) {
-        File folder = new File(context.getFilesDir(), "projects");
+        folder = new File(context.getFilesDir(), "projects");
         if (!folder.exists() && !folder.mkdirs()) throw new IllegalStateException("Cannot create projects folder");
         document = new File(folder, "autosave.tcad");
         temporary = new File(folder, "autosave.tcad.tmp");
         recovery = new File(folder, "autosave.tcad.bak");
+    }
+
+    public File importedStepFile() {
+        return new File(folder, "imported.step");
     }
 
     public CadProject loadOrCreate() {
