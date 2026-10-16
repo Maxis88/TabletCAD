@@ -1,15 +1,15 @@
 # TabletCAD
 
 Tabletowa aplikacja CAD dla Androida 14+. Repozytorium zawiera obecnie etap
-`0.7.0-project-storage`: interaktywny interfejs obszaru roboczego, trwały dokument
+`0.8.0-occt-mesh`: interaktywny interfejs obszaru roboczego, trwały dokument
 projektu, JNI/C++ dla
 `arm64-v8a` oraz Open CASCADE 8.0.1. Rdzeń tworzy i waliduje rzeczywistą bryłę
 B-Rep oraz wykonuje autotest zapisu i ponownego odczytu STEP.
 
-Gotowy APK znajduje się w `dist/TabletCAD-0.7.0-project-storage.apk`. Jest to podpisana
+Gotowy APK znajduje się w `dist/TabletCAD-0.8.0-occt-mesh.apk`. Jest to podpisana
 wersja deweloperska dla tabletów ARM64 z Androidem 14 lub nowszym.
 
-Wersja 0.7.0 została zainstalowana i przetestowana dotykowo na HONOR MagicPad4 z MagicOS 10.
+Wersja 0.8.0 została zainstalowana i przetestowana dotykowo na HONOR MagicPad4 z MagicOS 10.
 Naprawia błąd inicjalizacji `WindowInsetsController` występujący przed utworzeniem
 widoku dekoracyjnego okna na tym urządzeniu.
 
@@ -43,3 +43,7 @@ zapisywane w wersjonowanym pliku `.tcad` i odtwarzane po ponownym uruchomieniu.
 Zapis używa pliku tymczasowego, synchronizacji i kopii odzyskiwania. Pełny solver szkicu, rozbudowane operacje
 parametryczne, selektor plików, STL, DXF i arkusze techniczne pozostają kolejnymi
 etapami implementacji.
+
+Widok 3D korzysta z tessellacji rzeczywistej bryły `TopoDS_Shape` wykonanej przez
+OCCT. Selekcja ścian działa na trójkątach tej tessellacji, a normalna wybranej
+ściany steruje automatycznym ustawieniem płaszczyzny szkicu.

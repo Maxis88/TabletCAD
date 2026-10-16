@@ -38,7 +38,7 @@ odzyskania historii z programu źródłowego.
 
 ## Etap bieżący
 
-Wersja `0.7.0-project-storage` zawiera interaktywny interfejs, selekcję topologii,
+Wersja `0.8.0-occt-mesh` zawiera interaktywny interfejs, selekcję topologii,
 kamerę orbitującą, lokalny układ płaszczyzny szkicu, JNI oraz Open CASCADE 8.0.1.
 Rdzeń tworzy prawdziwą bryłę B-Rep, waliduje jej topologię i raportuje liczbę
 ścian, krawędzi oraz wierzchołków. Natywny autotest wykonuje zapis bryły do STEP,
@@ -47,3 +47,8 @@ w UI, edytor parametryczny oraz pozostałe formaty są kolejnymi funkcjami. Doku
 projektu ma wersjonowany manifest JSON, UUID encji, atomowy autosave i kopię
 odzyskiwania. Obecnie przechowuje jedną płaszczyznę szkicu, encje linii,
 prostokąta i okręgu oraz parametry bazowego wyciągnięcia.
+
+Warstwa JNI tesselluje `TopoDS_Shape`, przekazuje wierzchołki, normalne i indeksy
+ścian do Androida. Widok wykonuje projekcję, odrzucanie tylnych ścian, sortowanie
+głębokości i selekcję trójkątów. Ręcznie zdefiniowana geometria pudełka nie jest
+już źródłem renderowania ani wyboru ściany.

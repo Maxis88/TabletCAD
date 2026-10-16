@@ -23,8 +23,7 @@ import pl.tabletcad.app.model.SketchPrimitive;
 import pl.tabletcad.app.storage.ProjectRepository;
 
 /**
- * Touch-first foundation viewport. It deliberately renders a demonstrator model;
- * production B-Rep operations will be supplied by the planned Open CASCADE core.
+ * Touch-first CAD viewport backed by tessellated Open CASCADE B-Rep geometry.
  */
 public final class CadWorkspaceView extends View {
     private static final int BG = Color.rgb(242, 245, 247);
@@ -48,6 +47,7 @@ public final class CadWorkspaceView extends View {
     private String mode = "Wybierz";
     private final String kernelStatus;
     private double[] nativePrism;
+    private double[] nativeMesh = new double[0];
     private String modelInfo;
     private final String stepStatus;
     private double modelWidth = 80.0;
@@ -63,17 +63,14 @@ public final class CadWorkspaceView extends View {
     private boolean sketchPlaneChosen;
     private String sketchPlane = "Nie wybrano";
     private int selectedFace = -1;
-    private final float[] projectedX = new float[8];
-    private final float[] projectedY = new float[8];
-    private final float[] projectedZ = new float[8];
+    private double selectedNormalX;
+    private double selectedNormalY;
+    private double selectedNormalZ = 1.0;
+    private final List<ProjectedTriangle> projectedTriangles = new ArrayList<>();
     private float touchDownX;
     private float touchDownY;
     private float workCenterX;
     private float workCenterY;
-    private static final int[][] BOX_FACES = {
-        {0, 1, 2, 3}, {4, 5, 6, 7}, {0, 4, 7, 3},
-        {1, 5, 6, 2}, {3, 2, 6, 7}, {0, 1, 5, 4}
-    };
 
     public CadWorkspaceView(Context context) {
         super(context);
@@ -223,7 +220,7 @@ public final class CadWorkspaceView extends View {
         if (mode.equals("Rysunek")) {
             drawTechnicalViews(canvas, left, top, right, bottom);
         } else {
-            drawDemoSolid(canvas, (left + right) / 2f + panX, (top + bottom) / 2f + panY);
+            drawNativeSolid(canvas, (left + right) / 2f + panX, (top + bottom) / 2f + panY);
             if (mode.equals("Szkic") && sketchPlaneChosen) drawSketch(canvas, left, right);
             if (mode.equals("Zmierz")) drawDimensions(canvas, left, top, right, bottom);
         }
@@ -294,20 +291,27 @@ public final class CadWorkspaceView extends View {
         for (float y = top + oy; y < bottom; y += step) canvas.drawLine(left, y, right, y, paint);
     }
 
-    private void drawDemoSolid(Canvas canvas, float cx, float cy) {
-        projectBox(cx, cy);
-        Integer[] order = {0, 1, 2, 3, 4, 5};
-        java.util.Arrays.sort(order, (a, b) -> Float.compare(faceDepth(a), faceDepth(b)));
-        for (int faceIndex : order) {
-            Path facePath = facePath(faceIndex);
+    private void drawNativeSolid(Canvas canvas, float cx, float cy) {
+        projectNativeMesh(cx, cy);
+        projectedTriangles.sort((a, b) -> Float.compare(a.depth, b.depth));
+        for (ProjectedTriangle triangle : projectedTriangles) {
+            Path facePath = triangle.path();
             paint.setStyle(Paint.Style.FILL);
-            if (faceIndex == selectedFace) paint.setColor(Color.rgb(255, 190, 70));
-            else paint.setColor(faceColor(faceIndex));
+            if (triangle.faceId == selectedFace) paint.setColor(Color.rgb(255, 190, 70));
+            else paint.setColor(meshFaceColor(triangle));
             canvas.drawPath(facePath, paint);
+        }
+        for (ProjectedTriangle triangle : projectedTriangles) {
             paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(dp(faceIndex == selectedFace ? 3f : 1.6f));
-            paint.setColor(faceIndex == selectedFace ? Color.rgb(225, 120, 10) : ACCENT);
-            canvas.drawPath(facePath, paint);
+            paint.setStrokeWidth(dp(triangle.faceId == selectedFace ? 2.6f : 1.35f));
+            paint.setColor(triangle.faceId == selectedFace ? Color.rgb(225, 120, 10) : ACCENT);
+            for (int edge = 0; edge < 3; edge++) {
+                if (isVisibleCadEdge(triangle, edge)) {
+                    int next = (edge + 1) % 3;
+                    canvas.drawLine(triangle.sx[edge], triangle.sy[edge],
+                        triangle.sx[next], triangle.sy[next], paint);
+                }
+            }
         }
         paint.setStyle(Paint.Style.FILL);
         if (mode.equals("Szkic") && !sketchPlaneChosen) {
@@ -372,74 +376,83 @@ public final class CadWorkspaceView extends View {
         projectRepository.save(project);
     }
 
-    private void projectBox(float cx, float cy) {
-        double hx = modelWidth / 2.0;
-        double hy = modelHeight / 2.0;
-        double hz = modelDepth / 2.0;
-        double[][] vertices = {
-            {-hx, -hy, -hz}, {hx, -hy, -hz}, {hx, hy, -hz}, {-hx, hy, -hz},
-            {-hx, -hy, hz}, {hx, -hy, hz}, {hx, hy, hz}, {-hx, hy, hz}
-        };
+    private void projectNativeMesh(float cx, float cy) {
+        projectedTriangles.clear();
         double yaw = Math.toRadians(cameraYaw);
         double pitch = Math.toRadians(cameraPitch);
         double cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
         double cpitch = Math.cos(pitch), spitch = Math.sin(pitch);
         float scale = dp(3.2f) * zoom;
-        for (int i = 0; i < vertices.length; i++) {
-            double x = vertices[i][0];
-            double y = vertices[i][1];
-            double z = vertices[i][2];
-            double rx = x * cyaw + z * syaw;
-            double rz = -x * syaw + z * cyaw;
-            double ry = y * cpitch - rz * spitch;
-            double finalZ = y * spitch + rz * cpitch;
-            double perspective = 420.0 / (420.0 - finalZ);
-            projectedX[i] = cx + (float)(rx * scale * perspective);
-            projectedY[i] = cy - (float)(ry * scale * perspective);
-            projectedZ[i] = (float)finalZ;
+        for (int offset = 0; offset + 12 < nativeMesh.length; offset += 13) {
+            ProjectedTriangle triangle = new ProjectedTriangle();
+            triangle.faceId = (int)Math.round(nativeMesh[offset + 12]) - 1;
+            triangle.nx = nativeMesh[offset + 9];
+            triangle.ny = nativeMesh[offset + 10];
+            triangle.nz = nativeMesh[offset + 11];
+            double normalRz = -triangle.nx * syaw + triangle.nz * cyaw;
+            double cameraNormalZ = triangle.ny * spitch + normalRz * cpitch;
+            if (cameraNormalZ <= 1.0e-7) continue;
+            for (int vertex = 0; vertex < 3; vertex++) {
+                double x = nativeMesh[offset + vertex * 3] - modelWidth / 2.0;
+                double y = nativeMesh[offset + vertex * 3 + 1] - modelHeight / 2.0;
+                double z = nativeMesh[offset + vertex * 3 + 2] - modelDepth / 2.0;
+                triangle.wx[vertex] = x;
+                triangle.wy[vertex] = y;
+                triangle.wz[vertex] = z;
+                double rx = x * cyaw + z * syaw;
+                double rz = -x * syaw + z * cyaw;
+                double ry = y * cpitch - rz * spitch;
+                double finalZ = y * spitch + rz * cpitch;
+                double perspective = 420.0 / (420.0 - finalZ);
+                triangle.sx[vertex] = cx + (float)(rx * scale * perspective);
+                triangle.sy[vertex] = cy - (float)(ry * scale * perspective);
+                triangle.depth += (float)finalZ / 3f;
+            }
+            projectedTriangles.add(triangle);
         }
     }
 
-    private Path facePath(int faceIndex) {
-        int[] face = BOX_FACES[faceIndex];
-        Path path = new Path();
-        path.moveTo(projectedX[face[0]], projectedY[face[0]]);
-        for (int i = 1; i < face.length; i++) path.lineTo(projectedX[face[i]], projectedY[face[i]]);
-        path.close();
-        return path;
-    }
-
-    private float faceDepth(int faceIndex) {
-        float depth = 0f;
-        for (int vertex : BOX_FACES[faceIndex]) depth += projectedZ[vertex];
-        return depth / BOX_FACES[faceIndex].length;
-    }
-
-    private int faceColor(int faceIndex) {
-        int shade = 205 + (faceIndex * 7 % 32);
+    private int meshFaceColor(ProjectedTriangle triangle) {
+        int shade = 207 + (int)Math.round(22.0 * Math.abs(triangle.nz)
+            + 9.0 * Math.abs(triangle.ny));
         return Color.rgb(Math.min(238, shade), Math.min(246, shade + 18), Math.min(244, shade + 16));
     }
 
     private int findFaceAt(float x, float y) {
-        Integer[] order = {0, 1, 2, 3, 4, 5};
-        java.util.Arrays.sort(order, (a, b) -> Float.compare(faceDepth(b), faceDepth(a)));
-        for (int faceIndex : order) {
-            if (pointInFace(x, y, BOX_FACES[faceIndex])) return faceIndex;
+        ProjectedTriangle best = null;
+        for (ProjectedTriangle triangle : projectedTriangles) {
+            if (triangle.contains(x, y) && (best == null || triangle.depth > best.depth)) best = triangle;
+        }
+        if (best != null) {
+            selectedNormalX = best.nx;
+            selectedNormalY = best.ny;
+            selectedNormalZ = best.nz;
+            return best.faceId;
         }
         return -1;
     }
 
-    private boolean pointInFace(float x, float y, int[] face) {
-        boolean inside = false;
-        for (int i = 0, j = face.length - 1; i < face.length; j = i++) {
-            float xi = projectedX[face[i]], yi = projectedY[face[i]];
-            float xj = projectedX[face[j]], yj = projectedY[face[j]];
-            if (((yi > y) != (yj > y))
-                    && x < (xj - xi) * (y - yi) / ((yj - yi) == 0f ? 0.0001f : (yj - yi)) + xi) {
-                inside = !inside;
+    private boolean isVisibleCadEdge(ProjectedTriangle source, int edge) {
+        int next = (edge + 1) % 3;
+        for (ProjectedTriangle candidate : projectedTriangles) {
+            if (candidate == source || candidate.faceId != source.faceId) continue;
+            for (int otherEdge = 0; otherEdge < 3; otherEdge++) {
+                int otherNext = (otherEdge + 1) % 3;
+                if ((samePoint(source, edge, candidate, otherEdge)
+                        && samePoint(source, next, candidate, otherNext))
+                        || (samePoint(source, edge, candidate, otherNext)
+                        && samePoint(source, next, candidate, otherEdge))) {
+                    return false;
+                }
             }
         }
-        return inside;
+        return true;
+    }
+
+    private boolean samePoint(ProjectedTriangle a, int ai, ProjectedTriangle b, int bi) {
+        return Math.abs(a.wx[ai] - b.wx[bi]) < 1.0e-7
+            && Math.abs(a.wy[ai] - b.wy[bi]) < 1.0e-7
+            && Math.abs(a.wz[ai] - b.wz[bi]) < 1.0e-7;
     }
 
     private void chooseSketchPlane(String plane) {
@@ -454,18 +467,11 @@ public final class CadWorkspaceView extends View {
             cameraYaw = 0f; cameraPitch = 89f; selectedFace = -1;
         } else if (plane.equals("YZ")) {
             cameraYaw = 90f; cameraPitch = 0f; selectedFace = -1;
-        } else if (selectedFace == 0) {
-            cameraYaw = 180f; cameraPitch = 0f;
-        } else if (selectedFace == 1) {
-            cameraYaw = 0f; cameraPitch = 0f;
-        } else if (selectedFace == 2) {
-            cameraYaw = -90f; cameraPitch = 0f;
-        } else if (selectedFace == 3) {
-            cameraYaw = 90f; cameraPitch = 0f;
-        } else if (selectedFace == 4) {
-            cameraYaw = 0f; cameraPitch = -89f;
-        } else if (selectedFace == 5) {
-            cameraYaw = 0f; cameraPitch = 89f;
+        } else {
+            double yaw = Math.atan2(-selectedNormalX, selectedNormalZ);
+            double rz = -selectedNormalX * Math.sin(yaw) + selectedNormalZ * Math.cos(yaw);
+            cameraYaw = (float)Math.toDegrees(yaw);
+            cameraPitch = (float)Math.toDegrees(Math.atan2(selectedNormalY, rz));
         }
         projectRepository.save(project);
         invalidate();
@@ -538,7 +544,41 @@ public final class CadWorkspaceView extends View {
 
     private void updateNativeModel() {
         nativePrism = NativeCadEngine.createPrism(modelWidth, modelHeight, modelDepth);
+        nativeMesh = NativeCadEngine.tessellatePrism(modelWidth, modelHeight, modelDepth);
         modelInfo = NativeCadEngine.modelInfo(modelWidth, modelHeight, modelDepth);
+    }
+
+    private static final class ProjectedTriangle {
+        final double[] wx = new double[3];
+        final double[] wy = new double[3];
+        final double[] wz = new double[3];
+        final float[] sx = new float[3];
+        final float[] sy = new float[3];
+        double nx, ny, nz;
+        float depth;
+        int faceId;
+
+        Path path() {
+            Path path = new Path();
+            path.moveTo(sx[0], sy[0]);
+            path.lineTo(sx[1], sy[1]);
+            path.lineTo(sx[2], sy[2]);
+            path.close();
+            return path;
+        }
+
+        boolean contains(float x, float y) {
+            float d1 = sign(x, y, sx[0], sy[0], sx[1], sy[1]);
+            float d2 = sign(x, y, sx[1], sy[1], sx[2], sy[2]);
+            float d3 = sign(x, y, sx[2], sy[2], sx[0], sy[0]);
+            boolean negative = d1 < 0f || d2 < 0f || d3 < 0f;
+            boolean positive = d1 > 0f || d2 > 0f || d3 > 0f;
+            return !(negative && positive);
+        }
+
+        private static float sign(float px, float py, float ax, float ay, float bx, float by) {
+            return (px - bx) * (ay - by) - (ax - bx) * (py - by);
+        }
     }
 
     private void drawAxis(Canvas canvas, float x, float y) {

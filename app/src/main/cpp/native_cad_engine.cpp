@@ -1,15 +1,24 @@
 #include <jni.h>
 #include <array>
+#include <cmath>
 #include <sstream>
+#include <vector>
 
 #include <BRepBndLib.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepMesh_IncrementalMesh.hxx>
+#include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <Standard_Failure.hxx>
 #include <TopAbs_ShapeEnum.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS_Shape.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Face.hxx>
+#include <TopLoc_Location.hxx>
+#include <Poly_Triangulation.hxx>
+#include <Poly_Triangle.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
 #include <IFSelect_ReturnStatus.hxx>
@@ -33,6 +42,41 @@ int countShapes(const TopoDS_Shape& shape, TopAbs_ShapeEnum type) {
         ++count;
     }
     return count;
+}
+
+std::vector<double> tessellatedTriangles(const TopoDS_Shape& shape) {
+    BRepMesh_IncrementalMesh mesher(shape, 0.15, false, 0.35, true);
+    mesher.Perform();
+    if (!mesher.IsDone()) return {};
+
+    std::vector<double> packed;
+    int faceIndex = 0;
+    for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More(); explorer.Next()) {
+        ++faceIndex;
+        const TopoDS_Face face = TopoDS::Face(explorer.Current());
+        TopLoc_Location location;
+        const Handle(Poly_Triangulation) triangulation = BRep_Tool::Triangulation(face, location);
+        if (triangulation.IsNull()) continue;
+        const gp_Trsf transform = location.Transformation();
+        for (int triangleIndex = 1; triangleIndex <= triangulation->NbTriangles(); ++triangleIndex) {
+            int n1 = 0, n2 = 0, n3 = 0;
+            triangulation->Triangle(triangleIndex).Get(n1, n2, n3);
+            if (face.Orientation() == TopAbs_REVERSED) std::swap(n2, n3);
+            const gp_Pnt p1 = triangulation->Node(n1).Transformed(transform);
+            const gp_Pnt p2 = triangulation->Node(n2).Transformed(transform);
+            const gp_Pnt p3 = triangulation->Node(n3).Transformed(transform);
+            const gp_Vec edge1(p1, p2);
+            const gp_Vec edge2(p1, p3);
+            gp_Vec normal = edge1.Crossed(edge2);
+            if (normal.SquareMagnitude() <= 1.0e-20) continue;
+            normal.Normalize();
+            packed.insert(packed.end(), {
+                p1.X(), p1.Y(), p1.Z(), p2.X(), p2.Y(), p2.Z(), p3.X(), p3.Y(), p3.Z(),
+                normal.X(), normal.Y(), normal.Z(), static_cast<double>(faceIndex)
+            });
+        }
+    }
+    return packed;
 }
 }
 
@@ -84,6 +128,24 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeModelInfo(
         return env->NewStringUTF(info.str().c_str());
     } catch (const Standard_Failure&) {
         return env->NewStringUTF("Nie udało się utworzyć bryły B-Rep");
+    }
+}
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_pl_tabletcad_app_NativeCadEngine_nativeTessellatePrism(
+        JNIEnv* env, jclass, jdouble width, jdouble height, jdouble depth) {
+    if (width <= 0.0 || height <= 0.0 || depth <= 0.0) return env->NewDoubleArray(0);
+    try {
+        const TopoDS_Shape shape = BRepPrimAPI_MakeBox(width, height, depth).Shape();
+        if (!BRepCheck_Analyzer(shape).IsValid()) return env->NewDoubleArray(0);
+        const std::vector<double> mesh = tessellatedTriangles(shape);
+        jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(mesh.size()));
+        if (result != nullptr && !mesh.empty()) {
+            env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(mesh.size()), mesh.data());
+        }
+        return result;
+    } catch (const Standard_Failure&) {
+        return env->NewDoubleArray(0);
     }
 }
 
