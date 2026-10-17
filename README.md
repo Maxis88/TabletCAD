@@ -1,81 +1,76 @@
 # TabletCAD
 
-Tabletowa aplikacja CAD dla Androida 14+. Repozytorium zawiera obecnie etap
-`0.13.0-sketch-plane`: interaktywny interfejs obszaru roboczego, trwały dokument
-projektu, JNI/C++ dla
-`arm64-v8a` oraz Open CASCADE 8.0.1. Rdzeń tworzy i waliduje rzeczywistą bryłę
-B-Rep oraz wykonuje autotest zapisu i ponownego odczytu STEP.
+Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
+Wersja źródeł: **0.45.0-transactional-history**, versionCode **52**.
+Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
-Gotowy APK znajduje się w `dist/TabletCAD-0.13.0-sketch-plane.apk`. Jest to podpisana
-wersja deweloperska dla tabletów ARM64 z Androidem 14 lub nowszym.
+## Architektura i funkcje
 
-Wersja 0.13.0 została zainstalowana i przetestowana dotykowo na HONOR MagicPad4 z MagicOS 10.
-Naprawia błąd inicjalizacji `WindowInsetsController` występujący przed utworzeniem
-widoku dekoracyjnego okna na tym urządzeniu.
+- Java, Android View/Canvas: MainActivity i CadWorkspaceView obsługują narzędzia,
+  kamerę, dotyk, rysowanie i wybór geometrii. Aplikacja nie używa WebView.
+- C++20/JNI, NativeCadEngine i Open CASCADE 8.0.1: rzeczywiste bryły B-Rep,
+  wyciągnięcie, obrót profilu, dodawanie/wycinanie, fazowanie, zaokrąglanie,
+  tessellacja, walidacja topologii oraz STEP.
+- CadProject i ProjectRepository: UUID, wersjonowane dokumenty `.tcad`, biblioteka,
+  robocze sesje szkicu, historia operacji, migawki undo/redo i zapis z backupem.
+- Szkice: płaszczyzny XY/XZ/YZ i płaskie ściany, linie, polilinie, prostokąty,
+  okręgi, łuki, kontury, przycinanie, odbicie, podstawowe więzy i wymiary.
+- Wymiana STEP/STL/DXF, pomiary krawędzi OCCT, objętość, pole i centroid.
 
-## Budowanie
+To wersja rozwojowa. Solver szkicu i odniesienia topologiczne mają ograniczony
+zakres, część obliczeń blokuje UI. Pełne komponenty i dokumentacja techniczna
+pozostają nieukończone. Bieżące ograniczenia: [audyt](docs/AUDIT-2026-10-17.md)
+i [mapa wymagań](STATUS_WYMAGAN_CAD.md). Starszy opis architektury zawiera cele,
+nie gwarancje aktualnego zachowania. Zachowano [historię rozwoju](docs/DEVELOPMENT_HISTORY.md).
 
-Projekt Gradle używa Android Gradle Plugin 8.6.1 i `compileSdk 36`.
+## Budowanie na Windows ze świeżego klonu
+
+Wymagania: Git, PowerShell, JDK 17 lub nowszy (sprawdzana ścieżka używa JBR
+Android Studio), Android SDK z pakietami `platforms;android-36`,
+`build-tools;36.0.0`, `ndk;30.0.16248370`, `cmake;4.1.2`.
+Zainstaluj pakiety przez SDK Manager w Android Studio i zaakceptuj ich licencje.
+Pierwsze przygotowanie OCCT wymaga internetu oraz miejsca na kompilację C++.
 
 ```powershell
-$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
-./gradlew.bat assembleDebug
+git clone https://github.com/Maxis88/TabletCAD.git
+cd TabletCAD
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+.\tools\prepare-occt.ps1 -Sdk $env:ANDROID_HOME
+.\tools\build-foundation-apk.ps1 -Sdk $env:ANDROID_HOME -Jdk 'C:\Program Files\Android\Android Studio\jbr'
 ```
 
-Jeżeli Gradle Wrapper nie jest jeszcze dostępny, można zbudować foundation APK
-lokalnym skryptem bez pobierania zależności:
+`prepare-occt.ps1` pobiera tag V8_0_1 i sprawdza rewizję
+`b8f597c677811d1f9f4d8a97f5ae2825c0353a42`, następnie buduje wymagane biblioteki
+ARM64. Nie nadpisuje lokalnie zmienionych źródeł zależności.
+Wynik: `dist/TabletCAD-0.45.0-transactional-history.apk`.
+Skrypt buduje Java/C++/DEX i zasoby, generuje lokalny klucz debug i weryfikuje
+podpis APK. Standardowe hasło Android debug służy tylko do lokalnego klucza
+deweloperskiego; nie wolno używać go do podpisywania wydań produkcyjnych.
+Klucz pozostaje w ignorowanym `.debug/` i nie trafia do Git.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\build-foundation-apk.ps1
-```
+Pliki Gradle są zachowane dla Android Studio. Projekt obecnie nie zawiera
+Gradle Wrappera; `gradlew.bat` nie jest dostępnym poleceniem. Powyższy skrypt
+jest obecną ścieżką odtwarzalnej kompilacji APK. Sama konfiguracja Gradle nie
+przygotowuje OCCT ani pełnego pakowania jego bibliotek.
 
-## Stan funkcji
+## Weryfikacja
 
-Aktywne są: dotykowy obszar roboczy, gest powiększenia/przesunięcia, swobodny
-obrót kamery w dwóch osiach, wybór i podświetlanie ścian, wybór płaszczyzny
-szkicu XY/XZ/YZ lub płaskiej ściany, numeryczna edycja głębokości,
-automatyczne ustawienie kamery prostopadle do płaszczyzny oraz niezależne
-elementy szkicu: linia, prostokąt i okrąg,
-prostokątny szkic tworzony przeciągnięciem, zmiana głębokości wyciągnięcia,
-rzuty prostokątne, podstawowy pomiar, natywny model B-Rep i techniczny
-zapis/odczyt STEP. Parametry bryły i encje szkicu mają UUID, są automatycznie
-zapisywane w wersjonowanym pliku `.tcad` i odtwarzane po ponownym uruchomieniu.
-Zapis używa pliku tymczasowego, synchronizacji i kopii odzyskiwania. Pełny solver szkicu, rozbudowane operacje
-parametryczne i pełne arkusze techniczne pozostają kolejnymi etapami implementacji.
+Kompilacja APK sprawdza Java, C++, zasoby i podpis. `tools/*Probe.java` to
+samodzielne testy regresyjne uruchamiane na Androidzie przez `app_process`;
+nie są automatycznie wykonywane przez Gradle/JUnit. Wymagają kompilacji z
+klasami aplikacji, DEX i dostępu do natywnej biblioteki na urządzeniu.
+Szczegóły wcześniejszych testów opisuje audyt. Testowanie interfejsu i geometrii
+należy wykonywać na osobnych dokumentach, bez modyfikowania danych użytkownika.
 
-Widok 3D korzysta z tessellacji rzeczywistej bryły `TopoDS_Shape` wykonanej przez
-OCCT. Selekcja ścian działa na trójkątach tej tessellacji, a normalna wybranej
-ściany steruje automatycznym ustawieniem płaszczyzny szkicu.
+## Rozwój i bezpieczeństwo repozytorium
 
-Zamknięty profil prostokąta lub okręgu na XY/XZ/YZ można wyciągnąć do prawdziwej
-bryły B-Rep. Systemowy selektor plików Android zapisuje zweryfikowany STEP,
-binarny STL i DXF szkicu 2D. STEP można ponownie otworzyć; import jest walidowany,
-tessellowany przez OCCT i zachowywany w dokumencie projektu.
+Pracuj na `codex/<opis>`, zapisuj zakończone i sprawdzone zmiany jako czytelne
+commity, integruj z `main` po weryfikacji. Nie przepisuj historii przez force push.
+Zasady dla Codex: [AGENTS.md](AGENTS.md).
 
-Strzałki historii wykonują rzeczywiste undo/redo całego dokumentu (do 50 migawek)
-dla szkicu, płaszczyzny, parametrów, wyciągnięcia i importu. Przywrócenie historii
-ponownie przelicza geometrię OCCT i zapisuje odzyskany stan.
-
-Tryb pomiaru wybiera wierzchołki i punkty na widocznych krawędziach tessellacji,
-oblicza odległość w przestrzeni 3D i wyświetla asocjacyjną linię wymiarową. Pomiar
-pozostaje przywiązany do modelu podczas obrotu kamery. Dla profilu kołowego panel
-pokazuje również promień i średnicę.
-
-Tryb modelowania udostępnia rzeczywiste zaokrąglenie wszystkich krawędzi brył
-utworzonych w TabletCAD. Promień jest podawany numerycznie w milimetrach,
-walidowany przez OCCT, zapisywany w dokumencie, obsługiwany przez undo/redo i
-uwzględniany w eksporcie STEP. Nieudana operacja nie zastępuje ostatniej poprawnej
-geometrii. Zaokrąglanie dowolnej topologii z importowanego STEP nie jest jeszcze
-udostępnione.
-
-Narzędzia wyboru, tworzenia i edycji szkicu, wyciągnięcia, głębokości,
-zaokrąglenia, pomiaru i rysunku są dostępne jako kompaktowe ikony na górnym
-pasku. Dolny pasek jest osią historii cech modelu z miniaturami początku,
-szkicu, wyciągnięcia/importu i zaokrąglenia oraz kontrolkami undo/redo. Encje
-szkicu są widoczne wyłącznie podczas tworzenia lub edycji właściwego szkicu.
-Każdy szkic zapisuje punkt początku oraz dwie osie lokalnej płaszczyzny, dlatego
-jest rzutowany razem z modelem, a nie nakładany na ekran. Zakrzywione ściany są
-odrzucane jako płaszczyzny szkicu. Narzędzie Edytuj pozwala wskazać linię,
-prostokąt lub okrąg, zmienić jego współrzędne numerycznie albo go usunąć; zmiana
-od razu przebudowuje powiązaną geometrię. Drzewo po lewej jest aktywne: otwiera
-szkic, wybiera model, edytuje zaokrąglenie i przywraca widok bazowy.
+Źródła Java/C++, zasoby Androida, konfiguracja Gradle, narzędzia i dokumentacja
+są wersjonowane. SDK/NDK, OCCT pobierany z upstreamu, build, dist, cache,
+lokalne ustawienia i dane podpisywania są ignorowane. Nie dodawaj tokenów,
+haseł ani prywatnych kluczy. Informacje o OCCT: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Nie przypisano licencji do własnego kodu projektu; licencja OCCT obowiązuje
+niezależnie, a skrypt dołącza jej treść do APK.
