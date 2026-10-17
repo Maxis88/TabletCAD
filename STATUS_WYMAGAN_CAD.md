@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.46.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.47.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,11 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.47.0: import STEP/STL/DXF używa wspólnej transakcji; odrzucony import
+zachowuje dokument, geometrię, historię i nie zostawia nowego źródła.
+STEP/STL poprawnie odłączają poprzednią sesję szkicu, a undo ją odtwarza.
+DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
 
 - Natywny interfejs Android i lokalny OCCT przez JNI; brak konta/chmury.
 - Precyzyjne profile liniowe i analityczne łuki/okręgi, szkic na płaszczyźnie

@@ -3005,21 +3005,28 @@ public final class CadWorkspaceView extends View {
     }
 
     public boolean activateImportedStep() {
-        double[] imported = NativeCadEngine.tessellateStep(projectRepository.importedStepFile().getAbsolutePath());
-        if (imported.length == 0) return false;
+        try { importStep(projectRepository.importedStepFile()); return true; }
+        catch (IOException error) { operationMessage=error.getMessage(); return false; }
+    }
+
+    public void importStep(File staged) throws IOException {
+        double[] imported = NativeCadEngine.tessellateStep(staged.getAbsolutePath());
+        if (!CadMesh.isValid(imported,false)) throw new IOException("Plik nie zawiera poprawnej bryły STEP");
         String sourceName = "source-" + UUID.randomUUID() + ".step";
         File retained = new File(projectRepository.importedStepFile().getParentFile(), sourceName);
-        try {
-            java.nio.file.Files.copy(projectRepository.importedStepFile().toPath(), retained.toPath());
-        } catch (IOException error) {
-            operationMessage = "Nie można zachować źródła STEP";
-            return false;
+        java.nio.file.Files.copy(staged.toPath(), retained.toPath());
+        if (!commitModelChange(() -> {
+            resetImportedModel();
+            project.importedStep=true;project.importedStepSource=sourceName;
+        })) {
+            retained.delete();
+            throw new IOException(operationMessage);
         }
-        checkpoint();
-        nativeMesh = imported;
-        project.importedStep = true;
-        project.importedMeshSource = null;
-        project.importedStepSource = sourceName;
+        finishModelImport("Gotowe: otwarto STEP");
+    }
+
+    private void resetImportedModel() {
+        project.importedStep=false;project.importedStepSource="imported.step";project.importedMeshSource=null;
         project.committedFeatures.clear();
         project.committedProfileIds.clear();
         project.savedSketches.clear();
@@ -3030,15 +3037,23 @@ public final class CadWorkspaceView extends View {
         project.featureProfileId = null;
         project.sketch.clear();
         project.coincidences.clear();
+        project.sketchEditBaseline=null;project.sketchLineage.clear();project.sketchBindings.clear();
+        project.polylineDraft.clear();project.threePointDraft.clear();project.threePointTool="";
+        project.sketchPlane="XY";project.setPrincipalSketchFrame("XY");
         project.sketchExtruded = false;
+        project.featureSymmetric=false;
         project.filletRadius = 0.0;
-        selectedFace = -1;
-        operationMessage = "Gotowe: otwarto STEP";
-        updateMeshCenter();
-        modelInfo = "Zaimportowany i zweryfikowany model STEP";
-        projectRepository.save(project);
-        invalidate();
-        return true;
+    }
+
+    private void finishModelImport(String message) {
+        closePropertyEditor();
+        mode="Wybierz";sketchPlane=project.sketchPlane;sketchPlaneChosen=false;
+        cameraYaw=-28;cameraPitch=22;zoom=1;panX=panY=0;showSolid=true;treeSelection="Model";
+        selectedFace=-1;selectedSketchId=null;arcDraft.clear();polylinePreview=null;
+        draggedSketch=dragPreview=null;dragSolvedPreview=null;sketching=false;sketchRect=null;
+        trimMode=dimensionMode=coincidenceMode=false;coincidenceFirst=null;snapMarker=null;
+        measureA=measureB=null;measuredEdgeText="";polylineTouch=false;
+        operationMessage=message;invalidate();
     }
 
     private void checkpoint() {
@@ -3143,18 +3158,20 @@ public final class CadWorkspaceView extends View {
     }
 
     public void importDxf(java.io.InputStream input) throws IOException {
+        if(SketchTransactions.active(project))throw new IOException("Zakończ albo anuluj edycję szkicu przed importem DXF");
         List<SketchPrimitive> entities = CadExchange.readDxf(input);
-        checkpoint();
-        preserveExtrudedBase(); commitActiveFeature();
-        try { project.archiveCurrentSketch(); }
-        catch(org.json.JSONException error) { throw new IOException("Nie można zachować szkicu",error); }
-        project.sketchId = UUID.randomUUID().toString();
-        project.sketch.clear(); project.sketch.addAll(entities);
-        project.coincidences.clear();
-        project.sketchPlane = "XY"; project.setPrincipalSketchFrame("XY");
-        project.featureProfileId = null; project.sketchExtruded = false;
+        if(!commitModelChange(() -> {
+            preserveExtrudedBase(); commitActiveFeature();
+            try { project.archiveCurrentSketch(); }
+            catch(org.json.JSONException error) { throw new IllegalArgumentException("Nie można zachować szkicu",error); }
+            project.sketchId = UUID.randomUUID().toString();
+            project.sketch.clear(); project.sketch.addAll(entities);project.coincidences.clear();
+            project.polylineDraft.clear();project.threePointDraft.clear();project.threePointTool="";
+            project.sketchPlane = "XY"; project.setPrincipalSketchFrame("XY");
+            project.featureProfileId = null; project.sketchExtruded = false;
+            SketchTransactions.begin(project);
+        }))throw new IOException(operationMessage);
         sketchPlane = "XY";
-        projectRepository.save(project);
         enterSketchEditor();
         operationMessage = "Gotowe: wczytano DXF · " + entities.size() + " elementów";
         invalidate();
@@ -3164,22 +3181,13 @@ public final class CadWorkspaceView extends View {
         double[] mesh;
         try(FileInputStream input=new FileInputStream(staged)) { mesh=CadExchange.readStl(input); }
         String sourceName="mesh-"+UUID.randomUUID()+".stl";
-        java.nio.file.Files.copy(staged.toPath(),new File(
-            projectRepository.importedStepFile().getParentFile(),sourceName).toPath());
-        checkpoint();
-        project.importedMeshSource=sourceName; project.importedStep=false;
-        project.committedFeatures.clear(); project.committedProfileIds.clear();
-        project.savedSketches.clear(); project.sketch.clear();
-        project.coincidences.clear();
-        project.featureBase=null; project.featureBaseProfileId=null;
-        project.featureOperation="none"; project.featureProfileId=null;
-        project.sketchExtruded=false; project.filletRadius=0;
-        nativeMesh=mesh; updateMeshCenter();
-        modelInfo="Siatka STL · trójkąty "+mesh.length/13;
-        mode="Wybierz"; cameraYaw=-28; cameraPitch=22; zoom=1; panX=panY=0;
-        selectedFace=-1; selectedSketchId=null;
-        operationMessage="Gotowe: wczytano siatkę STL";
-        projectRepository.save(project); invalidate();
+        if(!CadMesh.isValid(mesh,false))throw new IOException("Niepoprawna siatka STL");
+        File retained=new File(projectRepository.importedStepFile().getParentFile(),sourceName);
+        java.nio.file.Files.copy(staged.toPath(),retained.toPath());
+        if(!commitModelChange(() -> {resetImportedModel();project.importedMeshSource=sourceName;})) {
+            retained.delete();throw new IOException(operationMessage);
+        }
+        finishModelImport("Gotowe: wczytano siatkę STL");
     }
 
     public void writeBinaryStl(OutputStream output) throws IOException {
@@ -3558,14 +3566,18 @@ public final class CadWorkspaceView extends View {
 
     private void activateProject(CadProject next) {
         CadProject previous=project;String previousMode=mode;
+        double[] previousMesh=nativeMesh,previousPrism=nativePrism;
+        String previousInfo=modelInfo;TechnicalSheet previousSheet=technicalSheet;
+        double w=modelWidth,h=modelHeight,d=modelDepth;
         try {
             project=next;mode="Wybierz";
             modelWidth=next.width;modelHeight=next.height;modelDepth=next.depth;
             if(!updateNativeModel())throw new IllegalStateException("Nie można odtworzyć geometrii lub źródła projektu");
             projectRepository.save(next);
         }catch(RuntimeException error) {
-            project=previous;mode=previousMode;modelWidth=previous.width;modelHeight=previous.height;modelDepth=previous.depth;
-            updateNativeModel();operationMessage="Nie można otworzyć projektu. Bieżący dokument pozostaje aktywny.";invalidate();return;
+            project=previous;mode=previousMode;modelWidth=w;modelHeight=h;modelDepth=d;
+            nativeMesh=previousMesh;nativePrism=previousPrism;modelInfo=previousInfo;technicalSheet=previousSheet;updateMeshCenter();
+            operationMessage="Nie można otworzyć projektu. Bieżący dokument pozostaje aktywny.";invalidate();return;
         }
         closePropertyEditor();undoStack.clear();redoStack.clear();
         sketchPlane=next.sketchPlane;sketchPlaneChosen=false;

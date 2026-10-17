@@ -113,26 +113,22 @@ public final class MainActivity extends Activity {
     }
 
     private void importStep(Uri source) {
-        File destination = workspace.importedStepFile();
-        File staged = new File(destination.getParentFile(), "imported.step.new");
+        File staged = new File(getCacheDir(), "imported.step.new");
         try (InputStream input = getContentResolver().openInputStream(source);
              OutputStream output = new java.io.FileOutputStream(staged)) {
             if (input == null) throw new IOException("Nie można odczytać wybranego pliku");
             byte[] buffer = new byte[64 * 1024];
-            int read;
-            while ((read = input.read(buffer)) >= 0) output.write(buffer, 0, read);
-            output.flush();
-            if (NativeCadEngine.tessellateStep(staged.getAbsolutePath()).length == 0) {
-                throw new IOException("Plik nie zawiera poprawnej bryły STEP");
+            int read;long total=0;
+            while ((read = input.read(buffer)) >= 0) {
+                total+=read;if(total>32L*1024*1024)throw new IOException("Limit STEP: 32 MB");
+                output.write(buffer, 0, read);
             }
-            Files.move(staged.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE);
-            if (!workspace.activateImportedStep()) throw new IOException("Nie można wyświetlić modelu STEP");
+            output.flush();
+            workspace.importStep(staged);
             Toast.makeText(this, "Model STEP otwarty", Toast.LENGTH_LONG).show();
         } catch (IOException error) {
-            staged.delete();
             Toast.makeText(this, "Import nieudany: " + error.getMessage(), Toast.LENGTH_LONG).show();
-        }
+        } finally { staged.delete(); }
     }
 
     private void importExchange(Uri source) {
