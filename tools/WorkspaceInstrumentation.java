@@ -14,10 +14,12 @@ public final class WorkspaceInstrumentation extends Instrumentation {
         try {
             runOnMainSync(() -> {
                 try {
-                    Class<?> probe=Class.forName("WorkspaceUiProbe");
-                    probe.getField("applicationContext").set(null,getTargetContext());
-                    Method run=probe.getDeclaredMethod("run",String[].class);run.setAccessible(true);
-                    run.invoke(null,(Object)new String[]{getTargetContext().getCacheDir().getAbsolutePath()});
+                    for(String name:new String[]{"WorkspaceUiProbe","ExtrusionManipulatorProbe"}) {
+                        Class<?> probe=Class.forName(name);
+                        probe.getField("applicationContext").set(null,getTargetContext());
+                        Method run=probe.getDeclaredMethod("run",String[].class);run.setAccessible(true);
+                        run.invoke(null,(Object)new String[]{getTargetContext().getCacheDir().getAbsolutePath()});
+                    }
                 }catch(Throwable error){failure[0]=error instanceof InvocationTargetException?error.getCause():error;}
             });
         }catch(Throwable error){failure[0]=error;}

@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 55
-        versionName = "0.48.0-context-workspace"
+        versionCode = 56
+        versionName = "0.49.0-extrusion-manipulator"
     }
 
     externalNativeBuild {

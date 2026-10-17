@@ -143,6 +143,18 @@ public final class CadWorkspaceView extends View {
     private String toolbarState="";
     private boolean toolbarUpdatePosted;
     private float timelineScroll;
+    private EditText extrusionDimension;
+    private android.widget.CheckBox extrusionReverse,extrusionSymmetric;
+    private double[] extrusionOrigin,extrusionAxis;
+    private PointF extrusionHandle;
+    private final RectF extrusionValueBounds=new RectF();
+    private Runnable extrusionPreview;
+    private boolean extrusionTouch,extrusionCancelled,extrusionPreviewScheduled;
+    private double extrusionStartParameter,extrusionStartDepth;
+    private final Runnable extrusionPreviewTask=()-> {
+        extrusionPreviewScheduled=false;
+        if(extrusionPreview!=null){removeCallbacks(extrusionPreview);extrusionPreview.run();}
+    };
 
     private boolean propertiesVisible() {
         return propertyEditor != null || inSketch() || mode.equals("Zmierz") || mode.equals("Rysunek");
@@ -161,6 +173,10 @@ public final class CadWorkspaceView extends View {
     private float topToolWidth() {return dp(64);}
 
     private void closePropertyEditor() {
+        removeCallbacks(extrusionPreviewTask);extrusionPreviewScheduled=false;
+        extrusionDimension=null;extrusionReverse=extrusionSymmetric=null;
+        extrusionOrigin=extrusionAxis=null;extrusionHandle=null;extrusionPreview=null;
+        extrusionTouch=false;extrusionValueBounds.setEmpty();
         featurePreview=null;
         measurementOutput=null;
         filletEdges=new double[0];filletSegment=-1;filletSelectionChanged=null;
@@ -435,6 +451,7 @@ public final class CadWorkspaceView extends View {
     }
 
     @Override public boolean onTouchEvent(MotionEvent event) {
+        if(handleExtrusionTouch(event))return true;
         if(event.getPointerCount()>1 || event.getActionMasked()==MotionEvent.ACTION_CANCEL) {
             sketching=false;sketchRect=null;snapMarker=null;
             polylineTouch=false;polylinePreview=null;
@@ -623,6 +640,7 @@ public final class CadWorkspaceView extends View {
             if (mode.equals("Zmierz")) drawDimensions(canvas, left, top, right, bottom);
         }
         if(!mode.equals("Rysunek")) drawAxis(canvas, right - dp(70), bottom - dp(60));
+        drawExtrusionManipulator(canvas,left,top,right,bottom);
         if(!propertiesVisible()&&!operationMessage.isEmpty())drawViewportMessage(canvas,left,right,bottom);
         canvas.restore();
         drawTimeline(canvas);
@@ -2182,6 +2200,105 @@ public final class CadWorkspaceView extends View {
         return new double[]{workCenterX+rx*420*q*dp(3.2f)*zoom,workCenterY-ry*420*q*dp(3.2f)*zoom,q};
     }
 
+    private void bindExtrusionManipulator(EditText dimension,android.widget.CheckBox reverse,
+            android.widget.CheckBox symmetric,double[] origin,double[] axis,Runnable preview) {
+        if(propertyEditor==null)return;
+        extrusionDimension=dimension;extrusionReverse=reverse;extrusionSymmetric=symmetric;
+        extrusionOrigin=origin;extrusionAxis=axis;extrusionPreview=preview;
+        double length=Math.sqrt(axis[0]*axis[0]+axis[1]*axis[1]+axis[2]*axis[2]);
+        if(!Double.isFinite(length)||length<1e-10){extrusionDimension=null;return;}
+        for(int i=0;i<3;i++)axis[i]/=length;
+        double[] a=projectWorldPoint(origin[0],origin[1],origin[2]);
+        double[] b=projectWorldPoint(origin[0]+axis[0]*20,origin[1]+axis[1]*20,origin[2]+axis[2]*20);
+        if(Math.hypot(b[0]-a[0],b[1]-a[1])<dp(16)) {
+            cameraPitch=cameraPitch>45?cameraPitch-25:cameraPitch<-45?cameraPitch+25:cameraPitch+25;
+            operationMessage="Widok odchylono, aby odsłonić oś wyciągania. Przeciągnij strzałkę lub dotknij wymiaru.";
+        }
+        invalidate();
+    }
+
+    private double extrusionSignedDepth() {
+        return FeatureDirection.signed(parseCoordinate(extrusionDimension),extrusionReverse.isChecked(),extrusionSymmetric.isChecked());
+    }
+
+    private void drawExtrusionManipulator(Canvas canvas,float left,float top,float right,float bottom) {
+        extrusionHandle=null;extrusionValueBounds.setEmpty();
+        if(extrusionDimension==null)return;
+        try {
+            double depth=extrusionSignedDepth(),factor=extrusionSymmetric.isChecked()?.5:1;
+            double[] a=projectWorldPoint(extrusionOrigin[0],extrusionOrigin[1],extrusionOrigin[2]);
+            double[] b=projectWorldPoint(extrusionOrigin[0]+extrusionAxis[0]*depth*factor,
+                extrusionOrigin[1]+extrusionAxis[1]*depth*factor,extrusionOrigin[2]+extrusionAxis[2]*depth*factor);
+            if(a[2]<=0||b[2]<=0)return;
+            double dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);
+            if(length<dp(.2f))return;
+            double ux=dx/length,uy=dy/length,display=length+dp(36);
+            if(ux>1e-8)display=Math.min(display,(right-dp(28)-a[0])/ux);
+            if(ux< -1e-8)display=Math.min(display,(left+dp(28)-a[0])/ux);
+            if(uy>1e-8)display=Math.min(display,(bottom-dp(72)-a[1])/uy);
+            if(uy< -1e-8)display=Math.min(display,(top+dp(28)-a[1])/uy);
+            if(display<dp(24))return;
+            float hx=(float)(a[0]+ux*display),hy=(float)(a[1]+uy*display);
+            extrusionHandle=new PointF(hx,hy);
+            paint.setColor(ACCENT);paint.setStrokeWidth(dp(3));
+            canvas.drawLine((float)a[0],(float)a[1],hx,hy,paint);
+            canvas.drawCircle((float)a[0],(float)a[1],dp(4),paint);
+            android.graphics.Path head=new android.graphics.Path();head.moveTo(hx,hy);
+            head.lineTo((float)(hx-ux*dp(17)-uy*dp(9)),(float)(hy-uy*dp(17)+ux*dp(9)));
+            head.lineTo((float)(hx-ux*dp(17)+uy*dp(9)),(float)(hy-uy*dp(17)-ux*dp(9)));head.close();canvas.drawPath(head,paint);
+            float x=Math.max(left+dp(8),Math.min(right-dp(126),hx+dp(18))),y=Math.max(top+dp(8),Math.min(bottom-dp(60),hy-dp(48)));
+            extrusionValueBounds.set(x,y,x+dp(116),y+dp(40));
+            paint.setColor(PANEL);canvas.drawRoundRect(extrusionValueBounds,dp(8),dp(8),paint);
+            text(canvas,String.format(java.util.Locale.US,"%.2f mm",depth),x+dp(58),y+dp(26),13,ACCENT,true,Paint.Align.CENTER);
+        }catch(IllegalArgumentException ignored){ /* Invalid typed values keep the model unchanged. */ }
+    }
+
+    private double extrusionParameter(float x,float y) {
+        return AxisDrag.parameter(extrusionOrigin,extrusionAxis,new double[]{meshCenterX,meshCenterY,meshCenterZ},
+            cameraYaw,cameraPitch,dp(3.2f)*zoom,workCenterX,workCenterY,x,y);
+    }
+
+    private void setExtrusionDepth(double depth) {
+        double value=Math.max(.1,Math.min(5000,Math.abs(depth)));
+        extrusionReverse.setChecked(!extrusionSymmetric.isChecked()&&depth<0);
+        extrusionDimension.setText(String.format(java.util.Locale.US,"%.3f",value));
+        if(extrusionPreview!=null)removeCallbacks(extrusionPreview);
+        if(!extrusionPreviewScheduled){extrusionPreviewScheduled=true;postDelayed(extrusionPreviewTask,40);}
+        invalidate();
+    }
+
+    private boolean handleExtrusionTouch(MotionEvent event) {
+        if(extrusionDimension==null)return false;
+        int action=event.getActionMasked();
+        if(action==MotionEvent.ACTION_DOWN) {
+            if(extrusionHandle!=null&&Math.hypot(event.getX()-extrusionHandle.x,event.getY()-extrusionHandle.y)<=dp(28)) {
+                double parameter=extrusionParameter(event.getX(),event.getY());
+                if(!Double.isFinite(parameter)){operationMessage="Obróć widok, aby odsłonić oś wyciągania.";invalidate();return true;}
+                try{extrusionStartDepth=extrusionSignedDepth();}catch(IllegalArgumentException error){return true;}
+                extrusionStartParameter=parameter;extrusionTouch=true;extrusionCancelled=false;return true;
+            }
+            if(extrusionValueBounds.contains(event.getX(),event.getY())) {
+                extrusionDimension.requestFocus();extrusionDimension.selectAll();
+                ((android.view.inputmethod.InputMethodManager)getContext().getSystemService(Context.INPUT_METHOD_SERVICE))
+                    .showSoftInput(extrusionDimension,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+                return true;
+            }
+        }
+        if(!extrusionTouch)return false;
+        if(event.getPointerCount()>1||action==MotionEvent.ACTION_CANCEL) {
+            if(!extrusionCancelled)setExtrusionDepth(extrusionStartDepth);
+            extrusionCancelled=true;
+        }
+        if(action==MotionEvent.ACTION_MOVE&&!extrusionCancelled) {
+            double parameter=extrusionParameter(event.getX(),event.getY());
+            if(Double.isFinite(parameter))setExtrusionDepth(extrusionStartDepth+(parameter-extrusionStartParameter)*(extrusionSymmetric.isChecked()?2:1));
+        }
+        if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL) {
+            extrusionTouch=false;removeCallbacks(extrusionPreviewTask);extrusionPreviewTask.run();
+        }
+        return true;
+    }
+
     private void selectFilletEdge(float x,float y) {
         // Pick against the unmodified model, never through the temporary fillet preview.
         double[] preview=featurePreview;featurePreview=null;projectNativeMesh(workCenterX,workCenterY);featurePreview=preview;
@@ -2886,6 +3003,16 @@ public final class CadWorkspaceView extends View {
         reverse.setOnCheckedChangeListener((button,checked)->{removeCallbacks(preview);postDelayed(preview,100);});
         symmetric.setOnCheckedChangeListener((button,checked)->{reverse.setEnabled(!checked);removeCallbacks(preview);postDelayed(preview,100);});
         postDelayed(preview,100);
+        double u=profile.type.equals("Okrąg")?profile.x1:(profile.x1+profile.x2)*.5;
+        double v=profile.type.equals("Okrąg")?profile.y1:(profile.y1+profile.y2)*.5;
+        double sign=operation.equals("cut")?-1:1;
+        double[] origin={project.sketchOriginX+u*project.sketchUx+v*project.sketchVx,
+            project.sketchOriginY+u*project.sketchUy+v*project.sketchVy,
+            project.sketchOriginZ+u*project.sketchUz+v*project.sketchVz};
+        double[] axis={sign*(project.sketchUy*project.sketchVz-project.sketchUz*project.sketchVy),
+            sign*(project.sketchUz*project.sketchVx-project.sketchUx*project.sketchVz),
+            sign*(project.sketchUx*project.sketchVy-project.sketchUy*project.sketchVx)};
+        bindExtrusionManipulator(input,reverse,symmetric,origin,axis,preview);
     }
 
     private android.widget.CheckBox directionCheck(double depth) {
@@ -2948,6 +3075,11 @@ public final class CadWorkspaceView extends View {
         reverse.setOnCheckedChangeListener((button,checked)->{removeCallbacks(preview);postDelayed(preview,100);});
         symmetric.setOnCheckedChangeListener((button,checked)->{reverse.setEnabled(!checked);removeCallbacks(preview);postDelayed(preview,100);});
         postDelayed(preview,100);
+        double u=base[0]==1?base[1]:(base[1]+base[3])*.5,v=base[0]==1?base[2]:(base[2]+base[4])*.5;
+        int plane=FeatureDirection.basePlane(base[5]);
+        double[] origin=plane==1?new double[]{u,0,v}:plane==2?new double[]{0,u,v}:new double[]{u,v,0};
+        double[] axis=plane==1?new double[]{0,1,0}:plane==2?new double[]{1,0,0}:new double[]{0,0,1};
+        bindExtrusionManipulator(input,reverse,symmetric,origin,axis,preview);
     }
 
     private void updateMeshCenter() {
