@@ -358,31 +358,21 @@ public final class CadWorkspaceView extends View {
                     if (tool >= 0 && tool < groups.length) openToolGroup(groups[tool],dp(224)+tool*itemWidth);
                     return true;
                 }
-                if (e.getX() < dp(224) && e.getY() >= dp(180) && e.getY() <= dp(216)) {
-                    cameraYaw = -28f; cameraPitch = 22f; zoom = 1f; panX = panY = 0f;
-                    treeSelection = "Początek";
-                    mode = "Wybierz";
-                    invalidate();
+                if (e.getX() < dp(224) && e.getY() >= dp(184) && e.getY() <= dp(256)) {
+                    if (!project.hasSolid() || e.getY() >= dp(220)) {
+                        // The visible tree row represents the active sketch only.
+                        // Opening it must never display the global sketch picker.
+                        enterSketchEditor();
+                    } else {
+                        treeSelection = "Model";
+                        mode = "Wybierz";
+                        selectedSketchId = null;
+                        invalidate();
+                    }
                     return true;
                 }
-                if (e.getX() < dp(224) && e.getY() >= dp(216) && e.getY() <= dp(252)) {
-                    showSavedSketchPicker();
-                    return true;
-                }
-                if (e.getX() < dp(224) && e.getY() >= dp(252) && e.getY() <= dp(286)) {
-                    treeSelection = "Model";
-                    mode = "Wybierz";
-                    selectedSketchId = null;
-                    invalidate();
-                    return true;
-                }
-                if (project.filletRadius > 0.0 && e.getX() < dp(224)
-                        && e.getY() >= dp(286) && e.getY() <= dp(322)) {
-                    treeSelection = "Zaokrąglenie";
-                    showAllEdgesFilletEditor();
-                    return true;
-                }
-                if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234)) {
+                
+if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234)) {
                     if (e.getY() >= dp(374) && e.getY() <= dp(426)) chooseSketchPlane("XY");
                     else if (e.getY() >= dp(432) && e.getY() <= dp(484)) chooseSketchPlane("XZ");
                     else if (e.getY() >= dp(490) && e.getY() <= dp(542)) chooseSketchPlane("YZ");
@@ -642,7 +632,10 @@ public final class CadWorkspaceView extends View {
             drawTechnicalViews(canvas, left, top, right, bottom);
         } else {
             if (showSolid || !inSketch()) drawNativeSolid(canvas, (left + right) / 2f + panX, (top + bottom) / 2f + panY);
-            if ((mode.equals("Szkic") && sketchPlaneChosen) || mode.equals("Edytuj szkic")) {
+            if ((mode.equals("Szkic") && sketchPlaneChosen) || mode.equals("Edytuj szkic")
+                    || (mode.equals("Wybierz") && !project.sketch.isEmpty()
+                        && !project.sketchExtruded && project.featureBase == null
+                        && project.featureOperation.equals("none"))) {
                 drawSketch(canvas, left, right);
             }
             if (mode.equals("Zmierz")) drawDimensions(canvas, left, top, right, bottom);
@@ -770,22 +763,15 @@ public final class CadWorkspaceView extends View {
         paint.setColor(PANEL);
         canvas.drawRect(0, dp(108), left, getHeight(), paint);
         text(canvas, "MODEL", dp(18), dp(137), 12, MUTED, true);
-        row(canvas, "▾  Dokument", dp(18), dp(168), true);
-        treeRow(canvas, "Początek", "◇  Widok bazowy", dp(184), dp(216));
-        treeRow(canvas, "Szkic", "▱  Szkic 1  (" + project.sketch.size() + ")", dp(218), dp(252));
-        treeRow(canvas, "Model", !project.hasSolid()?"◇  Brak bryły":project.importedMeshSource != null ? "△  Siatka STL" : project.importedStep ?
-            (project.featureOperation.equals("none") ? "◈  Import STEP"
-                : project.featureOperation.equals("cut") ? "▣  Wycięcie STEP" : "▣  Dodanie STEP")
-            : (!project.featureOperation.equals("none")
-                ? (project.featureOperation.equals("cut") ? "▣  Wycięcie szkicu" : "▣  Dodanie szkicu")
-                : (Revolve.is(project.featureBase)?"◈  Obrót profilu":project.sketchExtruded ? "◈  Wyciągnięcie szkicu" : "◈  Wyciągnięcie 1")),
-            dp(252), dp(286));
-        if (project.filletRadius > 0.0) {
-            treeRow(canvas, "Zaokrąglenie",
-                String.format(java.util.Locale.US, "◒  Zaokrąglenie R%.2f", project.filletRadius),
-                dp(286), dp(322));
+        row(canvas, "Dokument", dp(18), dp(168), true);
+        if (project.hasSolid()) {
+            treeRow(canvas, "Model", project.importedMeshSource != null ? "Siatka STL"
+                : project.importedStep ? "Bryla STEP" : "Bryla 1", dp(184), dp(220));
+            treeRow(canvas, "Szkic", "    Szkic 1 (" + project.sketch.size() + ")", dp(220), dp(256));
+        } else {
+            treeRow(canvas, "Szkic", "Szkic 1 (" + project.sketch.size() + ")", dp(184), dp(220));
         }
-        text(canvas, "Dotknij elementu, aby go otworzyć", dp(18), dp(350), 9.5f, MUTED, false);
+        text(canvas, "Operacje: historia na dole", dp(18), dp(295), 10, MUTED, false);
     }
 
     private void drawProperties(Canvas canvas, float right, float top, float bottom) {
@@ -1905,8 +1891,14 @@ public final class CadWorkspaceView extends View {
     }
 
     private void chooseSketchPlane(String plane) {
+        // A newly picked model face is a new geometric reference even if its
+        // displayed face number happens to match the previous sketch plane.
+        // Mesh face IDs are not stable after B-Rep rebuilds.
+        boolean pickedModelFace = plane.startsWith("Ściana ") && selectedFace >= 0;
         boolean newSketch = !plane.equals(project.sketchPlane)
-            || (!sketchPlaneChosen && !project.sketch.isEmpty());
+            || (!sketchPlaneChosen && !project.sketch.isEmpty())
+            || (pickedModelFace && !project.sketch.isEmpty()
+                && !SketchTransactions.active(project));
         if (newSketch || !sketchPlaneChosen) checkpoint();
         sketchPlane = plane;
         sketchPlaneChosen = true;
@@ -2096,8 +2088,10 @@ public final class CadWorkspaceView extends View {
     }
 
     private void invalidateGeometryPreview() {
+        // Keep the last successfully calculated geometry visible while a new
+        // (possibly expensive) B-Rep preview is computed during arrow dragging.
+        // Closing the editor explicitly discards this temporary geometry.
         if(geometryPreviewWorker!=null)geometryPreviewWorker.cancel();
-        featurePreview=null;
     }
 
     private void submitGeometryPreview(android.widget.ScrollView owner,java.util.concurrent.Callable<double[]> query,
@@ -2109,8 +2103,11 @@ public final class CadWorkspaceView extends View {
         }
         geometryPreviewWorker.submit(query,(mesh,error)-> {
             if(propertyEditor!=owner)return;
-            featurePreview=error==null&&CadMesh.isValid(mesh,false)?mesh:null;
-            display.accept(featurePreview==null?new double[0]:featurePreview);invalidate();
+            // An invalid/intermediate solid must never replace the last valid
+            // preview: it would otherwise make the model flash/disappear.
+            boolean valid=error==null&&CadMesh.isValid(mesh,false);
+            if(valid)featurePreview=mesh;
+            display.accept(valid?mesh:new double[0]);invalidate();
         });
     }
 
@@ -2981,13 +2978,7 @@ public final class CadWorkspaceView extends View {
     }
 
     private void showFaceFeatureDialog(SketchPrimitive profile) {
-        String[] operations = {"Dodaj materiał", "Wytnij materiał"};
-        new PropertyBuilder()
-            .setTitle("Operacja na wybranym szkicu")
-            .setItems(operations, (dialog, which) -> showFaceFeatureDepth(profile,
-                which == 0 ? "add" : "cut"))
-            .setNegativeButton("Anuluj", null)
-            .show();
+        showFaceFeatureDepth(profile, "add");
     }
 
     private void showFaceFeatureDepth(SketchPrimitive profile, String operation) {
@@ -3727,6 +3718,15 @@ public final class CadWorkspaceView extends View {
             sketchPlaneChosen = false;
             sketchPlane = "Wybierz płaszczyznę";
             operationMessage = "Wybierz płaszczyznę lub ścianę modelu";
+            // Respect the face selected before invoking Sketch. Previously the
+            // app silently kept the old sketch frame until the user tapped again.
+            if (selectedFace >= 0) {
+                if (isFacePlanar(selectedFace)) {
+                    chooseSketchPlane("Ściana " + (selectedFace + 1));
+                } else {
+                    operationMessage = "Wybrana ściana nie jest płaska. Wskaż inną.";
+                }
+            }
         } else if (tool.equals("Łuk") || tool.equals("Linia") || tool.equals("Polilinia") || tool.equals("Prostokąt") || tool.equals("Okrąg") || tool.equals("Pomocnicza")) {
             mode = "Szkic";
             sketchTool = tool;
@@ -3737,8 +3737,14 @@ public final class CadWorkspaceView extends View {
             if(inSketch()){mode="Edytuj szkic";sketchPlaneChosen=true;alignToCurrentSketchPlane();invalidate();}
             else showSavedSketchPicker();
         } else if (tool.equals("Wyciągnij")) {
+            // Zatwierdz szkic automatycznie, bez ukrywania profilu przed operacja.
+            if (inSketch() && SketchTransactions.active(project)) {
+                finishSketchWork();
+                if (inSketch()) return; // Blad walidacji lub nierozwiazane powiazania.
+            } else if (inSketch()) {
+                mode = "Wybierz";
+            }
             extrudeSketchProfile();
-            mode = "Wybierz";
         } else if (tool.equals("Głębokość")) showDepthEditor();
         else if (tool.equals("Zaokrąglij")) showFilletEditor();
         else if (tool.equals("Fazuj")) showEdgeTreatmentEditor(-1,true);
@@ -3937,11 +3943,10 @@ public final class CadWorkspaceView extends View {
     }
 
     private void isolateCoveredSketch() {
-        if(showSolid&&SketchReadability.bodyInFront(nativeMesh,project.sketchOriginX,project.sketchOriginY,
-                project.sketchOriginZ,cameraYaw,cameraPitch)) {
-            showSolid=false;
-            operationMessage+=". Bryłę przed płaszczyzną ukryto na czas edycji. Widok → Pokaż bryłę przywraca podgląd.";
-        }
+        // Never hide the body implicitly when a sketch starts. Sketch visibility
+        // must not change model visibility; the user controls it explicitly.
+        // Hiding here made the entire viewport appear empty until Cancel.
+        showSolid=true;
     }
 
     private void showSavedSketchPicker() {

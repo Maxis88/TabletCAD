@@ -13,6 +13,7 @@ public final class ToolbarCatalog {
     public static Group[] groups(boolean sketch) {
         return sketch?new Group[]{
             new Group("Edytuj","Edytuj","Edytuj"),
+            new Group("Wyci\u0105gnij","Wyci\u0105gnij","Wyci\u0105gnij"),
             new Group("Rysuj","Polilinia","Linia","Polilinia","Prostokąt"),
             new Group("Krzywe","Łuk","Okrąg","Łuk"),
             new Group("Pomocnicza","Pomocnicza","Pomocnicza"),
@@ -25,7 +26,7 @@ public final class ToolbarCatalog {
         }:new Group[]{
             new Group("Wybierz","Wybierz","Wybierz"),
             new Group("Szkice","Szkic","Szkic","Edytuj"),
-            new Group("Modeluj","Wyciągnij","Wyciągnij","Wytnij","Obrót profilu"),
+            new Group("Modeluj","Wyciągnij","Wyciągnij","Obrót profilu"),
             new Group("Zmień","Zaokrąglij","Głębokość","Zaokrąglij","Fazuj","Usuń cechę"),
             new Group("Sprawdź","Zmierz","Zmierz","Właściwości bryły","Rysunek"),
             new Group("Widok","Dopasuj","Dopasuj","Wyczyść widok")
