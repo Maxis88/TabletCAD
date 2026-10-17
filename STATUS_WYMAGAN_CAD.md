@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.52.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.54.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,11 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.54.0: eksport triangulowanego OBJ przez systemowy wybór pliku, współdzielone
+wierzchołki, normalne zgodne z orientacją trójkątów, grupy ścian, wartości
+w mm i jawna informacja o jednostkach. Nie obejmuje importu OBJ.
+
 
 0.52.0: zapis dokumentu, autosave i ich kopii ma wspólny dziennik odzyskiwania,
 kopie poprzednich bajtów z SHA-256, blokadę procesu i znacznik zatwierdzenia.
@@ -90,7 +95,7 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
    Powierzchnia, objętość i środek objętości są dostępne od 0.43.
 9. Dokumentacja: dowolne wymiary cech, tolerancje, szczegóły i oznaczenia,
    wszystkie wymagane formaty arkusza oraz szersza edycja rzutów i opisów.
-10. IGES/OBJ/3MF/SVG, pełne ustawienia dokładności i zakresu eksportu,
+10. IGES/3MF/SVG, import OBJ, pełne ustawienia dokładności i zakresu eksportu,
     weryfikacja we wskazanych zewnętrznych programach CAD.
 11. UI/renderowanie: pełny ViewCube, ortografia i standardowe orientacje,
     tryby szkieletowy/przezroczysty, motywy i szersza obsługa urządzeń wejścia.

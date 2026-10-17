@@ -54,7 +54,7 @@ public final class MainActivity extends Activity {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(format.equals("pdf") ? "application/pdf" : format.equals("step") ? "application/step"
-            : format.startsWith("stl") ? "model/stl" : "application/dxf");
+            : format.startsWith("stl") ? "model/stl" : format.equals("obj") ? "model/obj" : "application/dxf");
         intent.putExtra(Intent.EXTRA_TITLE, "TabletCAD-model." + (format.equals("stla") ? "stl" : format));
         startActivityForResult(intent, CREATE_EXPORT_FILE);
     }
@@ -86,6 +86,8 @@ public final class MainActivity extends Activity {
                 workspace.writeBinaryStl(output);
             } else if(pendingExportFormat.equals("stla")) {
                 workspace.writeAsciiStl(output);
+            } else if (pendingExportFormat.equals("obj")) {
+                workspace.writeObj(output);
             } else if (pendingExportFormat.equals("dxf")) {
                 workspace.writeDxf(output);
             } else {

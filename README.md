@@ -1,7 +1,7 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.53.0-application-icon**, versionCode **60**.
+Wersja źródeł: **0.54.0-obj-export**, versionCode **61**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
@@ -18,11 +18,11 @@ z adaptacyjną maską Androida i granatowym tłem.
   robocze sesje szkicu, historia operacji, migawki undo/redo i zapis z backupem.
 - Szkice: płaszczyzny XY/XZ/YZ i płaskie ściany, linie, polilinie, prostokąty,
   okręgi, łuki, kontury, przycinanie, odbicie, podstawowe więzy i wymiary.
-- Wymiana STEP/STL/DXF, pomiary krawędzi OCCT, objętość, pole i centroid.
+- Wymiana STEP/STL/DXF, eksport triangulowanego OBJ w mm, pomiary krawędzi OCCT, objętość, pole i centroid.
 
 To wersja rozwojowa. Solver szkicu i odniesienia topologiczne mają ograniczony
 zakres, część obliczeń blokuje UI. Pełne komponenty i dokumentacja techniczna
-pozostają nieukończone. Bieżące ograniczenia: [audyt 0.52](docs/AUDIT-0.52.md)
+pozostają nieukończone. Bieżące ograniczenia: [audyt 0.54](docs/AUDIT-0.54.md)
 i [mapa wymagań](STATUS_WYMAGAN_CAD.md). Starszy opis architektury zawiera cele,
 nie gwarancje aktualnego zachowania. Zachowano [historię rozwoju](docs/DEVELOPMENT_HISTORY.md).
 
@@ -51,7 +51,7 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 `prepare-occt.ps1` pobiera tag V8_0_1 i sprawdza rewizję
 `b8f597c677811d1f9f4d8a97f5ae2825c0353a42`, następnie buduje wymagane biblioteki
 ARM64. Nie nadpisuje lokalnie zmienionych źródeł zależności.
-Wynik: `dist/TabletCAD-0.53.0-application-icon.apk`.
+Wynik: `dist/TabletCAD-0.54.0-obj-export.apk`.
 Skrypt buduje Java/C++/DEX i zasoby, generuje lokalny klucz debug i weryfikuje
 podpis APK. Standardowe hasło Android debug służy tylko do lokalnego klucza
 deweloperskiego; nie wolno używać go do podpisywania wydań produkcyjnych.

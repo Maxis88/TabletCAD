@@ -3176,7 +3176,7 @@ public final class CadWorkspaceView extends View {
     }
 
     private void showExportPicker() {
-        String[] formats = {"STEP — precyzyjna bryła", "STL — siatka binarna", "STL — tekst ASCII", "DXF — szkic 2D", "PDF — arkusz techniczny A4"};
+        String[] formats = {"STEP — precyzyjna bryła", "STL — siatka binarna", "STL — tekst ASCII", "DXF — szkic 2D", "PDF — arkusz techniczny A4", "OBJ — siatka, jednostki mm"};
         new PropertyBuilder()
             .setTitle("Eksportuj projekt")
             .setItems(formats, (dialog, which) -> {
@@ -3185,7 +3185,7 @@ public final class CadWorkspaceView extends View {
                     invalidate(); return;
                 }
                 if (fileRequestListener != null) {
-                    fileRequestListener.requestExport(which == 0 ? "step" : which == 1 ? "stl" : which == 2 ? "stla" : which==3 ? "dxf" : "pdf");
+                    fileRequestListener.requestExport(which == 0 ? "step" : which == 1 ? "stl" : which == 2 ? "stla" : which==3 ? "dxf" : which==4 ? "pdf" : "obj");
                 }
             })
             .setNegativeButton("Anuluj", null)
@@ -3421,6 +3421,11 @@ public final class CadWorkspaceView extends View {
             retained.delete();throw new IOException(operationMessage);
         }
         finishModelImport("Gotowe: wczytano siatkę STL");
+    }
+
+    public void writeObj(OutputStream output) throws IOException {
+        if(SketchTransactions.active(project)) throw new IOException("Zakończ albo anuluj edycję szkicu przed eksportem");
+        ObjExporter.write(output,nativeMesh);
     }
 
     public void writeBinaryStl(OutputStream output) throws IOException {
