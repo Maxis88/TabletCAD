@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.49.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.50.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,11 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.50.0: kosztowne podglądy operacji modelujących wykonują się w tle na kopiach
+parametrów, z jednym oczekującym żądaniem i odrzucaniem nieaktualnych wyników.
+Zamknięcie narzędzia unieważnia także wynik już oczekujący na dostarczenie do UI.
+Zatwierdzanie, eksport, import i pomiary nie są jeszcze w całości asynchroniczne.
 
 0.49.0: strzałka wyciągania bazowego/dodania/wycięcia, gest oparty na osi 3D
 i promieniu kamery, odwrotny kierunek, długość symetryczna, wymiar przy geometrii,

@@ -143,6 +143,8 @@ public final class CadWorkspaceView extends View {
     private String toolbarState="";
     private boolean toolbarUpdatePosted;
     private float timelineScroll;
+    private GeometryPreviewWorker geometryPreviewWorker;
+    private boolean previewViewDetached;
     private EditText extrusionDimension;
     private android.widget.CheckBox extrusionReverse,extrusionSymmetric;
     private double[] extrusionOrigin,extrusionAxis;
@@ -173,6 +175,7 @@ public final class CadWorkspaceView extends View {
     private float topToolWidth() {return dp(64);}
 
     private void closePropertyEditor() {
+        invalidateGeometryPreview();
         removeCallbacks(extrusionPreviewTask);extrusionPreviewScheduled=false;
         extrusionDimension=null;extrusionReverse=extrusionSymmetric=null;
         extrusionOrigin=extrusionAxis=null;extrusionHandle=null;extrusionPreview=null;
@@ -745,8 +748,14 @@ public final class CadWorkspaceView extends View {
         toolbarPopup.showAtLocation(this,android.view.Gravity.TOP|android.view.Gravity.LEFT,x+origin[0],(int)dp(108)+origin[1]);
     }
 
+    @Override protected void onAttachedToWindow() {
+        super.onAttachedToWindow();previewViewDetached=false;
+    }
+
     @Override protected void onDetachedFromWindow() {
         dismissToolPopup();
+        previewViewDetached=true;removeCallbacks(extrusionPreviewTask);extrusionPreviewScheduled=false;
+        if(geometryPreviewWorker!=null){geometryPreviewWorker.close();geometryPreviewWorker=null;}
         // Do not mutate siblings while FrameLayout is dispatching detachment.
         toolbarState="";super.onDetachedFromWindow();
     }
@@ -2022,6 +2031,10 @@ public final class CadWorkspaceView extends View {
     }
 
     private double[] evaluateFillet(double[] candidate,int index) {
+        return evaluateQuery(filletPreviewQuery(candidate,index));
+    }
+
+    private java.util.concurrent.Callable<double[]> filletPreviewQuery(double[] candidate,int index) {
         double[] packed=packedFeatures();
         if(index<0) {
             int length=packed.length;packed=java.util.Arrays.copyOf(packed,length+candidate.length);
@@ -2035,8 +2048,7 @@ public final class CadWorkspaceView extends View {
             System.arraycopy(packed,offset+previousLength,replacement,offset+candidate.length,packed.length-offset-previousLength);
             packed=replacement;
         }
-        return NativeCadEngine.evaluateFeatures(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,
-            evaluationBase(),packed,null,project.importedStep?importedSourceFile().getAbsolutePath():null);
+        return meshPreviewQuery(evaluationBase(),packed,project.importedStep?0:project.filletRadius,modelDepth);
     }
 
     private void chooseRevolveProfile() {
@@ -2053,13 +2065,47 @@ public final class CadWorkspaceView extends View {
     }
 
     private double[] evaluateRevolve(double[] f,int index,boolean root) {
+        return evaluateQuery(revolvePreviewQuery(f,index,root));
+    }
+
+    private java.util.concurrent.Callable<double[]> revolvePreviewQuery(double[] f,int index,boolean root) {
         double[] base=root?f:evaluationBase(),packed=packedFeatures();
         if(!root) {
             if(index<0){int offset=packed.length;packed=java.util.Arrays.copyOf(packed,offset+f.length);System.arraycopy(f,0,packed,offset,f.length);}
             else {int offset=0;for(int i=0;i<index;i++)offset+=project.committedFeatures.get(i).length;System.arraycopy(f,0,packed,offset,f.length);}
         }
-        return NativeCadEngine.evaluateFeatures(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,
-            base,packed,null,project.importedStep?importedSourceFile().getAbsolutePath():null);
+        return meshPreviewQuery(base,packed,project.importedStep?0:project.filletRadius,modelDepth);
+    }
+
+    private java.util.concurrent.Callable<double[]> meshPreviewQuery(double[] base,double[] features,double radius,double depth) {
+        final double[] savedBase=base==null?null:base.clone(),savedFeatures=features.clone();
+        final double width=modelWidth,height=modelHeight;
+        final String source=project.importedStep?importedSourceFile().getAbsolutePath():null;
+        return () -> NativeCadEngine.evaluateFeatures(width,height,depth,radius,savedBase,savedFeatures,null,source);
+    }
+
+    private double[] evaluateQuery(java.util.concurrent.Callable<double[]> query) {
+        try{return query.call();}catch(RuntimeException error){throw error;}
+        catch(Exception error){throw new IllegalStateException(error);}
+    }
+
+    private void invalidateGeometryPreview() {
+        if(geometryPreviewWorker!=null)geometryPreviewWorker.cancel();
+        featurePreview=null;
+    }
+
+    private void submitGeometryPreview(android.widget.ScrollView owner,java.util.concurrent.Callable<double[]> query,
+            java.util.function.Consumer<double[]> display) {
+        if(owner==null||propertyEditor!=owner||previewViewDetached)return;
+        if(geometryPreviewWorker==null) {
+            android.os.Handler ui=new android.os.Handler(android.os.Looper.getMainLooper());
+            geometryPreviewWorker=new GeometryPreviewWorker(task->ui.post(task));
+        }
+        geometryPreviewWorker.submit(query,(mesh,error)-> {
+            if(propertyEditor!=owner)return;
+            featurePreview=error==null&&CadMesh.isValid(mesh,false)?mesh:null;
+            display.accept(featurePreview==null?new double[0]:featurePreview);invalidate();
+        });
     }
 
     private void showRevolveEditor(SketchPrimitive profile,double[] original,int index,boolean root) {
@@ -2109,15 +2155,17 @@ public final class CadWorkspaceView extends View {
             }).show();
         android.widget.ScrollView owner=propertyEditor;
         Runnable preview=()-> {
-            if(propertyEditor!=owner)return;featurePreview=null;
+            if(propertyEditor!=owner)return;invalidateGeometryPreview();
             try {
-                double[] mesh=evaluateRevolve(candidate.get(),index,root);
-                if(mesh.length==0)status.setText("Brak poprawnej bryły. Sprawdź oś, profil i przecięcie z modelem. Dokument pozostaje bez zmian.");
-                else {featurePreview=mesh;status.setText("Podgląd obrotu. Zastosuj zapisuje edytowalną operację w historii.");}
+                status.setText("Obliczanie podglądu…");
+                submitGeometryPreview(owner,revolvePreviewQuery(candidate.get(),index,root),mesh->{
+                    if(mesh.length==0)status.setText("Brak poprawnej bryły. Sprawdź oś, profil i przecięcie z modelem. Dokument pozostaje bez zmian.");
+                    else status.setText("Podgląd obrotu. Zastosuj zapisuje edytowalną operację w historii.");
+                });
             }catch(IllegalArgumentException error){status.setText(error.getMessage());}invalidate();
         };
         angle.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int n){}
-            public void onTextChanged(CharSequence s,int a,int b,int c){removeCallbacks(preview);postDelayed(preview,180);}public void afterTextChanged(android.text.Editable s){} });
+            public void onTextChanged(CharSequence s,int a,int b,int c){invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,180);}public void afterTextChanged(android.text.Editable s){} });
         reverse.setOnCheckedChangeListener((button,checked)->preview.run());cut.setOnCheckedChangeListener((button,checked)->preview.run());
         axis.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
             public void onItemSelected(android.widget.AdapterView<?> parent,View view,int position,long id){preview.run();}
@@ -2165,16 +2213,18 @@ public final class CadWorkspaceView extends View {
         android.widget.ScrollView owner=propertyEditor;
         Runnable preview=()-> {
             if(propertyEditor!=owner)return;
-            featurePreview=null;
+            invalidateGeometryPreview();
             if(index<0&&filletSegment>=0)candidate[0]=RootEdgeReference.anchor(
                 chamfer?EdgeChamfer.create(filletEdges,filletSegment,3):EdgeFillet.create(filletEdges,filletSegment,3),rootReference,rootEdges);
             try {
                 if(candidate[0]==null){status.setText("Dotknij widocznej krawędzi modelu. Przeciągnięcie obraca model.");invalidate();return;}
                 candidate[0][11]=parseCoordinate(radius);
                 if(chamfer)EdgeChamfer.validate(candidate[0]);else EdgeFillet.validate(candidate[0]);
-                double[] mesh=evaluateFillet(candidate[0],index);
-                if(mesh.length==0)status.setText("Brak poprawnego wyniku. Zmniejsz wartość lub wskaż inną krawędź. Model nie został zmieniony.");
-                else {featurePreview=mesh;status.setText("Podgląd "+(chamfer?"fazy ":"R")+formatMm(candidate[0][11])+". "+(chamfer?"Równe odsunięcia na obu ścianach. ":"")+"Zastosuj zapisuje operację w historii.");}
+                double proposedRadius=candidate[0][11];status.setText("Obliczanie podglądu…");
+                submitGeometryPreview(owner,filletPreviewQuery(candidate[0],index),mesh->{
+                    if(mesh.length==0)status.setText("Brak poprawnego wyniku. Zmniejsz wartość lub wskaż inną krawędź. Model nie został zmieniony.");
+                    else status.setText("Podgląd "+(chamfer?"fazy ":"R")+formatMm(proposedRadius)+". "+(chamfer?"Równe odsunięcia na obu ścianach. ":"")+"Zastosuj zapisuje operację w historii.");
+                });
             }catch(IllegalArgumentException e){status.setText(chamfer?"Wielkość fazy: 0,1–1000 mm":"Promień: 0,1–1000 mm");}
             invalidate();
         };
@@ -2186,7 +2236,7 @@ public final class CadWorkspaceView extends View {
         }
         radius.addTextChangedListener(new android.text.TextWatcher(){
             public void beforeTextChanged(CharSequence s,int start,int count,int after){}
-            public void onTextChanged(CharSequence s,int start,int before,int count){removeCallbacks(preview);postDelayed(preview,180);}
+            public void onTextChanged(CharSequence s,int start,int before,int count){invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,180);}
             public void afterTextChanged(android.text.Editable s){}
         });
         preview.run();
@@ -2841,7 +2891,7 @@ public final class CadWorkspaceView extends View {
         android.widget.ScrollView owner=propertyEditor;
         Runnable preview=()-> {
             if(owner==null||propertyEditor!=owner)return;
-            featurePreview=null;
+            invalidateGeometryPreview();
             try {
                 double[] candidate=proposed.get(),active=activeFeatureValues();
                 int length=active==null?0:active.length;
@@ -2852,20 +2902,21 @@ public final class CadWorkspaceView extends View {
                     System.arraycopy(record,0,packed,offset,record.length);offset+=record.length;
                 }
                 if(active!=null)System.arraycopy(active,0,packed,offset,active.length);
-                double[] mesh=NativeCadEngine.evaluateFeatures(modelWidth,modelHeight,modelDepth,project.filletRadius,
-                    project.featureBase,packed,null,project.importedStep?importedSourceFile().getAbsolutePath():null);
-                if(mesh.length>0){featurePreview=mesh;status.setText("Podgląd · "+Math.abs(candidate[6])+" mm"+(FeatureDirection.isSymmetric(candidate[1])?" · symetrycznie":candidate[6]<0?" · odwrotnie":"")+". Zastosuj zapisuje zmianę.");}
-                else status.setText("Brak poprawnego wyniku. Zmień głębokość lub kierunek.");
+                status.setText("Obliczanie podglądu…");
+                submitGeometryPreview(owner,meshPreviewQuery(project.featureBase,packed,project.filletRadius,modelDepth),mesh->{
+                    if(mesh.length>0)status.setText("Podgląd · "+Math.abs(candidate[6])+" mm"+(FeatureDirection.isSymmetric(candidate[1])?" · symetrycznie":candidate[6]<0?" · odwrotnie":"")+". Zastosuj zapisuje zmianę.");
+                    else status.setText("Brak poprawnego wyniku. Zmień głębokość lub kierunek.");
+                });
             }catch(IllegalArgumentException error){status.setText(error.getMessage());}
             invalidate();
         };
         for(EditText input:inputs)input.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s,int start,int count,int after){}
-            public void onTextChanged(CharSequence s,int start,int before,int count){removeCallbacks(preview);postDelayed(preview,350);}
+            public void onTextChanged(CharSequence s,int start,int before,int count){invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,350);}
             public void afterTextChanged(android.text.Editable text){}
         });
-        reverse.setOnCheckedChangeListener((button,checked)->{removeCallbacks(preview);postDelayed(preview,100);});
-        symmetric.setOnCheckedChangeListener((button,checked)->{reverse.setEnabled(!checked);removeCallbacks(preview);postDelayed(preview,100);});
+        reverse.setOnCheckedChangeListener((button,checked)->{invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,100);});
+        symmetric.setOnCheckedChangeListener((button,checked)->{reverse.setEnabled(!checked);invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,100);});
         postDelayed(preview,100);
     }
 
@@ -2972,7 +3023,7 @@ public final class CadWorkspaceView extends View {
         final android.widget.ScrollView owner=propertyEditor;
         Runnable preview=()-> {
             if(owner==null || propertyEditor!=owner) return;
-            featurePreview=null;
+            invalidateGeometryPreview();
             try {
                 double depth=parseCoordinate(input);
                 if(!Double.isFinite(depth)||depth<.1||depth>5000) throw new NumberFormatException();
@@ -2985,23 +3036,24 @@ public final class CadWorkspaceView extends View {
                 double[] values=new double[length];int offset=0;
                 for(double[] feature:project.committedFeatures) {System.arraycopy(feature,0,values,offset,feature.length);offset+=feature.length;}
                 System.arraycopy(candidate,0,values,offset,candidate.length);
-                double[] mesh=NativeCadEngine.evaluateFeatures(modelWidth,modelHeight,modelDepth,
-                    project.filletRadius,project.featureBase,values,null,
-                    project.importedStep?importedSourceFile().getAbsolutePath():null);
-                if(mesh.length>0) {featurePreview=mesh;previewStatus.setText("Podgląd · "+Math.abs(depth)+" mm"+(symmetric.isChecked()?" · symetrycznie":depth<0?" · odwrotnie":"")+". Zastosuj zapisuje operację.");}
-                else previewStatus.setText("Brak poprawnego wyniku. Zmień głębokość lub profil.");
+                final double proposedDepth=depth;final boolean proposedSymmetric=symmetric.isChecked();
+                previewStatus.setText("Obliczanie podglądu…");
+                submitGeometryPreview(owner,meshPreviewQuery(project.featureBase,values,project.filletRadius,modelDepth),mesh->{
+                    if(mesh.length>0)previewStatus.setText("Podgląd · "+Math.abs(proposedDepth)+" mm"+(proposedSymmetric?" · symetrycznie":proposedDepth<0?" · odwrotnie":"")+". Zastosuj zapisuje operację.");
+                    else previewStatus.setText("Brak poprawnego wyniku. Zmień głębokość lub profil.");
+                });
             } catch(NumberFormatException error) {previewStatus.setText("Głębokość: 0,1–5000 mm");}
             invalidate();
         };
         input.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s,int start,int count,int after) {}
             public void onTextChanged(CharSequence s,int start,int before,int count) {
-                removeCallbacks(preview);postDelayed(preview,350);
+                invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,350);
             }
             public void afterTextChanged(android.text.Editable text) {}
         });
-        reverse.setOnCheckedChangeListener((button,checked)->{removeCallbacks(preview);postDelayed(preview,100);});
-        symmetric.setOnCheckedChangeListener((button,checked)->{reverse.setEnabled(!checked);removeCallbacks(preview);postDelayed(preview,100);});
+        reverse.setOnCheckedChangeListener((button,checked)->{invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,100);});
+        symmetric.setOnCheckedChangeListener((button,checked)->{reverse.setEnabled(!checked);invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,100);});
         postDelayed(preview,100);
         double u=profile.type.equals("Okrąg")?profile.x1:(profile.x1+profile.x2)*.5;
         double v=profile.type.equals("Okrąg")?profile.y1:(profile.y1+profile.y2)*.5;
@@ -3055,25 +3107,26 @@ public final class CadWorkspaceView extends View {
         android.widget.ScrollView owner=propertyEditor;
         Runnable preview=()-> {
             if(owner==null||propertyEditor!=owner)return;
-            featurePreview=null;
+            invalidateGeometryPreview();
             try {
                 double signed=FeatureDirection.signed(parseCoordinate(input),reverse.isChecked(),symmetric.isChecked());
                 double[] candidate=base.clone();candidate[6]=signed;
                 candidate[5]=FeatureDirection.baseCode(base[5],symmetric.isChecked());
-                double[] mesh=NativeCadEngine.evaluateFeatures(modelWidth,modelHeight,Math.abs(signed),
-                    initial?0:project.filletRadius,candidate,packedFeatures(),null);
-                if(mesh.length>0){featurePreview=mesh;status.setText("Podgląd · "+Math.abs(signed)+" mm"+(symmetric.isChecked()?" · symetrycznie":signed<0?" · odwrotnie":"")+". Zastosuj zapisuje operację.");}
-                else status.setText("Brak poprawnego wyniku. Zmień głębokość lub kierunek.");
+                final boolean proposedSymmetric=symmetric.isChecked();status.setText("Obliczanie podglądu…");
+                submitGeometryPreview(owner,meshPreviewQuery(candidate,packedFeatures(),initial?0:project.filletRadius,Math.abs(signed)),mesh->{
+                    if(mesh.length>0)status.setText("Podgląd · "+Math.abs(signed)+" mm"+(proposedSymmetric?" · symetrycznie":signed<0?" · odwrotnie":"")+". Zastosuj zapisuje operację.");
+                    else status.setText("Brak poprawnego wyniku. Zmień głębokość lub kierunek.");
+                });
             }catch(IllegalArgumentException error){status.setText(error.getMessage());}
             invalidate();
         };
         input.addTextChangedListener(new android.text.TextWatcher() {
             public void beforeTextChanged(CharSequence s,int start,int count,int after){}
-            public void onTextChanged(CharSequence s,int start,int before,int count){removeCallbacks(preview);postDelayed(preview,350);}
+            public void onTextChanged(CharSequence s,int start,int before,int count){invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,350);}
             public void afterTextChanged(android.text.Editable text){}
         });
-        reverse.setOnCheckedChangeListener((button,checked)->{removeCallbacks(preview);postDelayed(preview,100);});
-        symmetric.setOnCheckedChangeListener((button,checked)->{reverse.setEnabled(!checked);removeCallbacks(preview);postDelayed(preview,100);});
+        reverse.setOnCheckedChangeListener((button,checked)->{invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,100);});
+        symmetric.setOnCheckedChangeListener((button,checked)->{reverse.setEnabled(!checked);invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,100);});
         postDelayed(preview,100);
         double u=base[0]==1?base[1]:(base[1]+base[3])*.5,v=base[0]==1?base[2]:(base[2]+base[4])*.5;
         int plane=FeatureDirection.basePlane(base[5]);
