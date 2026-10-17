@@ -22,6 +22,7 @@ public final class MainActivity extends Activity {
     private static final int OPEN_STEP_FILE = 802;
     private CadWorkspaceView workspace;
     private String pendingExportFormat;
+    private String pendingImportFormat = "step";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -29,9 +30,18 @@ public final class MainActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         workspace = new CadWorkspaceView(this, new CadWorkspaceView.FileRequestListener() {
             @Override public void requestExport(String format) { requestExportFile(format); }
-            @Override public void requestOpenStep() { requestStepFile(); }
+            @Override public void requestOpenStep() {
+                new android.app.AlertDialog.Builder(MainActivity.this).setTitle("Otwórz plik")
+                    .setItems(new String[]{"STEP — bryła", "STL — siatka ASCII / binarna", "DXF — szkic 2D"},
+                        (dialog,which)-> {
+                            pendingImportFormat = which==0 ? "step" : which==1 ? "stl" : "dxf";
+                            requestStepFile();
+                        }).setNegativeButton("Anuluj",null).show();
+            }
         });
-        setContentView(workspace);
+        android.widget.FrameLayout root = new android.widget.FrameLayout(this);
+        root.addView(workspace);
+        setContentView(root);
         WindowInsetsController insetsController =
             getWindow().getDecorView().getWindowInsetsController();
         if (insetsController != null) {
@@ -43,9 +53,9 @@ public final class MainActivity extends Activity {
         pendingExportFormat = format;
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType(format.equals("step") ? "application/step"
-            : format.equals("stl") ? "model/stl" : "application/dxf");
-        intent.putExtra(Intent.EXTRA_TITLE, "TabletCAD-model." + format);
+        intent.setType(format.equals("pdf") ? "application/pdf" : format.equals("step") ? "application/step"
+            : format.startsWith("stl") ? "model/stl" : "application/dxf");
+        intent.putExtra(Intent.EXTRA_TITLE, "TabletCAD-model." + (format.equals("stla") ? "stl" : format));
         startActivityForResult(intent, CREATE_EXPORT_FILE);
     }
 
@@ -53,9 +63,6 @@ public final class MainActivity extends Activity {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
-        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
-            "application/step", "application/x-step", "model/step", "application/octet-stream"
-        });
         startActivityForResult(intent, OPEN_STEP_FILE);
     }
 
@@ -64,7 +71,8 @@ public final class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == OPEN_STEP_FILE && resultCode == RESULT_OK && data != null
                 && data.getData() != null) {
-            importStep(data.getData());
+            if(pendingImportFormat.equals("step")) importStep(data.getData());
+            else importExchange(data.getData());
             return;
         }
         if (requestCode != CREATE_EXPORT_FILE || resultCode != RESULT_OK || data == null
@@ -72,8 +80,12 @@ public final class MainActivity extends Activity {
         Uri destination = data.getData();
         try (OutputStream output = getContentResolver().openOutputStream(destination, "w")) {
             if (output == null) throw new IOException("Nie można otworzyć pliku docelowego");
-            if (pendingExportFormat.equals("stl")) {
+            if(pendingExportFormat.equals("pdf")) {
+                workspace.writeTechnicalPdf(output);
+            } else if (pendingExportFormat.equals("stl")) {
                 workspace.writeBinaryStl(output);
+            } else if(pendingExportFormat.equals("stla")) {
+                workspace.writeAsciiStl(output);
             } else if (pendingExportFormat.equals("dxf")) {
                 workspace.writeDxf(output);
             } else {
@@ -91,7 +103,8 @@ public final class MainActivity extends Activity {
                 }
             }
             output.flush();
-            Toast.makeText(this, "Eksport " + pendingExportFormat.toUpperCase() + " zakończony", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Eksport " + (pendingExportFormat.equals("stla")
+                ? "STL ASCII" : pendingExportFormat.toUpperCase()) + " zakończony", Toast.LENGTH_LONG).show();
         } catch (IOException error) {
             Toast.makeText(this, "Eksport nieudany: " + error.getMessage(), Toast.LENGTH_LONG).show();
         } finally {
@@ -120,5 +133,27 @@ public final class MainActivity extends Activity {
             staged.delete();
             Toast.makeText(this, "Import nieudany: " + error.getMessage(), Toast.LENGTH_LONG).show();
         }
+    }
+
+    private void importExchange(Uri source) {
+        File staged = new File(getCacheDir(),"exchange-import.tmp");
+        try (InputStream input=getContentResolver().openInputStream(source)) {
+            if(input==null) throw new IOException("Nie można otworzyć pliku");
+            if(pendingImportFormat.equals("dxf")) workspace.importDxf(input);
+            else {
+                try(OutputStream output=new java.io.FileOutputStream(staged)) {
+                    byte[] buffer=new byte[16384]; int n,total=0;
+                    while((n=input.read(buffer))!=-1) {
+                        total+=n;
+                        if(total>32*1024*1024) throw new IOException("Limit STL: 32 MB");
+                        output.write(buffer,0,n);
+                    }
+                }
+                workspace.importStl(staged);
+            }
+            Toast.makeText(this,"Otwarto "+pendingImportFormat.toUpperCase(),Toast.LENGTH_LONG).show();
+        } catch(IOException error) {
+            Toast.makeText(this,"Import nieudany: "+error.getMessage(),Toast.LENGTH_LONG).show();
+        } finally { staged.delete(); }
     }
 }

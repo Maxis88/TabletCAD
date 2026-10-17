@@ -8,3 +8,47 @@ app/build/
 third_party/occt/
 dist/*.apk
 dist/*.apk.idsig
+
+# Local outputs, IDE state and machine-specific settings
+**/build/
+.cxx/
+**/.cxx/
+.externalNativeBuild/
+**/.externalNativeBuild/
+.kotlin/
+.vscode/
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+tmp/
+*.log
+*.tmp
+*.hprof
+captures/
+
+# Credentials and signing material (debug keys are generated locally)
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+keystore.properties
+key.properties
+signing.properties
+credentials*.json
+service-account*.json
+google-services.json
+
+# Packaged/generated binaries; Gradle wrapper JAR remains allowed
+*.apk
+*.aab
+*.apks
+*.class
+*.dex
+*.so
+*.o

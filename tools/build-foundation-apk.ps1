@@ -1,10 +1,14 @@
 param(
-    [string]$Sdk = "C:\Users\lukja\AppData\Local\Android\Sdk",
+    [string]$Sdk = $(if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }),
     [string]$Jdk = "C:\Program Files\Android\Android Studio\jbr"
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$VersionSource = Get-Content (Join-Path $Root "app\build.gradle.kts") -Raw
+$VersionCode = [regex]::Match($VersionSource, 'versionCode\s*=\s*(\d+)').Groups[1].Value
+$VersionName = [regex]::Match($VersionSource, 'versionName\s*=\s*"([^"]+)"').Groups[1].Value
+if (-not $VersionCode -or -not $VersionName) { throw "Missing application version" }
 $Build = Join-Path $Root "build\foundation"
 $Out = Join-Path $Root "dist"
 $Aapt2 = Join-Path $Sdk "build-tools\36.0.0\aapt2.exe"
@@ -19,6 +23,9 @@ $Keytool = Join-Path $Jdk "bin\keytool.exe"
 $Jar = Join-Path $Jdk "bin\jar.exe"
 $Keystore = Join-Path $Root ".debug\tabletcad-debug.jks"
 $env:JAVA_HOME = $Jdk
+if (-not (Test-Path (Join-Path $Root 'build\occt-arm64\lin64\clang\lib\libTKDESTEP.so'))) {
+    & (Join-Path $PSScriptRoot 'prepare-occt.ps1') -Sdk $Sdk
+}
 $env:TEMP = Join-Path $Build "temp"
 $env:TMP = $env:TEMP
 
@@ -31,15 +38,19 @@ Copy-Item (Join-Path $Root "third_party\occt\LICENSE_LGPL_21.txt") (Join-Path $B
 
 & $Aapt2 compile --dir (Join-Path $Root "app\src\main\res") -o (Join-Path $Build "res.zip")
 Assert-ExitCode "Resource compilation"
-& $Aapt2 link -o (Join-Path $Build "unsigned.apk") -I $AndroidJar --manifest (Join-Path $Root "app\src\main\AndroidManifest.xml") (Join-Path $Build "res.zip") -A (Join-Path $Build "assets") --min-sdk-version 34 --target-sdk-version 36 --version-code 18 --version-name "0.13.0-sketch-plane" --java (Join-Path $Build "generated") --auto-add-overlay
+& $Aapt2 link -o (Join-Path $Build "unsigned.apk") -I $AndroidJar --manifest (Join-Path $Root "app\src\main\AndroidManifest.xml") (Join-Path $Build "res.zip") --min-sdk-version 34 --target-sdk-version 36 --version-code $VersionCode --version-name $VersionName --java (Join-Path $Build "generated") --auto-add-overlay
 Assert-ExitCode "Resource linking"
+& $Jar uf (Join-Path $Build "unsigned.apk") -C $Build assets
+Assert-ExitCode "License assets packaging"
 
 $Sources = Get-ChildItem (Join-Path $Root "app\src\main\java") -Recurse -Filter "*.java" | ForEach-Object { $_.FullName }
 & $Javac -source 17 -target 17 -encoding UTF-8 -classpath $AndroidJar -d (Join-Path $Build "classes") $Sources
 Assert-ExitCode "Java compilation"
-$ClassFiles = Get-ChildItem (Join-Path $Build "classes") -Recurse -Filter "*.class" | ForEach-Object { $_.FullName }
+$ClassesJar = Join-Path $Build "classes.jar"
+& $Jar cf $ClassesJar -C (Join-Path $Build "classes") .
+Assert-ExitCode "Class archive creation"
 New-Item -ItemType Directory -Force -Path (Join-Path $Build "dex") | Out-Null
-& $D8 --lib $AndroidJar --output (Join-Path $Build "dex") $ClassFiles
+& $D8 --lib $AndroidJar --output (Join-Path $Build "dex") $ClassesJar
 Assert-ExitCode "DEX compilation"
 
 Push-Location (Join-Path $Build "dex")
@@ -77,7 +88,7 @@ if (-not (Test-Path $Keystore)) {
     Assert-ExitCode "Debug key creation"
 }
 
-$Apk = Join-Path $Out "TabletCAD-0.13.0-sketch-plane.apk"
+$Apk = Join-Path $Out "TabletCAD-$VersionName.apk"
 Copy-Item (Join-Path $Build "unsigned.apk") $Apk -Force
 & $Signer sign --ks $Keystore --ks-pass pass:android --key-pass pass:android --ks-key-alias tabletcad $Apk
 Assert-ExitCode "APK signing"
