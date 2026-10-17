@@ -248,7 +248,7 @@ public final class CadWorkspaceView extends View {
         projectRepository = new ProjectRepository(context);
         project = projectRepository.loadOrCreate();
         operationMessage=projectRepository.loadNotice();
-        if (project.importedStep && project.importedStepSource.equals("imported.step")
+        if (!projectRepository.readOnly() && project.importedStep && project.importedStepSource.equals("imported.step")
                 && projectRepository.importedStepFile().isFile()) {
             String sourceName = "source-" + UUID.randomUUID() + ".step";
             try {
@@ -272,10 +272,10 @@ public final class CadWorkspaceView extends View {
         modelHeight = project.height;
         modelDepth = project.depth;
         sketchPlane = project.sketchPlane;
-        projectRepository.save(project);
+        try{projectRepository.save(project);}catch(RuntimeException error){operationMessage=projectRepository.readOnly()?projectRepository.loadNotice():"Nie można zapisać bieżącego stanu; poprzednie pliki zachowano.";}
         kernelStatus = NativeCadEngine.status();
         updateNativeModel();
-        resumeSketchWork();
+        if(!projectRepository.readOnly())resumeSketchWork();
         // STEP is deliberately not exercised during Activity construction. A native
         // importer failure must never prevent the workspace from opening.
         stepStatus = "STEP: moduł zainstalowany";
@@ -285,6 +285,11 @@ public final class CadWorkspaceView extends View {
             @Override public boolean onDown(MotionEvent e) { return true; }
 
             @Override public boolean onSingleTapUp(MotionEvent e) {
+                if(projectRepository.readOnly()) {
+                    if(e.getY()<=dp(58)&&e.getX()>=getWidth()-dp(190))showExportPicker();
+                    else operationMessage=projectRepository.loadNotice();
+                    invalidate();return true;
+                }
                 if(SketchTransactions.active(project)&&(e.getY()<dp(54)||e.getX()<dp(224)
                         ||(e.getY()>=getHeight()-dp(78)-bottomSystemInset&&e.getX()>=dp(340)))) {
                     showSketchSessionActions();return true;
@@ -720,6 +725,7 @@ public final class CadWorkspaceView extends View {
     private void dismissToolPopup() {if(toolbarPopup!=null){toolbarPopup.dismiss();toolbarPopup=null;}}
 
     private void openToolGroup(ToolbarCatalog.Group group,float anchorX) {
+        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
         dismissToolPopup();
         boolean role=inSketch();String[] commands=group.commands();
         for(String command:commands)if(!ToolbarCatalog.allows(role,command)){invalidate();return;}
@@ -3591,6 +3597,7 @@ public final class CadWorkspaceView extends View {
     }
 
     private void activateTopTool(String tool) {
+        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
         if(!arcDraft.isEmpty()&&!tool.equals("Łuk")){showArcDraftActions(tool);return;}
         if(!project.polylineDraft.isEmpty()) {showPolylineActions(tool);return;}
         if(inSketch()&&!SketchTransactions.active(project))beginSketchWork();

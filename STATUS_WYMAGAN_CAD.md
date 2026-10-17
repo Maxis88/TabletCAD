@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.51.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.52.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,12 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.52.0: zapis dokumentu, autosave i ich kopii ma wspólny dziennik odzyskiwania,
+kopie poprzednich bajtów z SHA-256, blokadę procesu i znacznik zatwierdzenia.
+Przerwany zapis jest odzyskiwany przed otwarciem; uszkodzone odzyskiwanie
+blokuje zapis i narzędzia, zachowując widok oraz eksport. Testy rzeczywistej
+śmierci procesu i ponownego otwarcia przeszły na Androidzie.
 
 0.51.0: kolejne dotknięcia wybierają/odznaczają wiele krawędzi fazowania lub
 zaokrąglania. Wspólny wymiar, jedna operacja OCCT i jedna cecha historii,

@@ -21,16 +21,24 @@ public final class ProjectRepository {
     private final File document;
     private final File recovery;
     private String loadNotice="";
+    private final AtomicSavePair savePair;
+    private IOException recoveryFailure;
 
     public ProjectRepository(Context context) {
         this(context.getFilesDir());
     }
 
     public ProjectRepository(File filesDirectory) {
+        this(filesDirectory,index -> {});
+    }
+
+    public ProjectRepository(File filesDirectory,AtomicSavePair.Checkpoint checkpoint) {
         folder = new File(filesDirectory, "projects");
         if (!folder.exists() && !folder.mkdirs()) throw new IllegalStateException("Cannot create projects folder");
         document = new File(folder, "autosave.tcad");
         recovery = new File(folder, "autosave.tcad.bak");
+        savePair=new AtomicSavePair(folder,checkpoint);
+        try{savePair.recover();}catch(IOException error){recoveryFailure=error;}
     }
 
     public File importedStepFile() {
@@ -48,7 +56,8 @@ public final class ProjectRepository {
         return CadProject.blank();
     }
 
-    public String loadNotice(){return loadNotice;}
+    public boolean readOnly(){return recoveryFailure!=null;}
+    public String loadNotice(){return readOnly()?"Nie można bezpiecznie odzyskać przerwanego zapisu. Otworzono tylko do odczytu; pliki zachowano.":loadNotice;}
 
     private File projectFile(String id) {
         if(id==null||!id.matches("[A-Za-z0-9_-]{1,100}"))throw new IllegalArgumentException("Niepoprawny identyfikator projektu");
@@ -75,32 +84,36 @@ public final class ProjectRepository {
 
     public synchronized void save(CadProject project) {
         try {
+            if(recoveryFailure!=null)throw new IOException("Unresolved document transaction; writing disabled",recoveryFailure);
             String serialized = project.toJson().toString(2);
             // A snapshot must be readable by the current schema before either copy is replaced.
             CadProject validated = CadProject.fromJson(new JSONObject(serialized));
             projectFile(validated.id);
             byte[] data = serialized.getBytes(StandardCharsets.UTF_8);
             if(data.length>16*1024*1024)throw new IOException("Projekt przekracza limit 16 MiB");
-            atomicWrite(projectFile(project.id),data);
-            atomicWrite(document,data);
+            savePair.save(() -> {
+                LinkedHashMap<File,byte[]> changes=new LinkedHashMap<>();
+                File individual=projectFile(project.id);changes.put(individual,data);changes.put(document,data);
+                prepareBackup(individual,changes);prepareBackup(document,changes);return changes;
+            });
         } catch (Exception error) {
+            if(new File(folder,"save-transaction.bin").exists()) {
+                try{savePair.recover();}catch(IOException unresolved){recoveryFailure=unresolved;}
+            }
             throw new IllegalStateException("Project autosave failed", error);
         }
     }
 
-    private void atomicWrite(File target,byte[] data)throws IOException {
-        File temporary=new File(target.getPath()+".tmp");
-        try(FileOutputStream output=new FileOutputStream(temporary)) {
-            output.write(data);output.flush();output.getFD().sync();
-        }
+    private void prepareBackup(File target,LinkedHashMap<File,byte[]> changes)throws IOException {
         if(target.exists()) {
+            if(!target.isFile())throw new IOException("Document target is not a regular file");
             CadProject previous=tryLoad(target);
             boolean valid=previous!=null&&(target.equals(document)||target.equals(projectFile(previous.id)));
             File copy=valid?new File(target.getPath()+".bak")
                 :new File(folder,"unreadable-"+UUID.randomUUID()+".tcad");
-            Files.copy(target.toPath(),copy.toPath(),StandardCopyOption.REPLACE_EXISTING);
+            if(valid)changes.put(copy,Files.readAllBytes(target.toPath()));
+            else Files.copy(target.toPath(),copy.toPath(),StandardCopyOption.REPLACE_EXISTING);
         }
-        Files.move(temporary.toPath(),target.toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);
     }
 
     private CadProject tryLoad(File file) {

@@ -12,7 +12,7 @@ public final class WorkspaceInstrumentation extends Instrumentation {
         ByteArrayOutputStream bytes=new ByteArrayOutputStream();PrintStream capture=new PrintStream(bytes);
         PrintStream previous=System.out;final Throwable[] failure={null};System.setOut(capture);
         try {
-            for(String name:new String[]{"WorkspaceUiProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe"}) {
+            for(String name:new String[]{"WorkspaceUiProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe"}) {
                 Runnable execute=()-> {
                     try {
                         Class<?> probe=Class.forName(name);
