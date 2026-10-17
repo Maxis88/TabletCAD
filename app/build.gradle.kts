@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 52
-        versionName = "0.45.0-transactional-history"
+        versionCode = 53
+        versionName = "0.46.0-atomic-geometry"
     }
 
     externalNativeBuild {

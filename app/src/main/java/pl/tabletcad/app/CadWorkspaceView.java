@@ -71,10 +71,10 @@ public final class CadWorkspaceView extends View {
     private float cameraPitch = 22f;
     private String mode = "Wybierz";
     private final String kernelStatus;
-    private double[] nativePrism;
+    private double[] nativePrism = new double[0];
     private double[] nativeMesh = new double[0];
     private TechnicalSheet technicalSheet;
-    private String modelInfo;
+    private String modelInfo = "Nie można odtworzyć geometrii dokumentu";
     private String operationMessage = "";
     private final String stepStatus;
     private double modelWidth = 80.0;
@@ -1670,11 +1670,7 @@ public final class CadWorkspaceView extends View {
     }
 
     private boolean applySolvedSketch(List<SketchPrimitive> solved,List<SketchConstraints.Link> links) {
-        checkpoint();
-        List<SketchPrimitive> previousSketch=new ArrayList<>(project.sketch);
-        List<SketchConstraints.Link> previousLinks=new ArrayList<>(project.coincidences);
-        List<double[]> previousFeatures=new ArrayList<>(project.committedFeatures);
-        double[] previousBase=project.featureBase;
+        boolean committed = commitModelChange(() -> {
         if(!SketchTransactions.active(project))for(SketchPrimitive changed:solved) {
             double[] coordinates={changed.x1,changed.y1,changed.x2,changed.y2};
             if(changed.id.equals(project.featureBaseProfileId)&&project.featureBase!=null) {
@@ -1695,21 +1691,11 @@ public final class CadWorkspaceView extends View {
         }
         project.sketch.clear();project.sketch.addAll(solved);
         project.coincidences.clear();project.coincidences.addAll(links);
-        updateNativeModel();
-        if (nativeMesh.length == 0&&project.hasSolid()) {
-            project.sketch.clear();project.sketch.addAll(previousSketch);
-            project.coincidences.clear();project.coincidences.addAll(previousLinks);
-            project.featureBase = previousBase;
-            project.committedFeatures.clear();
-            project.committedFeatures.addAll(previousFeatures);
-            updateNativeModel();
-            operationMessage = "Zmiana tworzy niepoprawną bryłę";
-            return false;
-        } else {
-            projectRepository.save(project);
+        });
+        if (committed) {
             operationMessage = SketchTransactions.active(project)?"Zmieniono szkic roboczy. Zakończ przebuduje bryłę; Anuluj przywróci szkic.":"Gotowe: zaktualizowano szkic i model";
         }
-        return true;
+        return committed;
     }
 
     private void deleteSketchEntity(String id) {
@@ -1721,15 +1707,16 @@ public final class CadWorkspaceView extends View {
         }
         for (int i = 0; i < project.sketch.size(); i++) {
             if (!project.sketch.get(i).id.equals(id)) continue;
-            checkpoint();
-            project.sketch.remove(i);
-            SketchTransactions.prune(project);
-            project.pruneCoincidences();
-            selectedSketchId = null;
-            if (latestClosedProfile() == null) project.sketchExtruded = false;
-            updateNativeModel();
-            projectRepository.save(project);
-            operationMessage = "Gotowe: usunięto element szkicu";
+            final int index = i;
+            if (commitModelChange(() -> {
+                project.sketch.remove(index);
+                SketchTransactions.prune(project);
+                project.pruneCoincidences();
+                if (latestClosedProfile() == null) project.sketchExtruded = false;
+            })) {
+                selectedSketchId = null;
+                operationMessage = "Gotowe: usunięto element szkicu";
+            }
             invalidate();
             return;
         }
@@ -1964,17 +1951,10 @@ public final class CadWorkspaceView extends View {
                 try {
                     double value = Double.parseDouble(input.getText().toString().replace(',', '.'));
                     if (value >= 0.1 && value <= 5000.0) {
-                        checkpoint();
-                        double oldDepth=modelDepth;
-                        double[] oldBase=project.featureBase==null?null:project.featureBase.clone();
-                        modelDepth = value;
-                        project.depth = value;
-                        if(project.featureBase!=null) project.featureBase[6]=value;
-                        updateNativeModel();
-                        if(nativeMesh.length==0) {
-                            project.featureBase=oldBase;modelDepth=oldDepth;project.depth=oldDepth;
-                            updateNativeModel();operationMessage="Głębokość uniemożliwia przeliczenie modelu";
-                        } else projectRepository.save(project);
+                        if (commitModelChange(() -> {
+                            project.depth = value;
+                            if(project.featureBase!=null) project.featureBase[6]=value;
+                        })) operationMessage="Gotowe: zmieniono głębokość wyciągnięcia";
                         invalidate();
                     }
                 } catch (NumberFormatException ignored) {
@@ -2068,12 +2048,14 @@ public final class CadWorkspaceView extends View {
             .setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)-> {
                 try {
                     double[] f=candidate.get();if(evaluateRevolve(f,index,root).length==0)throw new IllegalArgumentException("Nie można zbudować obrotu lub odtworzyć dalszych operacji");
-                    checkpoint();
-                    if(root){project.featureBase=f;project.featureBaseProfileId=profile.id;}
-                    else if(index<0){preserveExtrudedBase();commitActiveFeature();project.committedFeatures.add(f);project.committedProfileIds.add(profile.id);}
-                    else project.committedFeatures.set(index,f);
-                    updateNativeModel();projectRepository.save(project);selectedSketchId=null;
-                    operationMessage="Zapisano obrót profilu "+String.format(java.util.Locale.US,"%.3f°",f[6])+" w historii modelu";
+                    if (commitModelChange(() -> {
+                        if(root){project.featureBase=f;project.featureBaseProfileId=profile.id;}
+                        else if(index<0){preserveExtrudedBase();commitActiveFeature();project.committedFeatures.add(f);project.committedProfileIds.add(profile.id);}
+                        else project.committedFeatures.set(index,f);
+                    })) {
+                        selectedSketchId=null;
+                        operationMessage="Zapisano obrót profilu "+String.format(java.util.Locale.US,"%.3f°",f[6])+" w historii modelu";
+                    }
                 }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
                 invalidate();
             }).show();
@@ -2123,13 +2105,12 @@ public final class CadWorkspaceView extends View {
                     double[] value=candidate[0].clone();value[11]=parseCoordinate(radius);
                     if(chamfer)EdgeChamfer.validate(value);else EdgeFillet.validate(value);
                     if(evaluateFillet(value,index).length==0)throw new IllegalArgumentException("Nie można wykonać operacji na tej krawędzi z podaną wartością lub przebudować kolejnych cech");
-                    checkpoint();
-                    if(index<0) {
-                        preserveExtrudedBase();commitActiveFeature();
-                        project.committedFeatures.add(value);project.committedProfileIds.add("");
-                    } else project.committedFeatures.set(index,value);
-                    updateNativeModel();projectRepository.save(project);
-                    operationMessage=chamfer?"Gotowe: fazowanie wskazanej krawędzi "+formatMm(value[11]):"Gotowe: zaokrąglenie wskazanej krawędzi R"+formatMm(value[11]);
+                    if (commitModelChange(() -> {
+                        if(index<0) {
+                            preserveExtrudedBase();commitActiveFeature();
+                            project.committedFeatures.add(value);project.committedProfileIds.add("");
+                        } else project.committedFeatures.set(index,value);
+                    })) operationMessage=chamfer?"Gotowe: fazowanie wskazanej krawędzi "+formatMm(value[11]):"Gotowe: zaokrąglenie wskazanej krawędzi R"+formatMm(value[11]);
                 }catch(IllegalArgumentException e){operationMessage=e.getMessage();}
                 invalidate();
             }).show();
@@ -2224,16 +2205,7 @@ public final class CadWorkspaceView extends View {
                         invalidate();
                         return;
                     }
-                    checkpoint();
-                    double oldRadius = project.filletRadius;
-                    project.filletRadius = value;
-                    updateNativeModel();
-                    if (nativeMesh.length == 0) {
-                        project.filletRadius = oldRadius;
-                        updateNativeModel();
-                        operationMessage = "Promień jest za duży dla tej bryły";
-                    } else {
-                        projectRepository.save(project);
+                    if (commitModelChange(() -> project.filletRadius = value)) {
                         operationMessage = String.format(java.util.Locale.US,
                             "Gotowe: zaokrąglenie R%.2f mm", value);
                     }
@@ -2490,40 +2462,53 @@ public final class CadWorkspaceView extends View {
             && y >= dp(110) && y <= getHeight() - dp(84) - bottomSystemInset;
     }
 
-    private void updateNativeModel() {
+    private boolean updateNativeModel() {
         if(SketchTransactions.active(project)) {
             CadProject draft=project;double w=modelWidth,h=modelHeight,d=modelDepth;
-            try{project=SketchTransactions.baseline(draft);modelWidth=project.width;modelHeight=project.height;modelDepth=project.depth;updateNativeModel();}
+            try{project=SketchTransactions.baseline(draft);modelWidth=project.width;modelHeight=project.height;modelDepth=project.depth;return updateNativeModel();}
             finally{project=draft;modelWidth=w;modelHeight=h;modelDepth=d;}
-            return;
         }
-        nativePrism = NativeCadEngine.createPrism(modelWidth, modelHeight, modelDepth);
         SketchPrimitive profile = featureProfile();
+        if ((!project.featureOperation.equals("none") && profile == null)
+                || (project.sketchExtruded && profile == null && project.featureBase == null
+                    && project.committedFeatures.isEmpty() && !project.importedStep
+                    && project.importedMeshSource == null)) {
+            operationMessage = "Brak profilu źródłowego. Poprzednia geometria została zachowana.";
+            return false;
+        }
+        double[] candidateMesh;
         if(!project.hasSolid()) {
-            nativeMesh=new double[0];
+            candidateMesh=new double[0];
         } else if (project.importedMeshSource != null) {
             try (FileInputStream input = new FileInputStream(new File(
                     projectRepository.importedStepFile().getParentFile(),project.importedMeshSource))) {
-                nativeMesh = CadExchange.readStl(input);
-            } catch (IOException error) { nativeMesh = new double[0]; operationMessage = error.getMessage(); }
+                candidateMesh = CadExchange.readStl(input);
+            } catch (IOException error) { operationMessage = error.getMessage(); return false; }
         } else if (project.importedStep) {
-            nativeMesh = NativeCadEngine.evaluateFeatures(modelWidth, modelHeight, modelDepth,
+            candidateMesh = NativeCadEngine.evaluateFeatures(modelWidth, modelHeight, modelDepth,
                 0, null, packedFeatures(), null, importedSourceFile().getAbsolutePath());
         } else if (project.featureBase != null || !project.committedFeatures.isEmpty()
                 || (!project.featureOperation.equals("none") && profile != null)) {
-            nativeMesh = NativeCadEngine.evaluateFeatures(modelWidth, modelHeight, modelDepth,
+            candidateMesh = NativeCadEngine.evaluateFeatures(modelWidth, modelHeight, modelDepth,
                 project.filletRadius, project.featureBase, packedFeatures(), null);
         } else if (project.sketchExtruded && profile != null) {
-            nativeMesh = project.filletRadius > 0.0
+            candidateMesh = project.filletRadius > 0.0
                 ? NativeCadEngine.filletSketchExtrusion(profile.type, profile.x1, profile.y1,
                     profile.x2, profile.y2, modelDepth, project.sketchPlane, project.filletRadius)
                 : NativeCadEngine.tessellateSketchExtrusion(profile.type, profile.x1,
                     profile.y1, profile.x2, profile.y2, modelDepth, project.sketchPlane);
         } else {
-            nativeMesh = project.filletRadius > 0.0
+            candidateMesh = project.filletRadius > 0.0
                 ? NativeCadEngine.filletPrism(modelWidth, modelHeight, modelDepth, project.filletRadius)
                 : NativeCadEngine.tessellatePrism(modelWidth, modelHeight, modelDepth);
         }
+        if (!CadMesh.isValid(candidateMesh, !project.hasSolid())) {
+            operationMessage = "Nie można przebudować bryły. Poprzednia geometria została zachowana.";
+            return false;
+        }
+        double[] candidatePrism = NativeCadEngine.createPrism(modelWidth, modelHeight, modelDepth);
+        nativeMesh = candidateMesh;
+        nativePrism = candidatePrism;
         updateMeshCenter();
         java.util.Set<Integer> meshFaces=new java.util.HashSet<>();
         for(int i=12;i<nativeMesh.length;i+=13)meshFaces.add((int)Math.round(nativeMesh[i]));
@@ -2533,6 +2518,7 @@ public final class CadWorkspaceView extends View {
         technicalSheet=null;
         if(mode.equals("Zmierz")){loadMeasurementGeometry();updateMeasurementOutput();}
         if(mode.equals("Rysunek")) prepareTechnicalSheet();
+        return true;
     }
 
     private SketchPrimitive latestClosedProfile() {
@@ -2623,11 +2609,10 @@ public final class CadWorkspaceView extends View {
                 .setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)-> {
                     try {
                         double value=FeatureDirection.signed(parseCoordinate(depth),reverse.isChecked(),symmetric.isChecked());
-                        checkpoint();double[] candidate=feature.clone();candidate[6]=value;
+                        double[] candidate=feature.clone();candidate[6]=value;
                         candidate[1]=FeatureDirection.featureCode(FeatureDirection.isCut(feature[1]),symmetric.isChecked());
-                        project.committedFeatures.set(index,candidate);updateNativeModel();
-                        if(nativeMesh.length==0) {project.committedFeatures.set(index,feature);updateNativeModel();operationMessage="Niepoprawna głębokość dla dalszych operacji";}
-                        else {projectRepository.save(project);operationMessage="Gotowe: przeliczono operację konturu";}
+                        if(commitModelChange(() -> project.committedFeatures.set(index,candidate)))
+                            operationMessage="Gotowe: przeliczono operację konturu";
                     }catch(IllegalArgumentException e){operationMessage="Głębokość: 0,1–5000 mm";}
                     invalidate();
                 }).show();
@@ -2676,28 +2661,17 @@ public final class CadWorkspaceView extends View {
                     if (!valid) {
                         operationMessage = "Współrzędne: ±5000 mm, głębokość: 0,1–5000 mm";
                     } else {
-                        checkpoint();
-                        project.committedFeatures.set(index, candidate);
-                        List<SketchPrimitive> oldSketch = new ArrayList<>(project.sketch);
-                        String profileId = index < project.committedProfileIds.size()
-                            ? project.committedProfileIds.get(index) : "";
-                        for (int i = 0; i < project.sketch.size(); i++) {
-                            SketchPrimitive p = project.sketch.get(i);
-                            if (p.id.equals(profileId)) project.sketch.set(i,
-                                new SketchPrimitive(p.id, p.type, candidate[2], candidate[3],
-                                    candidate[4], candidate[5]));
-                        }
-                        updateNativeModel();
-                        if (nativeMesh.length == 0) {
-                            project.committedFeatures.set(index, feature);
-                            project.sketch.clear();
-                            project.sketch.addAll(oldSketch);
-                            updateNativeModel();
-                            operationMessage = "Zmiana uniemożliwia przeliczenie kolejnych operacji";
-                        } else {
-                            projectRepository.save(project);
-                            operationMessage = "Gotowe: przeliczono historię modelu";
-                        }
+                        if (commitModelChange(() -> {
+                            project.committedFeatures.set(index, candidate);
+                            String profileId = index < project.committedProfileIds.size()
+                                ? project.committedProfileIds.get(index) : "";
+                            for (int i = 0; i < project.sketch.size(); i++) {
+                                SketchPrimitive p = project.sketch.get(i);
+                                if (p.id.equals(profileId)) project.sketch.set(i,
+                                    new SketchPrimitive(p.id, p.type, candidate[2], candidate[3],
+                                        candidate[4], candidate[5]));
+                            }
+                        })) operationMessage = "Gotowe: przeliczono historię modelu";
                     }
                 } catch (NumberFormatException error) {
                     operationMessage = "Niepoprawna głębokość";
@@ -2829,29 +2803,14 @@ public final class CadWorkspaceView extends View {
                         invalidate();
                         return;
                     }
-                    value=FeatureDirection.signed(value,reverse.isChecked(),symmetric.isChecked());
-                    checkpoint();
-                    String previousOperation = project.featureOperation;
-                    double previousDepth = project.featureDepth;
-                    boolean previousExtruded = project.sketchExtruded;
-                    boolean previousSymmetric=project.featureSymmetric;
-                    String previousProfileId = project.featureProfileId;
-                    project.featureOperation = operation;
-                    project.featureProfileId = profile.id;
-                    project.featureDepth = value;
-                    project.featureSymmetric=symmetric.isChecked();
-                    project.sketchExtruded = true;
-                    updateNativeModel();
-                    if (nativeMesh.length == 0) {
-                        project.featureOperation = previousOperation;
-                        project.featureDepth = previousDepth;
-                        project.sketchExtruded = previousExtruded;
-                        project.featureSymmetric=previousSymmetric;
-                        project.featureProfileId = previousProfileId;
-                        updateNativeModel();
-                        operationMessage = "Operacja Boolean nie utworzyła poprawnej bryły";
-                    } else {
-                        projectRepository.save(project);
+                    final double signedDepth=FeatureDirection.signed(value,reverse.isChecked(),symmetric.isChecked());
+                    if (commitModelChange(() -> {
+                        project.featureOperation = operation;
+                        project.featureProfileId = profile.id;
+                        project.featureDepth = signedDepth;
+                        project.featureSymmetric=symmetric.isChecked();
+                        project.sketchExtruded = true;
+                    })) {
                         treeSelection = "Model";
                         mode = "Wybierz";
                         operationMessage = operation.equals("cut")
@@ -2924,26 +2883,13 @@ public final class CadWorkspaceView extends View {
                     double signed=FeatureDirection.signed(parseCoordinate(input),reverse.isChecked(),symmetric.isChecked());
                     double[] candidate=base.clone();candidate[6]=signed;
                     candidate[5]=FeatureDirection.baseCode(base[5],symmetric.isChecked());
-                    checkpoint();
-                    double[] previousBase=project.featureBase;String previousBaseId=project.featureBaseProfileId;
-                    String previousProfile=project.featureProfileId,previousOperation=project.featureOperation;
-                    boolean previousExtruded=project.sketchExtruded;
-                    boolean previousSymmetric=project.featureSymmetric;
-                    double previousDepth=modelDepth,previousRadius=project.filletRadius;
-                    project.featureBase=candidate;project.featureBaseProfileId=profileId;
-                    if(initial){project.featureProfileId=profileId;project.featureOperation="none";project.featureSymmetric=false;project.sketchExtruded=true;}
-                    modelDepth=Math.abs(signed);project.depth=modelDepth;
-                    if(initial)project.filletRadius=0;
-                    updateNativeModel();
-                    if(nativeMesh.length==0) {
-                        project.featureBase=previousBase;project.featureBaseProfileId=previousBaseId;
-                        project.featureProfileId=previousProfile;project.featureOperation=previousOperation;
-                        project.sketchExtruded=previousExtruded;modelDepth=previousDepth;project.depth=previousDepth;
-                        project.featureSymmetric=previousSymmetric;
-                        project.filletRadius=previousRadius;updateNativeModel();
-                        operationMessage="Kierunek lub głębokość uniemożliwia przeliczenie bryły i dalszych operacji";
-                    } else {
-                        mode="Wybierz";projectRepository.save(project);
+                    if (commitModelChange(() -> {
+                        project.featureBase=candidate;project.featureBaseProfileId=profileId;
+                        if(initial){project.featureProfileId=profileId;project.featureOperation="none";project.featureSymmetric=false;project.sketchExtruded=true;}
+                        project.depth=Math.abs(signed);
+                        if(initial)project.filletRadius=0;
+                    })) {
+                        mode="Wybierz";
                         operationMessage="Gotowe: wyciągnięcie "+Math.abs(signed)+" mm"+(symmetric.isChecked()?" · symetrycznie":signed<0?" · kierunek odwrócony":"");
                     }
                 }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
@@ -3105,6 +3051,37 @@ public final class CadWorkspaceView extends View {
         }
     }
 
+    /** Isolated document edit: geometry and persistence must succeed before history advances. */
+    private boolean commitModelChange(Runnable change) {
+        CadProject previous = project;
+        double[] previousMesh = nativeMesh, previousPrism = nativePrism;
+        String previousInfo = modelInfo, previousMode = mode;
+        TechnicalSheet previousSheet = technicalSheet;
+        double w = modelWidth, h = modelHeight, d = modelDepth;
+        try {
+            String snapshot = previous.toJson().toString();
+            project = CadProject.fromJson(new org.json.JSONObject(snapshot));
+            change.run();
+            modelWidth = project.width; modelHeight = project.height; modelDepth = project.depth;
+            mode = "Wybierz";
+            if (!updateNativeModel()) throw new IllegalArgumentException(operationMessage);
+            projectRepository.save(project);
+            undoStack.push(snapshot);
+            while (undoStack.size() > 50) undoStack.removeLast();
+            redoStack.clear();
+            return true;
+        } catch (Exception failure) {
+            project = previous;
+            nativeMesh = previousMesh; nativePrism = previousPrism; modelInfo = previousInfo;
+            modelWidth = w; modelHeight = h; modelDepth = d;
+            technicalSheet = previousSheet; updateMeshCenter();
+            operationMessage = "Nie zatwierdzono zmiany: " + failure.getMessage();
+            return false;
+        } finally {
+            mode = previousMode;
+        }
+    }
+
     private void undo() {
         closePropertyEditor();
         if(!project.polylineDraft.isEmpty()){removePolylinePoint();return;}
@@ -3140,8 +3117,7 @@ public final class CadWorkspaceView extends View {
             modelHeight = candidate.height;
             modelDepth = candidate.depth;
             mode = "Wybierz";
-            updateNativeModel();
-            if (candidate.hasSolid() && nativeMesh.length == 0)
+            if (!updateNativeModel())
                 throw new IllegalStateException("Nie można odtworzyć geometrii historii");
             projectRepository.save(candidate);
         } catch (Exception failure) {
@@ -3428,19 +3404,21 @@ public final class CadWorkspaceView extends View {
             }
             new PropertyBuilder().setTitle("Usuń ostatnią cechę modelu")
                 .setItems(new String[]{"Usuń ostatnie dodanie / wycięcie / zaokrąglenie"},(dialog,which)-> {
-                    checkpoint();
-                    if(project.filletRadius>0) project.filletRadius=0;
-                    else {
-                        if(!active) {
-                            int index=project.committedFeatures.size()-1;
-                            project.committedFeatures.remove(index);
-                            if(index<project.committedProfileIds.size()) project.committedProfileIds.remove(index);
+                    if (commitModelChange(() -> {
+                        if(project.filletRadius>0) project.filletRadius=0;
+                        else {
+                            if(!active) {
+                                int index=project.committedFeatures.size()-1;
+                                project.committedFeatures.remove(index);
+                                if(index<project.committedProfileIds.size()) project.committedProfileIds.remove(index);
+                            }
+                            project.featureOperation="none";project.featureProfileId=null;project.sketchExtruded=false;
                         }
-                        project.featureOperation="none";project.featureProfileId=null;project.sketchExtruded=false;
+                    })) {
+                        operationMessage="Gotowe: usunięto ostatnią cechę; szkic zachowano. Możesz cofnąć zmianę.";
+                        selectedSketchId=null;
                     }
-                    updateNativeModel();projectRepository.save(project);
-                    operationMessage="Gotowe: usunięto ostatnią cechę; szkic zachowano. Możesz cofnąć zmianę.";
-                    selectedSketchId=null;invalidate();
+                    invalidate();
                 }).setNegativeButton("Anuluj",null).show();return;
         }
         if(tool.equals("Wytnij")) {
@@ -3583,8 +3561,7 @@ public final class CadWorkspaceView extends View {
         try {
             project=next;mode="Wybierz";
             modelWidth=next.width;modelHeight=next.height;modelDepth=next.depth;
-            updateNativeModel();
-            if(next.hasSolid()&&nativeMesh.length==0)throw new IllegalStateException("Nie można odtworzyć geometrii lub źródła projektu");
+            if(!updateNativeModel())throw new IllegalStateException("Nie można odtworzyć geometrii lub źródła projektu");
             projectRepository.save(next);
         }catch(RuntimeException error) {
             project=previous;mode=previousMode;modelWidth=previous.width;modelHeight=previous.height;modelDepth=previous.depth;
@@ -3667,27 +3644,26 @@ public final class CadWorkspaceView extends View {
                     projectRepository.save(project);finishSketchWork();
                 }).setNegativeButton("Kontynuuj szkic",null).show();return;
         }
-        CadProject draft=project;
         try {
-            CadProject candidate=SketchTransactions.candidate(draft);
-            project=candidate;updateNativeModel();
-            if(candidate.hasSolid()&&nativeMesh.length==0)throw new IllegalArgumentException("Profil nie pozwala przebudować zależnych operacji bryły");
-            project=draft;checkpoint();project=candidate;
-            mode="Wybierz";showSolid=true;selectedSketchId=null;selectedFace=-1;
-            trimMode=dimensionMode=coincidenceMode=false;closePropertyEditor();
-            projectRepository.save(project);operationMessage="Zatwierdzono szkic i przebudowano bryłę";
+            CadProject candidate=SketchTransactions.candidate(project);
+            if (commitModelChange(() -> project=candidate)) {
+                mode="Wybierz";showSolid=true;selectedSketchId=null;selectedFace=-1;
+                trimMode=dimensionMode=coincidenceMode=false;closePropertyEditor();
+                operationMessage="Zatwierdzono szkic i przebudowano bryłę";
+            }
         }catch(RuntimeException error) {
-            project=draft;updateNativeModel();operationMessage="Nie zatwierdzono: "+error.getMessage()+". Popraw szkic albo anuluj edycję.";
+            operationMessage="Nie zatwierdzono: "+error.getMessage()+". Popraw szkic albo anuluj edycję.";
         }
         invalidate();
     }
 
     private void cancelSketchWork() {
         if(!SketchTransactions.active(project))return;
-        CadProject original=SketchTransactions.baseline(project);checkpoint();project=original;
+        CadProject original=SketchTransactions.baseline(project);
+        if(!commitModelChange(() -> project=original)){invalidate();return;}
         arcDraft.clear();polylinePreview=null;selectedSketchId=null;selectedFace=-1;
         trimMode=dimensionMode=coincidenceMode=false;mode="Wybierz";showSolid=true;
-        closePropertyEditor();updateNativeModel();projectRepository.save(project);
+        closePropertyEditor();
         operationMessage="Anulowano edycję szkicu; przywrócono poprzednią geometrię";invalidate();
     }
 

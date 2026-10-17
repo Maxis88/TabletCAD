@@ -1,12 +1,17 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.45.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.46.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
 0.45.0: odtwarzanie undo/redo z walidacją geometrii i rollback, zachowanie
 stosów przy błędzie oraz walidacja odczytywalności JSON przed zapisem.
 Aktualny audyt: docs/AUDIT-2026-10-17.md. Nie zamyka to całego etapu stabilizacji.
+
+0.46.0: publikacja siatki dopiero po poprawnej przebudowie, jawny wynik błędu,
+odrzucanie utraconego profilu i wspólna transakcja zmian podstawowych operacji,
+edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
+lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
 

@@ -1,7 +1,7 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.45.0-transactional-history**, versionCode **52**.
+Wersja źródeł: **0.46.0-atomic-geometry**, versionCode **53**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 ## Architektura i funkcje
@@ -19,9 +19,15 @@ Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 To wersja rozwojowa. Solver szkicu i odniesienia topologiczne mają ograniczony
 zakres, część obliczeń blokuje UI. Pełne komponenty i dokumentacja techniczna
-pozostają nieukończone. Bieżące ograniczenia: [audyt](docs/AUDIT-2026-10-17.md)
+pozostają nieukończone. Bieżące ograniczenia: [audyt 0.46](docs/AUDIT-0.46.md)
 i [mapa wymagań](STATUS_WYMAGAN_CAD.md). Starszy opis architektury zawiera cele,
 nie gwarancje aktualnego zachowania. Zachowano [historię rozwoju](docs/DEVELOPMENT_HISTORY.md).
+
+W 0.46 przebudowa przygotowuje nowy bufor geometrii przed zastąpieniem
+poprzedniego. Błędny wynik i utracony profil nie powodują zastąpienia bryły
+pustą siatką ani domyślnym pudełkiem. Wspólna transakcja podstawowych zmian
+modelu pracuje na kopii dokumentu; nieudana geometria lub zapis zachowuje
+poprzedni dokument, siatkę oraz stosy Cofnij/Ponów.
 
 ## Budowanie na Windows ze świeżego klonu
 
