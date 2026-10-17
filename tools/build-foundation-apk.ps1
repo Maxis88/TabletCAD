@@ -38,15 +38,19 @@ Copy-Item (Join-Path $Root "third_party\occt\LICENSE_LGPL_21.txt") (Join-Path $B
 
 & $Aapt2 compile --dir (Join-Path $Root "app\src\main\res") -o (Join-Path $Build "res.zip")
 Assert-ExitCode "Resource compilation"
-& $Aapt2 link -o (Join-Path $Build "unsigned.apk") -I $AndroidJar --manifest (Join-Path $Root "app\src\main\AndroidManifest.xml") (Join-Path $Build "res.zip") -A (Join-Path $Build "assets") --min-sdk-version 34 --target-sdk-version 36 --version-code $VersionCode --version-name $VersionName --java (Join-Path $Build "generated") --auto-add-overlay
+& $Aapt2 link -o (Join-Path $Build "unsigned.apk") -I $AndroidJar --manifest (Join-Path $Root "app\src\main\AndroidManifest.xml") (Join-Path $Build "res.zip") --min-sdk-version 34 --target-sdk-version 36 --version-code $VersionCode --version-name $VersionName --java (Join-Path $Build "generated") --auto-add-overlay
 Assert-ExitCode "Resource linking"
+& $Jar uf (Join-Path $Build "unsigned.apk") -C $Build assets
+Assert-ExitCode "License assets packaging"
 
 $Sources = Get-ChildItem (Join-Path $Root "app\src\main\java") -Recurse -Filter "*.java" | ForEach-Object { $_.FullName }
 & $Javac -source 17 -target 17 -encoding UTF-8 -classpath $AndroidJar -d (Join-Path $Build "classes") $Sources
 Assert-ExitCode "Java compilation"
-$ClassFiles = Get-ChildItem (Join-Path $Build "classes") -Recurse -Filter "*.class" | ForEach-Object { $_.FullName }
+$ClassesJar = Join-Path $Build "classes.jar"
+& $Jar cf $ClassesJar -C (Join-Path $Build "classes") .
+Assert-ExitCode "Class archive creation"
 New-Item -ItemType Directory -Force -Path (Join-Path $Build "dex") | Out-Null
-& $D8 --lib $AndroidJar --output (Join-Path $Build "dex") $ClassFiles
+& $D8 --lib $AndroidJar --output (Join-Path $Build "dex") $ClassesJar
 Assert-ExitCode "DEX compilation"
 
 Push-Location (Join-Path $Build "dex")
