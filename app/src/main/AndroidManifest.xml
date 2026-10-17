@@ -4,6 +4,8 @@
     <application
         android:allowBackup="true"
         android:label="TabletCAD"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/AppTheme">
         <activity
             android:name=".MainActivity"

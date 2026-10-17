@@ -1,8 +1,11 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.52.0-recoverable-save**, versionCode **59**.
+Wersja źródeł: **0.53.0-application-icon**, versionCode **60**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
+
+Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
+z adaptacyjną maską Androida i granatowym tłem.
 
 ## Architektura i funkcje
 
@@ -48,7 +51,7 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 `prepare-occt.ps1` pobiera tag V8_0_1 i sprawdza rewizję
 `b8f597c677811d1f9f4d8a97f5ae2825c0353a42`, następnie buduje wymagane biblioteki
 ARM64. Nie nadpisuje lokalnie zmienionych źródeł zależności.
-Wynik: `dist/TabletCAD-0.52.0-recoverable-save.apk`.
+Wynik: `dist/TabletCAD-0.53.0-application-icon.apk`.
 Skrypt buduje Java/C++/DEX i zasoby, generuje lokalny klucz debug i weryfikuje
 podpis APK. Standardowe hasło Android debug służy tylko do lokalnego klucza
 deweloperskiego; nie wolno używać go do podpisywania wydań produkcyjnych.
