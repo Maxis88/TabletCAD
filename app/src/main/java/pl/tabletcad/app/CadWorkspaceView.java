@@ -136,7 +136,7 @@ public final class CadWorkspaceView extends View {
     private android.widget.ScrollView propertyEditor;
     private double[] featurePreview;
     private double[] filletEdges=new double[0];
-    private int filletSegment=-1;
+    private final java.util.Map<Integer,Integer> filletSelections=new java.util.LinkedHashMap<>();
     private Runnable filletSelectionChanged;
     private android.widget.HorizontalScrollView nativeToolbar;
     private android.widget.PopupWindow toolbarPopup;
@@ -182,7 +182,7 @@ public final class CadWorkspaceView extends View {
         extrusionTouch=false;extrusionValueBounds.setEmpty();
         featurePreview=null;
         measurementOutput=null;
-        filletEdges=new double[0];filletSegment=-1;filletSelectionChanged=null;
+        filletEdges=new double[0];filletSelections.clear();filletSelectionChanged=null;
         if(propertyEditor!=null) {
             android.view.inputmethod.InputMethodManager keyboard=(android.view.inputmethod.InputMethodManager)
                 getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
@@ -2192,13 +2192,14 @@ public final class CadWorkspaceView extends View {
         if(index>=0&&candidate[0].length==16)candidate[0]=RootEdgeReference.anchor(candidate[0],rootReference,rootEdges);
         EditText radius=coordinateInput(chamfer?"Wielkość fazy [mm]":"Promień [mm]",index>=0?candidate[0][11]:3);
         android.widget.TextView status=new android.widget.TextView(getContext());status.setTextSize(13);
+        android.widget.TextView selectionCount=new android.widget.TextView(getContext());
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        form.addView(radius);form.addView(status);
+        form.addView(radius);form.addView(selectionCount);form.addView(status);
         new PropertyBuilder().setTitle(chamfer?(index<0?"Fazuj · wskaż krawędź":"Fazowanie · równe odległości [mm]"):(index<0?"Zaokrąglij · wskaż krawędź":"Zaokrąglenie · promień [mm]")).setView(form)
             .setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)-> {
                 try {
                     if(candidate[0]==null)throw new IllegalArgumentException("Najpierw dotknij widocznej krawędzi bryły");
-                    double[] value=candidate[0].clone();value[11]=parseCoordinate(radius);
+                    double[] value=EdgeGroup.withRadius(candidate[0],parseCoordinate(radius));
                     if(chamfer)EdgeChamfer.validate(value);else EdgeFillet.validate(value);
                     if(evaluateFillet(value,index).length==0)throw new IllegalArgumentException("Nie można wykonać operacji na tej krawędzi z podaną wartością lub przebudować kolejnych cech");
                     if (commitModelChange(() -> {
@@ -2214,11 +2215,19 @@ public final class CadWorkspaceView extends View {
         Runnable preview=()-> {
             if(propertyEditor!=owner)return;
             invalidateGeometryPreview();
-            if(index<0&&filletSegment>=0)candidate[0]=RootEdgeReference.anchor(
-                chamfer?EdgeChamfer.create(filletEdges,filletSegment,3):EdgeFillet.create(filletEdges,filletSegment,3),rootReference,rootEdges);
             try {
-                if(candidate[0]==null){status.setText("Dotknij widocznej krawędzi modelu. Przeciągnięcie obraca model.");invalidate();return;}
-                candidate[0][11]=parseCoordinate(radius);
+                double dimension=parseCoordinate(radius);
+                if(index<0) {
+                    candidate[0]=null;
+                    selectionCount.setText("Wybrane krawędzie: "+filletSelections.size());
+                    java.util.List<double[]> selected=new java.util.ArrayList<>();
+                    for(int segment:filletSelections.values())selected.add(RootEdgeReference.anchor(
+                        chamfer?EdgeChamfer.create(filletEdges,segment,dimension):EdgeFillet.create(filletEdges,segment,dimension),rootReference,rootEdges));
+                    candidate[0]=selected.isEmpty()?null:selected.size()==1?selected.get(0):EdgeGroup.create(selected,dimension,chamfer);
+                }
+                selectionCount.setText("Wybrane krawędzie: "+(candidate[0]==null?0:EdgeGroup.is(candidate[0])?(int)candidate[0][1]:1));
+                if(candidate[0]==null){status.setText("Dotykaj kolejnych krawędzi. Ponowne dotknięcie odznacza; przeciągnięcie obraca model.");invalidate();return;}
+                candidate[0]=EdgeGroup.withRadius(candidate[0],dimension);
                 if(chamfer)EdgeChamfer.validate(candidate[0]);else EdgeFillet.validate(candidate[0]);
                 double proposedRadius=candidate[0][11];status.setText("Obliczanie podglądu…");
                 submitGeometryPreview(owner,filletPreviewQuery(candidate[0],index),mesh->{
@@ -2360,13 +2369,16 @@ public final class CadWorkspaceView extends View {
             if(d<distance){distance=d;selected=i;}
         }
         if(selected<0){operationMessage="Dotknij bliżej widocznej krawędzi";invalidate();return;}
-        filletSegment=selected;filletSelectionChanged.run();
+        int id=(int)filletEdges[selected+15];
+        if(!filletSelections.containsKey(id)&&filletSelections.size()>=256){operationMessage="Limit jednej operacji: 256 krawędzi";invalidate();return;}
+        if(filletSelections.containsKey(id))filletSelections.remove(id);else filletSelections.put(id,selected);
+        filletSelectionChanged.run();
     }
 
     private void drawFilletSelection(Canvas canvas) {
-        if(filletSegment<0||filletSegment+15>=filletEdges.length)return;
-        double id=filletEdges[filletSegment+15];paint.setColor(Color.rgb(235,130,15));paint.setStrokeWidth(dp(3));
-        for(int i=0;i+15<filletEdges.length;i+=16)if(filletEdges[i+15]==id) {
+        if(filletSelections.isEmpty())return;
+        paint.setColor(Color.rgb(235,130,15));paint.setStrokeWidth(dp(3));
+        for(int i=0;i+15<filletEdges.length;i+=16)if(filletSelections.containsKey((int)filletEdges[i+15])) {
             double[] a=projectWorldPoint(filletEdges[i+9],filletEdges[i+10],filletEdges[i+11]);
             double[] b=projectWorldPoint(filletEdges[i+12],filletEdges[i+13],filletEdges[i+14]);
             for(double[] range:HiddenLineVisibility.segments(a[0],a[1],a[2],b[0],b[1],b[2],depthSurfaces))

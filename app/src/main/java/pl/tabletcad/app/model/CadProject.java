@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /** Versioned, geometry-independent source of truth for a TabletCAD document. */
 public final class CadProject {
-    public static final int CURRENT_SCHEMA = 29;
+    public static final int CURRENT_SCHEMA = 30;
     public String sketchEditBaseline;
     public final java.util.Map<String,String> sketchLineage=new java.util.LinkedHashMap<>();
     public final java.util.Map<String,String> sketchBindings=new java.util.LinkedHashMap<>();
@@ -345,9 +345,9 @@ public final class CadProject {
             try{pl.tabletcad.app.Revolve.validate(f);if(prefix==7&&f[1]!=0)throw new IllegalArgumentException("Bryła bazowa nie może być wycięciem");}
             catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}return;
         }
-        if(prefix==16&&(data.getDouble(0)==-1||data.getDouble(0)==-2||data.getDouble(0)==-4||data.getDouble(0)==-5)) {
+        if(prefix==16&&(data.getDouble(0)==-1||data.getDouble(0)==-2||data.getDouble(0)==-4||data.getDouble(0)==-5||data.getDouble(0)==-6||data.getDouble(0)==-7)) {
             double[] feature=new double[data.length()];for(int i=0;i<feature.length;i++)feature[i]=data.getDouble(i);
-            try{if(feature[0]==-2||feature[0]==-5)pl.tabletcad.app.EdgeChamfer.validate(feature);else pl.tabletcad.app.EdgeFillet.validate(feature);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
+            try{if(feature[0]==-2||feature[0]==-5||feature[0]==-7)pl.tabletcad.app.EdgeChamfer.validate(feature);else pl.tabletcad.app.EdgeFillet.validate(feature);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
             return;
         }
         double type=data.getDouble(0);int tail=0;

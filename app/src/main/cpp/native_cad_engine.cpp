@@ -779,6 +779,44 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         for (jsize i = 0; i < count;) {
             if(count-i<16) return env->NewDoubleArray(0);
             const double* f = values.data() + i;
+            if(f[0]==-6||f[0]==-7) {
+                if(f[1]!=std::floor(f[1])||f[1]<1||f[1]>256||f[11]<.1||f[11]>1000)return env->NewDoubleArray(0);
+                for(int k=2;k<16;k++)if(k!=11&&f[k]!=0)return env->NewDoubleArray(0);
+                const bool chamfer=f[0]==-7;int stride=16;
+                std::vector<TopoDS_Edge> selected;
+                for(int k=0;k<static_cast<int>(f[1]);k++) {
+                    if(count-i-stride<1)return env->NewDoubleArray(0);
+                    double size=f[stride++];if(size!=16&&size!=24&&size!=39)return env->NewDoubleArray(0);
+                    int length=static_cast<int>(size);if(count-i-stride<length)return env->NewDoubleArray(0);
+                    const double* member=f+stride;stride+=length;
+                    if(member[0]!=(chamfer?-2:-1)&&member[0]!=(chamfer?-5:-4))return env->NewDoubleArray(0);
+                    if(member[1]!=0||member[11]!=f[11]||member[12]!=0||member[13]!=0||member[14]!=0||member[15]!=0)return env->NewDoubleArray(0);
+                    std::array<double,9> mapped;const double* signature=member+2;TopoDS_Edge expected;
+                    if(member[0]==-4||member[0]==-5) {
+                        if(javaSourceStep!=nullptr||length<24||(member[16]!=7&&member[16]!=22)||length!=17+member[16])return env->NewDoubleArray(0);
+                        int baseSize=static_cast<int>(member[16]);TopoDS_Shape before=referenceRoot(member+17,baseSize);
+                        if(before.IsNull()||edgeForSignature(before,member+2).IsNull())return env->NewDoubleArray(0);
+                        if(!mapRootEdge(member+17,baseSize,rootBase.data(),static_cast<int>(rootBase.size()),member+2,mapped))return env->NewDoubleArray(0);
+                        expected=edgeForSignature(rootShape,mapped.data());if(expected.IsNull())return env->NewDoubleArray(0);
+                        signature=mapped.data();
+                    } else if(length!=16)return env->NewDoubleArray(0);
+                    TopoDS_Edge edge=edgeForSignature(shape,signature);
+                    if(edge.IsNull()||(!expected.IsNull()&&!sameEdgeGeometry(edge,expected)))return env->NewDoubleArray(0);
+                    for(const auto& previous:selected)if(edge.IsSame(previous))return env->NewDoubleArray(0);
+                    selected.push_back(edge);
+                }
+                if(chamfer) {
+                    BRepFilletAPI_MakeChamfer maker(shape);
+                    for(const auto& edge:selected)if(maker.Contour(edge)==0)maker.Add(f[11],edge);
+                    maker.Build();if(!maker.IsDone())return env->NewDoubleArray(0);shape=maker.Shape();
+                } else {
+                    BRepFilletAPI_MakeFillet maker(shape);
+                    for(const auto& edge:selected)if(maker.Contour(edge)==0)maker.Add(f[11],edge);
+                    maker.Build();if(!maker.IsDone())return env->NewDoubleArray(0);shape=maker.Shape();
+                }
+                if(shape.IsNull()||countShapes(shape,TopAbs_SOLID)==0||!BRepCheck_Analyzer(shape).IsValid())return env->NewDoubleArray(0);
+                i+=stride;continue;
+            }
             if(f[0]==-3) {
                 int stride=revolveStride(f,count-i);if(!stride)return env->NewDoubleArray(0);
                 shape=applyProfileFeature(shape,revolvedProfile(f,stride),f[1]==1);
