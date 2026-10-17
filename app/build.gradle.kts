@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 54
-        versionName = "0.47.0-transactional-import"
+        versionCode = 55
+        versionName = "0.48.0-context-workspace"
     }
 
     externalNativeBuild {

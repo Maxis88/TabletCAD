@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="pl.tabletcad.test">
+    <uses-sdk android:minSdkVersion="34" android:targetSdkVersion="36" />
+    <application android:label="TabletCAD UI tests" android:debuggable="true" android:hasCode="true" />
+    <instrumentation android:name="pl.tabletcad.test.WorkspaceInstrumentation" android:targetPackage="pl.tabletcad.app" />
+</manifest>

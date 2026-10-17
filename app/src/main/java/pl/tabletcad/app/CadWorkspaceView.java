@@ -142,6 +142,17 @@ public final class CadWorkspaceView extends View {
     private android.widget.PopupWindow toolbarPopup;
     private String toolbarState="";
     private boolean toolbarUpdatePosted;
+    private float timelineScroll;
+
+    private boolean propertiesVisible() {
+        return propertyEditor != null || inSketch() || mode.equals("Zmierz") || mode.equals("Rysunek");
+    }
+
+    private float viewportRight() { return getWidth() - (propertiesVisible() ? dp(252) : 0); }
+
+    private float maxTimelineScroll() {
+        return Math.max(0, dp(340) + CadTimeline.entries(project).size() * dp(82) - viewportRight());
+    }
     private final List<double[]> arcDraft=new ArrayList<>();
     private double[] arcPreview;
 
@@ -285,10 +296,10 @@ public final class CadWorkspaceView extends View {
                     return true;
                 }
                 if (e.getY() >= historyY && e.getX() >= dp(340)
-                        && e.getX() < getWidth() - dp(250)) {
+                        && e.getX() < viewportRight()) {
                     if(!arcDraft.isEmpty()){showArcDraftActions(null);return true;}
                     if(!project.polylineDraft.isEmpty()){showPolylineActions(null);return true;}
-                    int index = (int)((e.getX() - dp(340)) / dp(82));
+                    int index = (int)((e.getX() - dp(340) + timelineScroll) / dp(82));
                     List<CadTimeline.Item> items=CadTimeline.entries(project);
                     if(index>=0&&index<items.size()) {
                         CadTimeline.Item item=items.get(index);
@@ -393,6 +404,12 @@ public final class CadWorkspaceView extends View {
             }
 
             @Override public boolean onScroll(MotionEvent e1, MotionEvent e2, float dx, float dy) {
+                if (e1 != null && e1.getX() >= dp(328)
+                        && e1.getY() >= getHeight()-dp(78)-bottomSystemInset) {
+                    timelineScroll=Math.max(0,Math.min(maxTimelineScroll(),timelineScroll+dx));
+                    invalidate();return true;
+                }
+                if(e1 == null || !isInsideViewport(e1.getX(),e1.getY()))return true;
                 if (!scaleGestures.isInProgress() && e2.getPointerCount() > 1) {
                     panX -= dx;
                     panY -= dy;
@@ -584,7 +601,7 @@ public final class CadWorkspaceView extends View {
         super.onDraw(canvas);
         scheduleToolbarUpdate();
         float left = dp(224);
-        float right = getWidth() - dp(252);
+        float right = viewportRight();
         float top = dp(110);
         float bottom = getHeight() - dp(84) - bottomSystemInset;
         workCenterX = (left + right) / 2f + panX;
@@ -592,7 +609,7 @@ public final class CadWorkspaceView extends View {
 
         drawTopBar(canvas);
         drawLeftPanel(canvas, left, top, bottom);
-        drawProperties(canvas, right, top, bottom);
+        if(propertiesVisible())drawProperties(canvas, right, top, bottom);
         canvas.save();
         canvas.clipRect(left, top, right, bottom);
         drawGrid(canvas, left, top, right, bottom);
@@ -606,6 +623,7 @@ public final class CadWorkspaceView extends View {
             if (mode.equals("Zmierz")) drawDimensions(canvas, left, top, right, bottom);
         }
         if(!mode.equals("Rysunek")) drawAxis(canvas, right - dp(70), bottom - dp(60));
+        if(!propertiesVisible()&&!operationMessage.isEmpty())drawViewportMessage(canvas,left,right,bottom);
         canvas.restore();
         drawTimeline(canvas);
     }
@@ -826,6 +844,18 @@ public final class CadWorkspaceView extends View {
         android.text.StaticLayout layout=android.text.StaticLayout.Builder.obtain(operationMessage,0,
             operationMessage.length(),messagePaint,(int)dp(212)).build();
         canvas.save();canvas.translate(right+dp(18),y);layout.draw(canvas);canvas.restore();
+    }
+
+    private void drawViewportMessage(Canvas canvas,float left,float right,float bottom) {
+        android.text.TextPaint messagePaint=new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
+        messagePaint.setTextSize(dp(12));messagePaint.setColor(INK);
+        int width=(int)Math.max(dp(40),Math.min(dp(600),right-left-dp(48)));
+        android.text.StaticLayout layout=android.text.StaticLayout.Builder.obtain(operationMessage,0,
+            operationMessage.length(),messagePaint,width).setMaxLines(2)
+            .setEllipsize(android.text.TextUtils.TruncateAt.END).build();
+        float x=left+dp(16),y=bottom-layout.getHeight()-dp(24);
+        paint.setColor(PANEL);canvas.drawRoundRect(new RectF(x,y-dp(8),x+width+dp(24),bottom-dp(8)),dp(8),dp(8),paint);
+        canvas.save();canvas.translate(x+dp(12),y);layout.draw(canvas);canvas.restore();
     }
 
     private void drawGrid(Canvas canvas, float left, float top, float right, float bottom) {
@@ -2458,7 +2488,7 @@ public final class CadWorkspaceView extends View {
     }
 
     private boolean isInsideViewport(float x, float y) {
-        return x >= dp(224) && x <= getWidth() - dp(252)
+        return x >= dp(224) && x <= viewportRight()
             && y >= dp(110) && y <= getHeight() - dp(84) - bottomSystemInset;
     }
 
@@ -3319,7 +3349,7 @@ public final class CadWorkspaceView extends View {
     private void drawTimeline(Canvas canvas) {
         float top = getHeight() - dp(78) - bottomSystemInset;
         float left = dp(224);
-        float right = getWidth() - dp(252);
+        float right = viewportRight();
         canvas.save();canvas.clipRect(left,top,right,getHeight());
         paint.setColor(Color.rgb(16, 24, 32));
         canvas.drawRect(left, top, right, getHeight(), paint);
@@ -3329,6 +3359,9 @@ public final class CadWorkspaceView extends View {
         List<CadTimeline.Item> features=CadTimeline.entries(project);
         float startX = left + dp(116);
         float gap = dp(82);
+        timelineScroll=Math.max(0,Math.min(maxTimelineScroll(),timelineScroll));
+        canvas.save();canvas.clipRect(startX-dp(8),top+dp(20),right,getHeight());
+        canvas.translate(-timelineScroll,0);
         paint.setStrokeWidth(dp(2));
         paint.setColor(Color.rgb(70, 86, 98));
         if (features.size() > 1) {
@@ -3343,7 +3376,7 @@ public final class CadWorkspaceView extends View {
             text(canvas, features.get(i).title, x + dp(19), top + dp(73), 8,
                 Color.rgb(205, 214, 221), false, Paint.Align.CENTER);
         }
-        canvas.restore();
+        canvas.restore();canvas.restore();
     }
 
     private boolean isToolActive(String tool) {

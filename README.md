@@ -1,7 +1,7 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.47.0-transactional-import**, versionCode **54**.
+Wersja źródeł: **0.48.0-context-workspace**, versionCode **55**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 ## Architektura i funkcje
@@ -19,7 +19,7 @@ Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 To wersja rozwojowa. Solver szkicu i odniesienia topologiczne mają ograniczony
 zakres, część obliczeń blokuje UI. Pełne komponenty i dokumentacja techniczna
-pozostają nieukończone. Bieżące ograniczenia: [audyt 0.47](docs/AUDIT-0.47.md)
+pozostają nieukończone. Bieżące ograniczenia: [audyt 0.48](docs/AUDIT-0.48.md)
 i [mapa wymagań](STATUS_WYMAGAN_CAD.md). Starszy opis architektury zawiera cele,
 nie gwarancje aktualnego zachowania. Zachowano [historię rozwoju](docs/DEVELOPMENT_HISTORY.md).
 
@@ -48,7 +48,7 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 `prepare-occt.ps1` pobiera tag V8_0_1 i sprawdza rewizję
 `b8f597c677811d1f9f4d8a97f5ae2825c0353a42`, następnie buduje wymagane biblioteki
 ARM64. Nie nadpisuje lokalnie zmienionych źródeł zależności.
-Wynik: `dist/TabletCAD-0.47.0-transactional-import.apk`.
+Wynik: `dist/TabletCAD-0.48.0-context-workspace.apk`.
 Skrypt buduje Java/C++/DEX i zasoby, generuje lokalny klucz debug i weryfikuje
 podpis APK. Standardowe hasło Android debug służy tylko do lokalnego klucza
 deweloperskiego; nie wolno używać go do podpisywania wydań produkcyjnych.
@@ -67,6 +67,21 @@ nie są automatycznie wykonywane przez Gradle/JUnit. Wymagają kompilacji z
 klasami aplikacji, DEX i dostępu do natywnej biblioteki na urządzeniu.
 Szczegóły wcześniejszych testów opisuje audyt. Testowanie interfejsu i geometrii
 należy wykonywać na osobnych dokumentach, bez modyfikowania danych użytkownika.
+
+Test renderowania i gestów `WorkspaceUiProbe` wymaga normalnego środowiska
+aplikacji, więc działa przez osobny APK instrumentacji, a nie `app_process`.
+Po zbudowaniu i zainstalowaniu bieżącej aplikacji:
+
+```powershell
+.\tools\build-ui-tests.ps1 -Sdk $env:ANDROID_HOME
+adb install -r .\build\ui-tests\TabletCAD-ui-tests.apk
+adb shell am instrument -w -r pl.tabletcad.test/pl.tabletcad.test.WorkspaceInstrumentation
+```
+
+Oczekiwany wynik: `result=PASS`. Test tworzy dokumenty w odrębnym podfolderze
+cache aplikacji. Kod produkcyjny nie ma testowych intencji ani przełączników
+podmieniających dane użytkownika. Testowy APK jest podpisywany lokalnym kluczem
+debug, tym samym co aplikacja zbudowana skryptem.
 
 ## Rozwój i bezpieczeństwo repozytorium
 
