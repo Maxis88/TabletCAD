@@ -1,11 +1,15 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.56.0-cad-interaction**, versionCode **63**.
+Wersja źródeł: **0.57.0-kernel-diagnostics**, versionCode **64**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
+
+Wersja 0.57 dodaje diagnostykę jądra: nieudana przebudowa podaje numer i nazwę
+operacji historii oraz konkretną przyczynę (np. wycięcie nie przecina bryły,
+zbyt duży promień zaokrąglenia, utracona krawędź). Szczegóły: [audyt 0.57](docs/AUDIT-0.57.md).
 
 Wersja 0.56 dodaje edycję wymiarów przez dwukrotne dotknięcie, pomocniczość
 figur, rozszerzone więzy, drzewo brył i źródłowych szkiców, wybór wielu profili
@@ -57,7 +61,7 @@ $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 `prepare-occt.ps1` pobiera tag V8_0_1 i sprawdza rewizję
 `b8f597c677811d1f9f4d8a97f5ae2825c0353a42`, następnie buduje wymagane biblioteki
 ARM64. Nie nadpisuje lokalnie zmienionych źródeł zależności.
-Wynik: `dist/TabletCAD-0.55.0-sketch-workflow.apk`.
+Wynik: `dist/TabletCAD-<versionName>.apk` (np. `dist/TabletCAD-0.57.0-kernel-diagnostics.apk`).
 Skrypt buduje Java/C++/DEX i zasoby, generuje lokalny klucz debug i weryfikuje
 podpis APK. Standardowe hasło Android debug służy tylko do lokalnego klucza
 deweloperskiego; nie wolno używać go do podpisywania wydań produkcyjnych.

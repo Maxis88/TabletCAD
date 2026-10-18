@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.56.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.57.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,12 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.57.0: błędy przebudowy OCCT zwracają indeks operacji i konkretną przyczynę
+(Boolean bez efektu, rozłączne dodanie, zaokrąglenie/faza niewykonalne, utracona
+krawędź, niepoprawny profil, wyjątek OCCT). Komunikat w UI wskazuje operację
+z historii. KernelDiagnosticsProbe sprawdza dokładne objętości części
+referencyjnej 100×60×20 z otworem Ø10 i R3, edycję bazy i STEP. Audyt: docs/AUDIT-0.57.md.
 
 0.56.0: edycja etykiet wymiarów/kątów, pomocniczość figur, rozszerzone więzy,
 przyciąganie rzeczywistej geometrii, drzewo brył i części szkiców, wieloprofilowe

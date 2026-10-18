@@ -3006,8 +3006,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             } catch (IOException error) { operationMessage = error.getMessage(); return false; }
         } else {
             CadModelResult result;
-            try {result=new CadModelResult(NativeCadEngine.evaluateModel(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),project.importedStep?importedSourceFile().getAbsolutePath():null));}
-            catch(IllegalArgumentException error){operationMessage=error.getMessage();return false;}
+            try {result=new CadModelResult(NativeCadEngine.evaluateModelChecked(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),project.importedStep?importedSourceFile().getAbsolutePath():null));}
+            catch(IllegalArgumentException error){operationMessage=kernelFailureMessage(project,error);return false;}
             candidateMesh=result.mesh;faceBodies=result.bodies;faceFeatures=result.features;holeCylinders=result.holes;
         }
         if (!CadMesh.isValid(candidateMesh, !project.hasSolid())) {
@@ -3373,13 +3373,25 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
             }).show();
     }
+    /** Human-readable kernel failure naming the history operation that could not be rebuilt. */
+    private String kernelFailureMessage(CadProject model,Exception error) {
+        if(!(error instanceof NativeCadEngine.KernelException))return error==null?"Nieznany błąd":error.getMessage();
+        NativeCadEngine.KernelException failure=(NativeCadEngine.KernelException)error;
+        String where="";
+        if(failure.feature==-1)where="Bryła bazowa: ";
+        else if(failure.feature>=0&&failure.feature<model.committedFeatures.size()) {
+            for(CadTimeline.Item item:CadTimeline.entries(model))if(item.kind==CadTimeline.Kind.FEATURE&&item.featureIndex==failure.feature){where="Operacja „"+item.title+"” (nr "+(failure.feature+1)+"): ";break;}
+            if(where.isEmpty())where="Operacja nr "+(failure.feature+1)+": ";
+        }else if(failure.feature>=model.committedFeatures.size())where="Bieżąca operacja: ";
+        return where+failure.reason+". Poprzednia geometria została zachowana.";
+    }
     private void commitProjectAsync(CadProject next,String baseline,String success) {
         if(modelOperationPending){operationMessage="Trwa już obliczanie operacji";invalidate();return;}
         BodyGraph.reconcile(next);CadProject current=project;final double[] base,features;
         try {project=next;base=evaluationBase()==null?null:evaluationBase().clone();features=kernelFeatures();}finally {project=current;}
         final String source=next.importedStep?new File(projectRepository.importedStepFile().getParentFile(),next.importedStepSource).getAbsolutePath():null;
         if(modelCommitWorker==null)modelCommitWorker=new GeometryPreviewWorker(task->post(task));modelOperationPending=true;operationMessage="Obliczanie geometrii…";invalidate();
-        modelCommitWorker.submit(()->NativeCadEngine.evaluateModel(next.width,next.height,next.depth,next.importedStep?0:next.filletRadius,base,features,source),(packed,error)->{
+        modelCommitWorker.submit(()->NativeCadEngine.evaluateModelChecked(next.width,next.height,next.depth,next.importedStep?0:next.filletRadius,base,features,source),(packed,error)->{
             modelOperationPending=false;
             try {
                 if(error!=null)throw new IllegalArgumentException(error.getMessage());CadModelResult result=new CadModelResult(packed);
@@ -3387,7 +3399,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 projectRepository.save(next);project=next;nativeMesh=result.mesh;faceBodies=result.bodies;faceFeatures=result.features;holeCylinders=result.holes;
                 modelWidth=next.width;modelHeight=next.height;modelDepth=next.depth;nativePrism=NativeCadEngine.createPrism(modelWidth,modelHeight,modelDepth);modelSnapGeometry=null;updateMeshCenter();technicalSheet=null;
                 undoStack.push(baseline);while(undoStack.size()>50)undoStack.removeLast();redoStack.clear();mode="Wybierz";selectedFace=-1;threadSelections.clear();highlightBody=0;highlightFeature=next.committedFeatures.size()-1;operationMessage=success;
-            }catch(Exception failure){operationMessage="Nie zatwierdzono operacji: "+failure.getMessage();}
+            }catch(Exception failure){operationMessage="Nie zatwierdzono operacji: "+kernelFailureMessage(next,error!=null?error:failure);}
             invalidate();
         });
     }

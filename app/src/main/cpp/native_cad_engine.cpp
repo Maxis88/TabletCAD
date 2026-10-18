@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <sstream>
+#include <string>
 #include <vector>
 #include <map>
 
@@ -74,6 +75,12 @@
 #include <gp_Pln.hxx>
 
 namespace {
+// Diagnostics of the last failed evaluation on this thread (feature -1 = base body, -2 = output stage).
+struct KernelError { int feature=-2; std::string message; };
+thread_local KernelError g_kernelError;
+void kernelReset(){g_kernelError=KernelError();}
+void kernelReason(const char* message){if(g_kernelError.message.empty())g_kernelError.message=message;}
+void kernelFailAt(int feature,const char* message){g_kernelError.feature=feature;kernelReason(message);}
 std::array<double, 24> prismBounds(const TopoDS_Shape& shape) {
     Bnd_Box bounds;
     BRepBndLib::Add(shape, bounds);
@@ -213,16 +220,18 @@ bool sameEdgeGeometry(const TopoDS_Edge& a,const TopoDS_Edge& b) {
 }
 
 TopoDS_Shape filletSelectedEdge(const TopoDS_Shape& source,const double* signature,double radius,bool chamfer=false,const TopoDS_Edge* expected=nullptr) {
-    if(source.IsNull()||!std::isfinite(radius)||radius<.1||radius>1000)return {};
-    TopoDS_Edge selected=edgeForSignature(source,signature);if(selected.IsNull())return {};
-    if(expected&&!sameEdgeGeometry(selected,*expected))return {};
+    if(source.IsNull()){kernelReason("Brak bryły dla operacji na krawędzi");return {};}
+    if(!std::isfinite(radius)||radius<.1||radius>1000){kernelReason("Wartość musi mieścić się w zakresie 0,1–1000 mm");return {};}
+    TopoDS_Edge selected=edgeForSignature(source,signature);
+    if(selected.IsNull()){kernelReason("Nie odnaleziono jednoznacznie wskazanej krawędzi – topologia zmieniła się po edycji wcześniejszej operacji");return {};}
+    if(expected&&!sameEdgeGeometry(selected,*expected)){kernelReason("Odnaleziona krawędź ma inną geometrię niż pierwotnie wskazana");return {};}
     if(chamfer) {
         BRepFilletAPI_MakeChamfer maker(source);maker.Add(radius,selected);maker.Build();
-        if(!maker.IsDone()||maker.Shape().IsNull()||!BRepCheck_Analyzer(maker.Shape()).IsValid())return {};
+        if(!maker.IsDone()||maker.Shape().IsNull()||!BRepCheck_Analyzer(maker.Shape()).IsValid()){kernelReason("OCCT nie może wykonać fazy o tej wielkości na wskazanej krawędzi (zbyt duża względem sąsiednich ścian?)");return {};}
         return maker.Shape();
     }
     BRepFilletAPI_MakeFillet maker(source);maker.Add(radius,selected);maker.Build();
-    if(!maker.IsDone()||maker.Shape().IsNull()||!BRepCheck_Analyzer(maker.Shape()).IsValid())return {};
+    if(!maker.IsDone()||maker.Shape().IsNull()||!BRepCheck_Analyzer(maker.Shape()).IsValid()){kernelReason("OCCT nie może wykonać zaokrąglenia o tym promieniu na wskazanej krawędzi (zbyt duży względem sąsiednich ścian?)");return {};}
     return maker.Shape();
 }
 
@@ -303,31 +312,39 @@ TopoDS_Shape profileFeature(const std::string& type, double x1, double y1,
 }
 
 TopoDS_Shape applyProfileFeature(const TopoDS_Shape& base, const TopoDS_Shape& tool, bool cut) {
-    if (base.IsNull() || tool.IsNull()) return {};
+    if (base.IsNull()) { kernelReason("Brak bryły, na której można wykonać operację"); return {}; }
+    if (tool.IsNull()) { kernelReason("Profil nie tworzy poprawnej bryły narzędzia (sprawdź, czy kontur jest zamknięty i nie przecina się)"); return {}; }
     TopoDS_Shape result;
     if (cut) {
         BRepAlgoAPI_Cut operation(base, tool);
         operation.Build();
-        if (!operation.IsDone()) return {};
+        if (!operation.IsDone()) { kernelReason("OCCT nie wykonał odejmowania brył"); return {}; }
         operation.SimplifyResult(true,true);
         result = operation.Shape();
     } else {
         BRepAlgoAPI_Fuse operation(base, tool);
         operation.Build();
-        if (!operation.IsDone()) return {};
+        if (!operation.IsDone()) { kernelReason("OCCT nie wykonał łączenia brył"); return {}; }
         operation.SimplifyResult(true,true);
         result = operation.Shape();
     }
-    if (result.IsNull() || !BRepCheck_Analyzer(result).IsValid()) return {};
+    if (result.IsNull() || !BRepCheck_Analyzer(result).IsValid()) { kernelReason("Wynik operacji Boolean ma niepoprawną topologię"); return {}; }
     GProp_GProps before, after;
     BRepGProp::VolumeProperties(base, before);
     BRepGProp::VolumeProperties(result, after);
     const double oldVolume = std::abs(before.Mass());
     const double newVolume = std::abs(after.Mass());
     const double tolerance = std::max(1.0e-7, oldVolume * 1.0e-10);
-    if (!std::isfinite(newVolume) || newVolume <= tolerance
-            || (cut ? oldVolume - newVolume : newVolume - oldVolume) <= tolerance) return {};
-    if (!cut && countShapes(result, TopAbs_SOLID) > countShapes(base, TopAbs_SOLID)) return {};
+    if (!std::isfinite(newVolume) || newVolume <= tolerance) { kernelReason("Operacja usunęłaby całą bryłę"); return {}; }
+    if ((cut ? oldVolume - newVolume : newVolume - oldVolume) <= tolerance) {
+        kernelReason(cut ? "Wycięcie nie przecina bryły – nie usuwa żadnego materiału (sprawdź kierunek i głębokość)"
+                         : "Dodawany materiał w całości mieści się w istniejącej bryle");
+        return {};
+    }
+    if (!cut && countShapes(result, TopAbs_SOLID) > countShapes(base, TopAbs_SOLID)) {
+        kernelReason("Dodawany materiał nie styka się z bryłą – powstałaby osobna bryła (wybierz tryb „Nowa bryła”)");
+        return {};
+    }
     return result;
 }
 
@@ -763,110 +780,110 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
     const int count=static_cast<int>(values.size());int featureNumber=0;BodyShapes bodies;bool indexed=false;FaceOrigins origins;
     if(!rootShape.IsNull())updateOrigins({},rootShape,-1,origins);if(!shape.IsNull()&&!shape.IsSame(rootShape))updateOrigins(rootShape,shape,-2,origins);
         for (jsize i = 0; i < count;) {
-            if(count-i<16) return {};
+            if(count-i<16){kernelFailAt(featureNumber,"Niekompletny zapis operacji w historii");return {};}
             const double* f = values.data() + i;
             const TopoDS_Shape prior=shape;const int tag=featureNumber++;
             if(f[0]==-9) {
-                if(f[1]<0||f[1]!=std::floor(f[1])||f[2]<1||f[2]!=std::floor(f[2])||f[3]<16||f[3]!=std::floor(f[3])||f[3]>count-i-16)return {};
-                for(int k=4;k<16;k++)if(f[k]!=0)return {};
+                if(f[1]<0||f[1]!=std::floor(f[1])||f[2]<1||f[2]!=std::floor(f[2])||f[3]<16||f[3]!=std::floor(f[3])||f[3]>count-i-16){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                for(int k=4;k<16;k++)if(f[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                 if(!indexed){bodies[1]=shape;indexed=true;}
                 int target=static_cast<int>(f[1]),output=static_cast<int>(f[2]),length=static_cast<int>(f[3]);
-                if(target==0&&bodies.contains(output))return {};
-                if(target!=0&&(!bodies.contains(target)||output!=target))return {};
+                if(target==0&&bodies.contains(output)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                if(target!=0&&(!bodies.contains(target)||output!=target)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                 std::vector<double> record(f+16,f+16+length);TopoDS_Shape input=target==0?TopoDS_Shape():bodies[target];
                 TopoDS_Shape result=evaluateRecords(input,record,rootBase,rootShape,imported,nullptr,nullptr);
-                if(result.IsNull())return {};bodies[output]=result;
+                if(result.IsNull()){kernelFailAt(tag,"Operacja na wskazanej bryle nie powiodła się");return {};}bodies[output]=result;
                 BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
                 updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
             }
-            if(indexed)return {};
-            if(f[0]==-8){shape=threadedHole(shape,f);if(shape.IsNull())return {};updateOrigins(prior,shape,tag,origins);i+=16;continue;}
+            if(indexed){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+            if(f[0]==-8){shape=threadedHole(shape,f);if(shape.IsNull()){kernelFailAt(tag,"Nie można wyciąć gwintu w tym otworze (sprawdź średnicę, skok i głębokość)");return {};}updateOrigins(prior,shape,tag,origins);i+=16;continue;}
             if(f[0]==-6||f[0]==-7) {
-                if(f[1]!=std::floor(f[1])||f[1]<1||f[1]>256||f[11]<.1||f[11]>1000)return {};
-                for(int k=2;k<16;k++)if(k!=11&&f[k]!=0)return {};
+                if(f[1]!=std::floor(f[1])||f[1]<1||f[1]>256||f[11]<.1||f[11]>1000){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                for(int k=2;k<16;k++)if(k!=11&&f[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                 const bool chamfer=f[0]==-7;int stride=16;
                 std::vector<TopoDS_Edge> selected;
                 for(int k=0;k<static_cast<int>(f[1]);k++) {
-                    if(count-i-stride<1)return {};
-                    double size=f[stride++];if(size!=16&&size!=24&&size!=39)return {};
-                    int length=static_cast<int>(size);if(count-i-stride<length)return {};
+                    if(count-i-stride<1){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    double size=f[stride++];if(size!=16&&size!=24&&size!=39){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    int length=static_cast<int>(size);if(count-i-stride<length){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                     const double* member=f+stride;stride+=length;
-                    if(member[0]!=(chamfer?-2:-1)&&member[0]!=(chamfer?-5:-4))return {};
-                    if(member[1]!=0||member[11]!=f[11]||member[12]!=0||member[13]!=0||member[14]!=0||member[15]!=0)return {};
+                    if(member[0]!=(chamfer?-2:-1)&&member[0]!=(chamfer?-5:-4)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    if(member[1]!=0||member[11]!=f[11]||member[12]!=0||member[13]!=0||member[14]!=0||member[15]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                     std::array<double,9> mapped;const double* signature=member+2;TopoDS_Edge expected;
                     if(member[0]==-4||member[0]==-5) {
-                        if(imported||length<24||(member[16]!=7&&member[16]!=22)||length!=17+member[16])return {};
+                        if(imported||length<24||(member[16]!=7&&member[16]!=22)||length!=17+member[16]){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                         int baseSize=static_cast<int>(member[16]);TopoDS_Shape before=referenceRoot(member+17,baseSize);
-                        if(before.IsNull()||edgeForSignature(before,member+2).IsNull())return {};
-                        if(!mapRootEdge(member+17,baseSize,rootBase.data(),static_cast<int>(rootBase.size()),member+2,mapped))return {};
-                        expected=edgeForSignature(rootShape,mapped.data());if(expected.IsNull())return {};
+                        if(before.IsNull()||edgeForSignature(before,member+2).IsNull()){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                        if(!mapRootEdge(member+17,baseSize,rootBase.data(),static_cast<int>(rootBase.size()),member+2,mapped)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                        expected=edgeForSignature(rootShape,mapped.data());if(expected.IsNull()){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                         signature=mapped.data();
-                    } else if(length!=16)return {};
+                    } else if(length!=16){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                     TopoDS_Edge edge=edgeForSignature(shape,signature);
-                    if(edge.IsNull()||(!expected.IsNull()&&!sameEdgeGeometry(edge,expected)))return {};
-                    for(const auto& previous:selected)if(edge.IsSame(previous))return {};
+                    if(edge.IsNull()||(!expected.IsNull()&&!sameEdgeGeometry(edge,expected))){kernelFailAt(tag,"Nie odnaleziono jednoznacznie jednej ze wskazanych krawędzi – topologia zmieniła się po edycji");return {};}
+                    for(const auto& previous:selected)if(edge.IsSame(previous)){kernelFailAt(tag,"Ta sama krawędź została wskazana dwukrotnie");return {};}
                     selected.push_back(edge);
                 }
                 if(chamfer) {
                     BRepFilletAPI_MakeChamfer maker(shape);
                     for(const auto& edge:selected)if(maker.Contour(edge)==0)maker.Add(f[11],edge);
-                    maker.Build();if(!maker.IsDone())return {};shape=maker.Shape();
+                    maker.Build();if(!maker.IsDone()){kernelFailAt(tag,"OCCT nie może wykonać fazy o tej wielkości na wskazanych krawędziach");return {};}shape=maker.Shape();
                 } else {
                     BRepFilletAPI_MakeFillet maker(shape);
                     for(const auto& edge:selected)if(maker.Contour(edge)==0)maker.Add(f[11],edge);
-                    maker.Build();if(!maker.IsDone())return {};shape=maker.Shape();
+                    maker.Build();if(!maker.IsDone()){kernelFailAt(tag,"OCCT nie może wykonać zaokrąglenia o tym promieniu na wskazanych krawędziach");return {};}shape=maker.Shape();
                 }
-                if(shape.IsNull()||countShapes(shape,TopAbs_SOLID)==0||!BRepCheck_Analyzer(shape).IsValid())return {};
+                if(shape.IsNull()||countShapes(shape,TopAbs_SOLID)==0||!BRepCheck_Analyzer(shape).IsValid()){kernelFailAt(tag,"Operacja na krawędziach dała niepoprawną bryłę");return {};}
                 updateOrigins(prior,shape,tag,origins);i+=stride;continue;
             }
             if(f[0]==-3) {
-                int stride=revolveStride(f,count-i);if(!stride)return {};
+                int stride=revolveStride(f,count-i);if(!stride){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                 shape=applyProfileFeature(shape,revolvedProfile(f,stride),f[1]==1);
-                if(shape.IsNull())return {};updateOrigins(prior,shape,tag,origins);i+=stride;continue;
+                if(shape.IsNull()){kernelFailAt(tag,"Obrót profilu nie powiódł się (profil nie może przecinać osi)");return {};}updateOrigins(prior,shape,tag,origins);i+=stride;continue;
             }
             if(f[0]==-1||f[0]==-2||f[0]==-4||f[0]==-5) {
-                if(f[1]!=0||f[12]!=0||f[13]!=0||f[14]!=0||f[15]!=0)return {};
+                if(f[1]!=0||f[12]!=0||f[13]!=0||f[14]!=0||f[15]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                 int stride=16;std::array<double,9> mapped;const double* signature=f+2;TopoDS_Edge expected;
                 if(f[0]==-4||f[0]==-5) {
-                    if(imported||count-i<24||(f[16]!=7&&f[16]!=22))return {};
-                    int size=static_cast<int>(f[16]);stride=17+size;if(count-i<stride)return {};
-                    TopoDS_Shape before=referenceRoot(f+17,size);if(before.IsNull()||edgeForSignature(before,f+2).IsNull())return {};
-                    if(!mapRootEdge(f+17,size,rootBase.data(),static_cast<int>(rootBase.size()),f+2,mapped))return {};
-                    expected=edgeForSignature(rootShape,mapped.data());if(expected.IsNull())return {};
+                    if(imported||count-i<24||(f[16]!=7&&f[16]!=22)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    int size=static_cast<int>(f[16]);stride=17+size;if(count-i<stride){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    TopoDS_Shape before=referenceRoot(f+17,size);if(before.IsNull()||edgeForSignature(before,f+2).IsNull()){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    if(!mapRootEdge(f+17,size,rootBase.data(),static_cast<int>(rootBase.size()),f+2,mapped)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    expected=edgeForSignature(rootShape,mapped.data());if(expected.IsNull()){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                     signature=mapped.data();
                 }
                 shape=filletSelectedEdge(shape,signature,f[11],f[0]==-2||f[0]==-5,expected.IsNull()?nullptr:&expected);
-                if(shape.IsNull())return {};
+                if(shape.IsNull()){kernelFailAt(tag,"Operacja na krawędzi nie powiodła się");return {};}
                 updateOrigins(prior,shape,tag,origins);i+=stride;continue;
             }
             int vertices=0,curves=0;
             if(f[0]>=1002&&f[0]<=1128&&f[0]==std::floor(f[0]))curves=static_cast<int>(f[0])-1000;
             else if(f[0]>=5&&f[0]<=258&&f[0]==std::floor(f[0])) vertices=static_cast<int>(f[0])-2;
-            else if(f[0]!=0&&f[0]!=1) return {};
-            int stride=16+vertices*2+curves*7;if(count-i<stride) return {};
+            else if(f[0]!=0&&f[0]!=1) {kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+            int stride=16+vertices*2+curves*7;if(count-i<stride) {kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
             const gp_Vec u(f[10], f[11], f[12]), v(f[13], f[14], f[15]);
             if (u.SquareMagnitude() < 1.0e-20 || v.SquareMagnitude() < 1.0e-20) {
-                return {};
+                {kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
             }
-            if(f[1]!=std::floor(f[1])||!(f[1]==0||f[1]==1||f[1]==2||f[1]==3||f[1]==4||f[1]==6||f[1]==8||f[1]==10))return {};
+            if(f[1]!=std::floor(f[1])||!(f[1]==0||f[1]==1||f[1]==2||f[1]==3||f[1]==4||f[1]==6||f[1]==8||f[1]==10)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
             const bool cut=(static_cast<int>(f[1])&1)!=0,symmetric=(static_cast<int>(f[1])&2)!=0;
             const TopoDS_Shape tool = curves>0?curvedPrism(f+16,curves,f[6],gp_Pnt(f[7],f[8],f[9]),u,v,u.Crossed(v),true,cut,symmetric):vertices>0 ? polygonPrism(f+16,vertices,f[6],gp_Pnt(f[7],f[8],f[9]),
                 u,v,u.Crossed(v),true,cut,symmetric) : profileFeature(f[0] == 1.0 ? "Okrąg" : "Prostokąt",
                 f[2], f[3], f[4], f[5], f[6], gp_Pnt(f[7], f[8], f[9]),
                 gp_Dir(u), gp_Dir(v), cut,symmetric);
-            if(tool.IsNull())return {};
+            if(tool.IsNull()){kernelFailAt(tag,"Profil nie tworzy poprawnej bryły narzędzia (sprawdź, czy kontur jest zamknięty i nie przecina się)");return {};}
             if((static_cast<int>(f[1])&4)!=0) {
                 BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);
                 if(shape.IsNull())shape=tool;else {builder.Add(compound,shape);builder.Add(compound,tool);shape=compound;}
-                if(!BRepCheck_Analyzer(shape).IsValid())return {};
+                if(!BRepCheck_Analyzer(shape).IsValid()){kernelFailAt(tag,"Nowa bryła ma niepoprawną topologię");return {};}
             } else if((static_cast<int>(f[1])&8)!=0) {
                 BRepAlgoAPI_Common operation(shape,tool);operation.Build();
-                if(!operation.IsDone())return {};
+                if(!operation.IsDone()){kernelFailAt(tag,"OCCT nie wyznaczył części wspólnej");return {};}
                 TopoDS_Shape result=operation.Shape();
-                if(result.IsNull()||!BRepCheck_Analyzer(result).IsValid()||countShapes(result,TopAbs_SOLID)==0)return {};
+                if(result.IsNull()||!BRepCheck_Analyzer(result).IsValid()||countShapes(result,TopAbs_SOLID)==0){kernelFailAt(tag,"Bryły nie mają części wspólnej");return {};}
                 shape=result;
             } else shape = applyProfileFeature(shape, tool, cut);
-            if (shape.IsNull()) return {};
+            if (shape.IsNull()){kernelFailAt(tag,cut?"Wycięcie nie powiodło się":"Dodanie materiału nie powiodło się");return {};}
             updateOrigins(prior,shape,tag,origins);i+=stride;
         }
 
@@ -881,8 +898,10 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         JNIEnv* env, jclass, jdouble width, jdouble height, jdouble depth,
         jdouble radius, jdoubleArray javaBase, jdoubleArray javaFeatures, jstring javaExportPath,
         jstring javaSourceStep, jint queryMode) {
+    kernelReset();
     if((queryMode<0||queryMode>3)&&queryMode!=6&&queryMode!=8)return env->NewDoubleArray(0);
     if (javaFeatures == nullptr || width <= 0 || height <= 0 || depth <= 0) {
+        kernelFailAt(-1,"Niepoprawne wymiary bryły bazowej");
         return env->NewDoubleArray(0);
     }
     const jsize count = env->GetArrayLength(javaFeatures);
@@ -906,10 +925,10 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
             env->ReleaseStringUTFChars(javaSourceStep, chars);
             STEPControl_Reader reader;
             if (reader.ReadFile(sourcePath.c_str()) != IFSelect_RetDone
-                    || reader.TransferRoots() <= 0) return env->NewDoubleArray(0);
+                    || reader.TransferRoots() <= 0) { kernelFailAt(-1,"Nie można odczytać źródłowego pliku STEP"); return env->NewDoubleArray(0); }
             shape = reader.OneShape();
             if (shape.IsNull() || countShapes(shape, TopAbs_SOLID) == 0
-                    || !BRepCheck_Analyzer(shape).IsValid()) return env->NewDoubleArray(0);
+                    || !BRepCheck_Analyzer(shape).IsValid()) { kernelFailAt(-1,"Importowany STEP nie zawiera poprawnej bryły"); return env->NewDoubleArray(0); }
         } else if (javaBase != nullptr) {
             const int size=env->GetArrayLength(javaBase);
             if(size<7) return env->NewDoubleArray(0);
@@ -946,22 +965,24 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
             }
         }
             }
-        if(shape.IsNull()) return env->NewDoubleArray(0);
+        if(shape.IsNull()) { kernelFailAt(-1,"Pierwsza bryła (bazowa) nie może zostać utworzona z tego profilu"); return env->NewDoubleArray(0); }
         const TopoDS_Shape rootShape=shape;
-        if (radius > 0) shape = filletAllEdges(shape, radius);
+        if (radius > 0) { shape = filletAllEdges(shape, radius); if(shape.IsNull()) { kernelFailAt(-1,"Zaokrąglenie wszystkich krawędzi bryły bazowej nie powiodło się"); return env->NewDoubleArray(0); } }
         BodyShapes bodies;FaceOrigins origins;
         shape=evaluateRecords(shape,values,rootBase,rootShape,javaSourceStep!=nullptr,&bodies,&origins);
-        if(shape.IsNull())return env->NewDoubleArray(0);
+        if(shape.IsNull()){kernelReason("Przebudowa modelu nie powiodła się");return env->NewDoubleArray(0);}
         if (!exportPath.empty()) {
             STEPControl_Writer writer;
             if (writer.Transfer(shape, STEPControl_AsIs) != IFSelect_RetDone
                     || writer.Write(exportPath.c_str()) != IFSelect_RetDone) {
+                kernelFailAt(-2,"Zapis pliku STEP nie powiódł się");
                 return env->NewDoubleArray(0);
             }
             STEPControl_Reader verifier;
             if (verifier.ReadFile(exportPath.c_str()) != IFSelect_RetDone
                     || verifier.TransferRoots() <= 0
                     || !BRepCheck_Analyzer(verifier.OneShape()).IsValid()) {
+                kernelFailAt(-2,"Kontrolny odczyt zapisanego pliku STEP nie powiódł się");
                 return env->NewDoubleArray(0);
             }
         }
@@ -986,7 +1007,7 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
                 }
             }
             if(queryMode==8&&!cylinders.empty()){info.push_back(-8);info.push_back(static_cast<double>(cylinders.size()/15));info.push_back(0);info.insert(info.end(),cylinders.begin(),cylinders.end());}
-            if(queryMode==8){std::vector<double> mesh=tessellatedTriangles(shape);if(mesh.empty())return env->NewDoubleArray(0);std::vector<double> combined;combined.reserve(1+mesh.size()+info.size());combined.push_back(static_cast<double>(mesh.size()));combined.insert(combined.end(),mesh.begin(),mesh.end());combined.insert(combined.end(),info.begin(),info.end());info=std::move(combined);}
+            if(queryMode==8){std::vector<double> mesh=tessellatedTriangles(shape);if(mesh.empty()){kernelFailAt(-2,"Triangulacja bryły nie powiodła się");return env->NewDoubleArray(0);}std::vector<double> combined;combined.reserve(1+mesh.size()+info.size());combined.push_back(static_cast<double>(mesh.size()));combined.insert(combined.end(),mesh.begin(),mesh.end());combined.insert(combined.end(),info.begin(),info.end());info=std::move(combined);}
             jdoubleArray result=env->NewDoubleArray(static_cast<jsize>(info.size()));if(result&&!info.empty())env->SetDoubleArrayRegion(result,0,static_cast<jsize>(info.size()),info.data());return result;
         }
         if(queryMode==3) {
@@ -998,9 +1019,18 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
             jdoubleArray result=env->NewDoubleArray(7);if(result)env->SetDoubleArrayRegion(result,0,7,properties);return result;
         }
         return queryMode ? edgeSegments(env,shape,queryMode==2) : meshResult(env, shape);
-    } catch (const Standard_Failure&) {
+    } catch (const Standard_Failure& failure) {
+        std::string message="Wyjątek jądra OCCT: ";
+        const char* text=failure.what();message+=(text&&*text)?text:"nieznany";
+        if(g_kernelError.message.empty())g_kernelError.message=message;
         return env->NewDoubleArray(0);
     }
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_pl_tabletcad_app_NativeCadEngine_nativeLastError(JNIEnv* env, jclass) {
+    std::string value=std::to_string(g_kernelError.feature)+"\t"+g_kernelError.message;
+    return env->NewStringUTF(value.c_str());
 }
 
 extern "C" JNIEXPORT jdoubleArray JNICALL

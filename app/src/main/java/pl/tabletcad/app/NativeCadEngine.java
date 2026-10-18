@@ -98,6 +98,32 @@ public final class NativeCadEngine {
     public static double[] evaluateModel(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep) {
         return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,8):new double[0];
     }
+    /** Kernel failure with the index of the failing history record (-1 base body, -2 output stage). */
+    public static final class KernelException extends IllegalArgumentException {
+        public final int feature;
+        public final String reason;
+        KernelException(int feature,String reason){super(reason);this.feature=feature;this.reason=reason;}
+    }
+
+    /** Diagnostics of the last failed evaluation; must be read on the thread that evaluated. */
+    public static KernelException lastFailure() {
+        if(!LOADED)return new KernelException(-2,"Rdzeń C++ niedostępny");
+        String value;
+        try{value=nativeLastError();}catch(UnsatisfiedLinkError error){value=null;}
+        if(value==null)return new KernelException(-2,"Brak poprawnego wyniku OCCT");
+        int tab=value.indexOf('\t');int feature=-2;String reason=tab<0?value:value.substring(tab+1);
+        try{feature=Integer.parseInt(tab<0?"-2":value.substring(0,tab));}catch(NumberFormatException ignored){}
+        if(reason.isEmpty())reason="Brak poprawnego wyniku OCCT";
+        return new KernelException(feature,reason);
+    }
+
+    /** Like {@link #evaluateModel} but throws a {@link KernelException} describing the failure. */
+    public static double[] evaluateModelChecked(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep) {
+        double[] result=evaluateModel(width,height,depth,radius,base,features,sourceStep);
+        if(result==null||result.length==0)throw lastFailure();
+        return result;
+    }
+
     public static double[] faceOrigins(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep) {
         return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,6):new double[0];
     }
@@ -129,6 +155,7 @@ public final class NativeCadEngine {
             ox, oy, oz, ux, uy, uz, vx, vy, vz);
     }
 
+    private static native String nativeLastError();
     private static native String nativeKernelStatus();
     private static native double[] nativeCreatePrism(double width, double height, double depth);
     private static native String nativeModelInfo(double width, double height, double depth);
