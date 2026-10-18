@@ -113,6 +113,23 @@ public final class ProjectRepository {
         return result;
     }
 
+    public synchronized List<ProjectLibraryFiles.TrashEntry> listDeletedProjects()throws IOException {
+        return new ProjectLibraryFiles(folder,new ProjectDocumentCodec()).listTrash();
+    }
+    public synchronized boolean hasProjectFiles(String id) {
+        File file=projectFile(id);return file.exists()||new File(file.getPath()+".bak").exists();
+    }
+    public synchronized CadProject restoreProject(String token,boolean asCopy,String name)throws IOException {
+        if(readOnly())throw new IOException("Biblioteka jest tylko do odczytu");
+        ProjectLibraryFiles.Info restored=new ProjectLibraryFiles(folder,new ProjectDocumentCodec()).restore(token,asCopy,name);
+        return loadProject(restored.id);
+    }
+    public synchronized CadProject duplicateProject(String id,String name)throws IOException {
+        if(readOnly())throw new IOException("Biblioteka jest tylko do odczytu");
+        ProjectLibraryFiles.Info copy=new ProjectLibraryFiles(folder,new ProjectDocumentCodec()).duplicate(id,name);
+        return loadProject(copy.id);
+    }
+
     public synchronized void save(CadProject project) {
         try {
             if(recoveryFailure!=null)throw new IOException("Unresolved document transaction; writing disabled",recoveryFailure);

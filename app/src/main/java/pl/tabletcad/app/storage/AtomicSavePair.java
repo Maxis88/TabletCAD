@@ -5,7 +5,6 @@ import java.nio.channels.*;
 import java.nio.file.*;
 import java.security.*;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /** Recoverable multi-file save. A durable journal keeps old bytes until a durable commit marker. */
 public final class AtomicSavePair {
@@ -16,7 +15,6 @@ public final class AtomicSavePair {
     public interface ChangeFactory { LinkedHashMap<File,byte[]> prepare() throws IOException; }
     private interface Work { void run() throws IOException; }
     private static final int MAGIC=0x54435031;
-    private static final Map<String,Object> LOCKS=new ConcurrentHashMap<>();
     private final File folder,journal;
     private final Checkpoint checkpoint;
     private static final class Entry {
@@ -27,7 +25,7 @@ public final class AtomicSavePair {
     }
     public void recover()throws IOException {locked(this::recoverLocked);}
     private void locked(Work work)throws IOException {
-        Object lock=LOCKS.computeIfAbsent(folder.getCanonicalPath(),key->new Object());
+        Object lock=ProjectFileLocks.forFolder(folder);
         synchronized(lock) {
             try(FileChannel channel=FileChannel.open(new File(folder,".document-save.lock").toPath(),StandardOpenOption.CREATE,StandardOpenOption.WRITE);
                     FileLock ignored=channel.lock()){work.run();}

@@ -1,11 +1,18 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.68.0-sketch-orbit**, versionCode **77**.
+Wersja źródeł: **0.69.0-project-recovery**, versionCode **78**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
+
+Wersja 0.69: Projekt → Utwórz kopię projektu oraz Kosz → Przywróć / Przywróć
+jako kopię. Kopie mają osobny dokument i niezależne źródła importu STEP/STL.
+Odzyskiwanie obsługuje kopie .bak i odrzuca nadpisanie istniejącego projektu.
+Operacje kopiowania i przywracania wykonują się w tle. Ten etap zweryfikowano
+kompilacją i 48 testami plikowymi na komputerze; interfejs 0.69 nie był
+uruchamiany na tablecie. [Audyt 0.69](docs/AUDIT-0.69.md).
 
 Wersja 0.68: obrót podczas szkicowania, wyciąganie do równoległej ściany,
 odznaczanie pustym dotknięciem, naprawa pełnych gwintów M6 × 1,
@@ -115,6 +122,16 @@ Pliki Gradle są zachowane dla Android Studio. Projekt obecnie nie zawiera
 Gradle Wrappera; `gradlew.bat` nie jest dostępnym poleceniem. Powyższy skrypt
 jest obecną ścieżką odtwarzalnej kompilacji APK. Sama konfiguracja Gradle nie
 przygotowuje OCCT ani pełnego pakowania jego bibliotek.
+
+Testy plikowe biblioteki 0.69 można uruchomić na Windows po zbudowaniu aplikacji:
+
+```powershell
+.\tools\test-library-files-host.ps1 -Sdk $env:ANDROID_HOME
+```
+
+Używają właściwego czytnika dokumentów i operacji plikowych, z przypiętą biblioteką
+org.json dla JVM (pobieraną do ignorowanego build/ i sprawdzaną SHA-256).
+Nie uruchamiają Androida ani OCCT i nie zastępują weryfikacji interfejsu.
 
 ## Weryfikacja
 

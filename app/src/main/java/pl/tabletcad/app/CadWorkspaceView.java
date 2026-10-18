@@ -915,6 +915,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
     @Override protected void onDetachedFromWindow() {
         dismissToolPopup();
+        if(libraryProgress!=null){libraryProgress.dismiss();libraryProgress=null;}
         if(projectChooser!=null){projectChooser.dismiss();projectChooser=null;}
         previewViewDetached=true;removeCallbacks(extrusionPreviewTask);extrusionPreviewScheduled=false;
         if(geometryPreviewWorker!=null){geometryPreviewWorker.close();geometryPreviewWorker=null;}
@@ -4811,6 +4812,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             }).show();
     }
 
+    private android.app.AlertDialog libraryProgress;
+    private boolean libraryFileOperationPending;
+
     public void showStartupProjects() {
         if(projectChooser!=null&&projectChooser.isShowing())return;
         try {
@@ -4820,7 +4824,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 .setAdapter(adapter,(d,index)->{
                     try {activateProject(projectRepository.loadProject(projects.get(index).id));}
                     catch(IOException|RuntimeException error){operationMessage="Nie można otworzyć projektu";post(this::showStartupProjects);}
-                }).setPositiveButton("Utwórz nowy projekt",(d,w)->showNewProject()).setCancelable(false).show();
+                }).setPositiveButton("Utwórz nowy projekt",(d,w)->showNewProject()).setNeutralButton("Kosz",(d,w)->showProjectTrash()).setCancelable(false).show();
             generateMissingThumbnails(projects,adapter);
         }catch(RuntimeException error){operationMessage="Nie można odczytać biblioteki projektów";invalidate();}
     }
@@ -4875,9 +4879,58 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     private void showProjectMenu() {
         closePropertyEditor();
         new PropertyBuilder().setTitle("Projekt · "+project.name+" · TabletCAD v"+appVersion())
-            .setItems(new String[]{"Nowy pusty projekt","Moje projekty","Dane i nazwa dokumentu"},(d,which)-> {
-                if(which==0)showNewProject();else if(which==1)showProjectLibrary();else showDrawingMetadataEditor();
+            .setItems(new String[]{"Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt","Dane i nazwa dokumentu"},(d,which)-> {
+                if(which==0)showNewProject();else if(which==1)showProjectLibrary();else if(which==2)showProjectCopy();else if(which==3)showProjectTrash();else showDrawingMetadataEditor();
             }).setNegativeButton("Zamknij",null).show();
+    }
+
+    private void showProjectCopy() {
+        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
+        if(SketchTransactions.active(project)){operationMessage="Najpierw zakończ lub anuluj aktywną edycję szkicu";invalidate();return;}
+        EditText name=new EditText(getContext());name.setSingleLine(true);name.setText(project.name+" — kopia");name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(80)});
+        new android.app.AlertDialog.Builder(getContext()).setTitle("Kopia projektu").setView(name).setNegativeButton("Anuluj",null).setPositiveButton("Utwórz kopię",(d,w)->{
+            try{CadProject snapshot=CadProject.fromJson(project.toJson());String title=name.getText().toString();runProjectLibraryTask("Tworzenie kopii projektu",()->{projectRepository.save(snapshot);return projectRepository.duplicateProject(snapshot.id,title);},"Utworzono kopię: ");}
+            catch(org.json.JSONException|RuntimeException error){operationMessage="Nie utworzono kopii: "+error.getMessage();invalidate();}
+        }).show();
+    }
+
+    private void showProjectTrash() {
+        closePropertyEditor();if(projectChooser!=null){projectChooser.dismiss();projectChooser=null;}
+        try {
+            List<pl.tabletcad.app.storage.ProjectLibraryFiles.TrashEntry> entries=projectRepository.listDeletedProjects();
+            java.text.DateFormat date=java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM,java.text.DateFormat.SHORT);
+            android.app.AlertDialog.Builder dialog=new android.app.AlertDialog.Builder(getContext()).setTitle("Kosz · "+entries.size())
+                .setNegativeButton("Wróć do projektów",(d,w)->showStartupProjects()).setOnCancelListener(d->showStartupProjects());
+            if(entries.isEmpty())dialog.setMessage("Brak projektów możliwych do przywrócenia. Nieczytelne zapisy pozostają zachowane w koszu.");
+            else {String[] names=new String[entries.size()];for(int i=0;i<names.length;i++){pl.tabletcad.app.storage.ProjectLibraryFiles.TrashEntry e=entries.get(i);names[i]=e.name+"\n"+date.format(new java.util.Date(e.deletedAt))+(e.backup?" · kopia odzyskiwania":"")+(projectRepository.hasProjectFiles(e.id)?" · już w bibliotece":"");}
+                dialog.setItems(names,(d,which)->confirmRestoreProject(entries.get(which)));}
+            dialog.show();
+        }catch(IOException|RuntimeException error){operationMessage="Nie można odczytać kosza: "+error.getMessage();showStartupProjects();invalidate();}
+    }
+    private void confirmRestoreProject(pl.tabletcad.app.storage.ProjectLibraryFiles.TrashEntry entry) {
+        boolean conflict=projectRepository.hasProjectFiles(entry.id);
+        android.app.AlertDialog.Builder dialog=new android.app.AlertDialog.Builder(getContext()).setTitle(entry.name)
+            .setMessage(conflict?"Ten projekt jest już w bibliotece. Możesz odzyskać zapis z kosza jako osobną kopię.":"Przywrócić projekt do biblioteki?")
+            .setNegativeButton("Wróć",(d,w)->showProjectTrash()).setOnCancelListener(d->showProjectTrash());
+        if(!conflict)dialog.setPositiveButton("Przywróć",(d,w)->restoreProjectEntry(entry,false,null));
+        dialog.setNeutralButton("Przywróć jako kopię",(d,w)->{
+            EditText name=new EditText(getContext());name.setSingleLine(true);name.setText(entry.name+" — odzyskany");name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(80)});
+            new android.app.AlertDialog.Builder(getContext()).setTitle("Nazwa odzyskanego projektu").setView(name).setNegativeButton("Wróć",(a,b)->showProjectTrash()).setOnCancelListener(a->showProjectTrash())
+                .setPositiveButton("Przywróć kopię",(a,b)->restoreProjectEntry(entry,true,name.getText().toString())).show();
+        }).show();
+    }
+    private void restoreProjectEntry(pl.tabletcad.app.storage.ProjectLibraryFiles.TrashEntry entry,boolean asCopy,String name) {
+        runProjectLibraryTask("Przywracanie projektu",()->projectRepository.restoreProject(entry.token,asCopy,name),"Przywrócono projekt: ");
+    }
+    private void runProjectLibraryTask(String title,java.util.concurrent.Callable<CadProject> action,String success) {
+        if(libraryFileOperationPending)return;libraryFileOperationPending=true;
+        android.app.AlertDialog progress=new android.app.AlertDialog.Builder(getContext()).setTitle(title).setMessage("Proszę czekać…").setView(new android.widget.ProgressBar(getContext())).setCancelable(false).show();libraryProgress=progress;
+        android.os.Handler ui=new android.os.Handler(android.os.Looper.getMainLooper());
+        new Thread(()->{
+            String result;try{result=success+action.call().name;}catch(Exception error){result="Operacja nie powiodła się: "+error.getMessage();}final String message=result;
+            ui.post(()->{libraryFileOperationPending=false;if(libraryProgress==progress){progress.dismiss();libraryProgress=null;}if(!isAttachedToWindow())return;
+                operationMessage=message;android.widget.Toast.makeText(getContext(),message,android.widget.Toast.LENGTH_LONG).show();showStartupProjects();invalidate();});
+        },"TabletCAD-library-files").start();
     }
 
     private void showNewProject() {

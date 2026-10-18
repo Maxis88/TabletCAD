@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 77
-        versionName = "0.68.0-sketch-orbit"
+        versionCode = 78
+        versionName = "0.69.0-project-recovery"
     }
 
     externalNativeBuild {
