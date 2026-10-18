@@ -18,8 +18,10 @@ New-Item -ItemType Directory -Force $Build,$Classes,$Dex,$env:TEMP | Out-Null
 $Sources=@((Get-ChildItem (Join-Path $Root 'tools\*Probe.java')).FullName)+(Join-Path $Root 'tools\WorkspaceInstrumentation.java')
 & (Join-Path $Jdk 'bin\javac.exe') -encoding UTF-8 -classpath "$AppClasses;$AndroidJar" -d $Classes $Sources
 Check 'Compile probes'
-$ClassFiles=(Get-ChildItem $Classes -Recurse -Filter '*.class').FullName
-& (Join-Path $BuildTools 'd8.bat') --min-api 34 --lib $AndroidJar --classpath $AppClasses --output $Dex $ClassFiles
+# Package probe classes into one jar: passing every .class path exceeds the Windows command-line limit.
+$ProbeJar=Join-Path $Build 'probes.jar';if(Test-Path $ProbeJar){Remove-Item $ProbeJar -Force}
+& (Join-Path $Jdk 'bin\jar.exe') cf $ProbeJar -C $Classes .;Check 'Package probe classes'
+& (Join-Path $BuildTools 'd8.bat') --min-api 34 --lib $AndroidJar --classpath $AppClasses --output $Dex $ProbeJar
 Check 'DEX probes'
 $Apk=Join-Path $Build 'TabletCAD-ui-tests.apk'
 & (Join-Path $BuildTools 'aapt2.exe') link -o $Apk -I $AndroidJar --manifest (Join-Path $Root 'tools\AndroidManifest-ui-test.xml')

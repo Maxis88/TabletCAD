@@ -15,7 +15,7 @@ public final class ToolbarCatalog {
             new Group("Edytuj","Edytuj","Edytuj"),
             new Group("Wyci\u0105gnij","Wyci\u0105gnij","Wyci\u0105gnij"),
             new Group("Rysuj","Polilinia","Linia","Polilinia","Prostokąt","Kwadrat","Prostokąt od środka","Wielokąt","Okrąg","Łuk","Splajn"),
-            new Group("Geometria","Geometria","Geometria","Połącz kontur","Lustro","Zaokrąglij szkic"),
+            new Group("Geometria","Geometria","Geometria","Połącz kontur","Odsunięcie","Lustro","Zaokrąglij szkic"),
             new Group("Przytnij","Przytnij","Przytnij"),
             new Group("Więzy","Więzy","Więzy","Wymiar"),
             new Group("Usuń","Usuń","Usuń","Wyczyść szkic"),

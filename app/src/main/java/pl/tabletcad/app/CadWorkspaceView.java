@@ -1716,6 +1716,30 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }).show();
     }
 
+    /** Offset copy of the selected sketch element; the copy is independent and editable. */
+    private void showSketchOffset() {
+        SketchPrimitive source=null;
+        for(SketchPrimitive entity:project.sketch)if(entity.id.equals(selectedSketchId))source=entity;
+        if(source==null){operationMessage="Zaznacz element szkicu (Edytuj), a następnie wybierz Odsunięcie";return;}
+        final SketchPrimitive selected=source;
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        EditText distance=coordinateInput("Odległość [mm]",2);form.addView(distance);
+        android.widget.CheckBox inward=new android.widget.CheckBox(getContext());
+        inward.setText(selected.closedGeometry()?"Do wewnątrz":selected.type.equals("Linia")||selected.type.equals("Pomocnicza")?"Na drugą stronę linii":"Zmniejsz promień");
+        form.addView(inward);
+        android.widget.TextView status=new android.widget.TextView(getContext());status.setText("Kopia odsunięta o stałą odległość. Narożniki ostre, łuki współśrodkowe.");form.addView(status);
+        new PropertyBuilder().setTitle("Odsunięcie · "+selected.type).setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
+            try {
+                double value=parseCoordinate(distance);if(inward.isChecked())value=-value;
+                SketchPrimitive copy=SketchOffset.offset(selected,UUID.randomUUID().toString(),value);
+                checkpoint();project.sketch.add(copy);selectedSketchId=copy.id;mode="Edytuj szkic";
+                projectRepository.save(project);
+                operationMessage="Utworzono odsunięcie "+formatMm(Math.abs(value))+". Zakończ zatwierdza szkic.";
+            }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+            invalidate();
+        }).show();
+    }
+
     private void showSketchMirror() {
         List<SketchPrimitive> sources=new ArrayList<>();List<String> labels=new ArrayList<>();
         for(SketchPrimitive entity:project.sketch) {
@@ -4118,6 +4142,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }
         if(tool.equals("Zaokrąglij szkic")){showSketchFillet();return;}
         if(tool.equals("Lustro")){mode="Edytuj szkic";showSketchMirror();invalidate();return;}
+        if(tool.equals("Odsunięcie")){mode="Edytuj szkic";showSketchOffset();invalidate();return;}
         if(tool.equals("Wymiar")) {
             if(!hadSketchPlane)operationMessage="Najpierw wybierz płaszczyznę szkicu";
             else {mode="Edytuj szkic";dimensionMode=true;operationMessage="Dotknij elementu, aby nadać mu wymiar sterujący";}

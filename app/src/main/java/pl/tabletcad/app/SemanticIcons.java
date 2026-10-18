@@ -43,6 +43,13 @@ public final class SemanticIcons {
     }
     /** Standard-view glyphs: the same cube, with the face seen by the camera filled. */
     private static boolean drawView(Canvas canvas,String id,float x,float y,float scale,int color) {
+        if(id.equals("Odsunięcie")) {
+            Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.7f);p.setStyle(Paint.Style.STROKE);p.setStrokeCap(Paint.Cap.ROUND);
+            canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
+            canvas.drawRect(-5,-3,5,5,p);p.setPathEffect(new DashPathEffect(new float[]{2.5f,2f},0));canvas.drawRoundRect(new RectF(-11,-9,11,11),3,3,p);
+            p.setPathEffect(null);canvas.drawLine(5,-3,9,-7,p);canvas.drawLine(9,-7,6,-7,p);canvas.drawLine(9,-7,9,-4,p);
+            canvas.restore();return true;
+        }
         if(!java.util.Arrays.asList("Izometryczny","Przód","Góra","Prawy bok","Rzut prostokątny").contains(id))return false;
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.7f);p.setStyle(Paint.Style.STROKE);p.setStrokeJoin(Paint.Join.ROUND);p.setStrokeCap(Paint.Cap.ROUND);
         Paint fill=new Paint(Paint.ANTI_ALIAS_FLAG);fill.setColor(color);fill.setAlpha(110);fill.setStyle(Paint.Style.FILL);
