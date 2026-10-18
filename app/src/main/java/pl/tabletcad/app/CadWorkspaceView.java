@@ -388,11 +388,11 @@ public final class CadWorkspaceView extends View {
                     if(index>=0&&index<items.size()) {
                         CadTimeline.Item item=items.get(index);
                         long now=android.os.SystemClock.uptimeMillis();
-                        boolean edit=selectedTimelineIndex==index && now-lastTimelineTap<350;
+                        boolean edit=true;// selecting an operation means editing it
                         selectedTimelineIndex=index;lastTimelineTap=now;
                         highlightSketch=item.kind==CadTimeline.Kind.SKETCH;highlightBody=0;
                         highlightFeature=item.kind==CadTimeline.Kind.FEATURE?item.featureIndex:item.kind==CadTimeline.Kind.ACTIVE?project.committedFeatures.size():item.kind==CadTimeline.Kind.BASE||item.kind==CadTimeline.Kind.IMPORT?-1:item.kind==CadTimeline.Kind.FILLET?-2:Integer.MIN_VALUE;
-                        operationMessage="Wybrano: "+item.title+" · dotknij dwukrotnie, aby edytować";
+                        operationMessage="Edycja: "+item.title;
                         if(!edit){invalidate();return true;}
                         if(SketchTransactions.active(project)){finishSketchWork();if(SketchTransactions.active(project))return true;}
                         switch(item.kind) {
@@ -467,6 +467,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                         handleMeasureTap(e.getX(), e.getY());
                         return true;
                     }
+                    if(mode.equals("Wybierz")&&editVisibleSketchAt(e.getX(),e.getY()))return true;
                     int face = findFaceAt(e.getX(), e.getY());
                     if(mode.equals("Gwint")) {threadTap(face);return true;}
                     if (face >= 0) {
@@ -474,7 +475,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                         if (mode.equals("Szkic") && !sketchPlaneChosen) {
                             if (isFacePlanar(face)) chooseSketchPlane("Ściana " + (face + 1));
                             else operationMessage = "Wybierz płaską ścianę — powierzchnia jest zakrzywiona";
-                        }
+                        } else if (mode.equals("Wybierz")) editFaceOrigin(face);
                         invalidate();
                     }
                 }
@@ -483,7 +484,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
             @Override public boolean onScroll(MotionEvent e1, MotionEvent e2, float dx, float dy) {
                 if(e1!=null&&!treeCollapsed&&e1.getX()<leftWidth()&&e1.getY()>treeTop()) {treeScroll=Math.max(0,Math.min(Math.max(0,modelTreeRows.size()*dp(36)-(getHeight()-treeTop()-dp(16)-bottomSystemInset)),treeScroll+dy));invalidate();return true;}
-                if (e1 != null && e1.getX() >= dp(328)
+                if (e1 != null && e1.getX() >= leftWidth()+dp(104)
                         && e1.getY() >= getHeight()-dp(62)-bottomSystemInset) {
                     timelineScroll=Math.max(0,Math.min(maxTimelineScroll(),timelineScroll+dx));
                     invalidate();return true;
@@ -891,8 +892,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             else {selectedTreeKey=entry.key;project.selectedBody=entry.body>0?entry.body:1;highlightBody=entry.body;highlightFeature=Integer.MIN_VALUE;highlightSketch=false;}
         } else if(x>dp(196)) {if(!project.hiddenSketchParts.add(entry.key))project.hiddenSketchParts.remove(entry.key);else if(selectedTreeKey.equals(entry.key)){selectedTreeKey="";highlightSketch=false;}projectRepository.save(project);}
         else if(x>dp(167))renameTreeSketch(entry);
-        else if(x>dp(143)||edit)editTreeSketch(entry);
-        else {selectedTreeKey=entry.key;highlightSketch=true;highlightBody=0;highlightFeature=Integer.MIN_VALUE;selectedSketchId=null;}
+        else {selectedTreeKey=entry.key;highlightSketch=true;highlightBody=0;highlightFeature=Integer.MIN_VALUE;selectedSketchId=null;editTreeSketch(entry);}
         invalidate();
     }
     private void editTreeSketch(ModelTree.Row row) {
@@ -911,6 +911,46 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             commitModelChange(()->{if(project.sketchId.equals(row.sketchId))project.sketchName=value;for(org.json.JSONObject snapshot:project.savedSketches)if(row.sketchId.equals(snapshot.optString("id")))try{snapshot.put("name",value);}catch(org.json.JSONException error){throw new IllegalArgumentException(error);}});invalidate();
         }).show();
     }
+    /**
+     * Selecting a face means editing the operation that created it; the face stays selected so the
+     * Sketch tool can still start a sketch on it.
+     */
+    private void editFaceOrigin(int face) {
+        if(project.importedMeshSource!=null||SketchTransactions.active(project))return;
+        Integer origin=faceFeatures.get(face);if(origin==null)return;
+        highlightFeature=origin;highlightBody=0;highlightSketch=false;
+        if(origin>=0&&origin<project.committedFeatures.size()) {
+            String title="Operacja";for(CadTimeline.Item item:CadTimeline.entries(project))if(item.kind==CadTimeline.Kind.FEATURE&&item.featureIndex==origin)title=item.title;
+            showCommittedFeatureEditor(origin);operationMessage="Ściana z operacji „"+title+"” (nr "+(origin+1)+"). Szkic użyje tej ściany.";
+        } else if(origin==-1&&project.featureBase!=null&&!project.importedStep) {
+            showDepthEditor(true);operationMessage="Ściana bryły bazowej. Szkic użyje tej ściany.";
+        }
+    }
+
+    /**
+     * Selecting a sketch element in the model view means editing it: the owning sketch opens
+     * in the sketch editor with the touched element selected and its parameters shown.
+     */
+    private boolean editVisibleSketchAt(float x,float y) {
+        CadProject model=project;ModelTree.Row hitRow=null;String hitId=null;
+        try {
+            List<ModelTree.Row> rows=ModelTree.rows(model,java.util.Collections.emptySet());
+            // Prefer the highlighted sketch when several overlap.
+            rows.sort((a,b)->Boolean.compare(!a.key.equals(selectedTreeKey),!b.key.equals(selectedTreeKey)));
+            for(ModelTree.Row row:rows)if(row.sketch()&&(!model.hiddenSketchParts.contains(row.key)||row.key.equals(selectedTreeKey))) {
+                project=ModelTree.display(model,row);SketchPrimitive entity=findSketchAt(x,y);
+                if(entity!=null){hitRow=row;hitId=entity.id;break;}
+            }
+        }catch(IllegalArgumentException ignored){return false;}
+        finally{project=model;}
+        if(hitRow==null)return false;
+        selectedTreeKey=hitRow.key;editTreeSketch(hitRow);
+        if(!inSketch()){invalidate();return true;}
+        for(SketchPrimitive entity:project.sketch)if(entity.id.equals(hitId)){selectedSketchId=entity.id;showSketchEntityEditor(entity);break;}
+        operationMessage="Edycja szkicu: "+hitRow.name+". Zakończ zatwierdza zmiany.";
+        invalidate();return true;
+    }
+
     private void drawVisibleTreeSketches(Canvas canvas) {
         CadProject model=project;boolean previousHighlight=highlightSketch;
         try {

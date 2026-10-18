@@ -71,8 +71,7 @@ public final class WorkspaceUiProbe {
         check(offset>0&&(float)field(view,"cameraYaw")==yaw&&(float)field(view,"cameraPitch")==pitch,"timeline swipe scrolls features without orbiting camera");
         float x=400*density;int index=(int)((x-340*density+offset)/(64*density));
         CadTimeline.Item selected=CadTimeline.entries(project).get(index);check(selected.kind==CadTimeline.Kind.FEATURE,"scrolled test item is a model feature");
-        tap(view,x,y);check(field(view,"propertyEditor")==null,"single history tap selects without editor");
-        tap(view,x,y);check(field(view,"propertyEditor")!=null&&visible(view),"double history tap opens actual native parameter editor");
+        tap(view,x,y);check(field(view,"propertyEditor")!=null&&visible(view),"single history tap selects and opens the native parameter editor");
         List<EditText> fields=new ArrayList<>();editors((View)field(view,"propertyEditor"),fields);
         check(fields.size()==5&&Math.abs(Double.parseDouble(fields.get(4).getText().toString().replace(',','.'))-project.committedFeatures.get(selected.featureIndex)[6])<.001,
             "scrolled icon edits correct feature rather than unscrolled index");
@@ -98,8 +97,11 @@ public final class WorkspaceUiProbe {
         sketchView.draw(sketchCanvas);call(sketchView,"finishSketchWork");check(!SketchTransactions.active((CadProject)field(sketchView,"project")),"spline sketch commits successfully");
         check(SketchSpline.is(new ProjectRepository(sketchRoot).loadOrCreate().sketch.get(0)),"spline survives actual autosave reload");
         call(sketchView,"showProjectMenu");View editor=(View)field(sketchView,"propertyEditor");check(editor.getLayoutParams().height<1400-110*density,"short property panel fits content");call(sketchView,"closePropertyEditor");
-        sketchView.draw(sketchCanvas);tap(sketchView,40*density,200*density);
-        check(field(sketchView,"propertyEditor")==null && field(sketchView,"mode").equals("Wybierz"),"single sketch tree tap does not open property editor");
+        sketchView.draw(sketchCanvas);int sketchRow=-1;List<?> treeRows=(List<?>)field(sketchView,"modelTreeRows");
+        for(int i=0;i<treeRows.size();i++)if(((ModelTree.Row)treeRows.get(i)).sketch())sketchRow=i;check(sketchRow>=0,"tree lists the committed sketch");
+        java.lang.reflect.Method rowY=CadWorkspaceView.class.getDeclaredMethod("treeRowCenterY",int.class);rowY.setAccessible(true);
+        tap(sketchView,80*density,(float)rowY.invoke(sketchView,sketchRow));
+        check(field(sketchView,"mode").equals("Edytuj szkic"),"single sketch tree tap opens the sketch for editing");
         sketchBitmap.recycle();
         System.out.println("ALL WORKSPACE UI TESTS PASSED");
     }

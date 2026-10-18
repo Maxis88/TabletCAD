@@ -101,6 +101,7 @@ public final class CadScenarioProbe {
         ui(()->{TabletFlowProbe.set(view,"cameraYaw",-28f);TabletFlowProbe.set(view,"cameraPitch",22f);call(view,"fitView",new Class<?>[0]);view.invalidate();});instrumentation.waitForIdleSync();
         tool(view,"Wybierz");float[] top=world(view,70,40,20);TabletFlowProbe.tap(top[0],top[1]);Thread.sleep(300);
         ui(()->check((int)field(view,"selectedFace")>=0&&Math.abs((double)field(view,"selectedNormalZ")-1)<1e-6,"8 tap selects the top face (normal +Z): "+describe(view)));
+        ui(()->check(field(view,"propertyEditor")!=null,"8 selecting the face opens the parameters of the extrusion that created it ("+describe(view)+")"));
         tool(view,"Szkic");
         ui(()->{CadProject p=(CadProject)field(view,"project");check(Math.abs(p.sketchOriginZ-20)<1e-9&&Math.abs(p.sketchOriginX)<1e-9&&Math.abs(p.sketchOriginY)<1e-9&&Math.abs(p.sketchUx-1)<1e-9&&Math.abs(p.sketchVy-1)<1e-9,
             "8 face sketch frame: origin is the model origin projected on the face ("+p.sketchOriginX+","+p.sketchOriginY+","+p.sketchOriginZ+")");});
@@ -144,10 +145,15 @@ public final class CadScenarioProbe {
         ui(()->{CadProject p=(CadProject)field(again,"project");check(p.name.equals("Scenariusz-16-3")&&p.committedFeatures.size()==2,"15 reopened project keeps history ("+describe(again)+")");});
         v=volume(again);check(Math.abs(v-filleted)<1e-6,"16 reopened geometry is exact ("+v+")");
         // 17-19. Edit the first sketch width 100 → 120 from the model tree; hole and fillet follow.
-        float[] row=new float[2];ui(()->{List<?> rows=(List<?>)field(again,"modelTreeRows");int index=-1;for(int i=0;i<rows.size();i++){ModelTree.Row r=(ModelTree.Row)rows.get(i);if(r.sketch()&&r.entities.contains(rect[0].id))index=i;}
-            check(index>=0,"17 model tree lists the base sketch");float density=(float)field(again,"density");int[] o=new int[2];again.getLocationOnScreen(o);row[0]=80*density+o[0];row[1]=(float)call(again,"treeRowCenterY",new Class<?>[]{int.class},index)+o[1];});
-        TabletFlowProbe.tap(row[0],row[1]);Thread.sleep(120);TabletFlowProbe.tap(row[0],row[1]);Thread.sleep(400);
-        ui(()->check(field(again,"mode").equals("Edytuj szkic"),"17 double tap on the tree enters the base sketch ("+describe(again)+")"));
+        ui(()->{List<?> rows=(List<?>)field(again,"modelTreeRows");int index=-1;for(int i=0;i<rows.size();i++){ModelTree.Row r=(ModelTree.Row)rows.get(i);if(r.sketch()&&r.entities.contains(rect[0].id))index=i;}
+            check(index>=0,"17 model tree lists the base sketch");});
+        // Select = edit: the base sketch lies on the bottom face, so turn the model to see it (only visible
+        // sketch geometry is selectable), then one tap on its edge opens it with the rectangle selected.
+        ui(()->{TabletFlowProbe.set(again,"cameraYaw",152f);TabletFlowProbe.set(again,"cameraPitch",22f);call(again,"fitView",new Class<?>[0]);again.invalidate();});instrumentation.waitForIdleSync();
+        float[] edgePoint=world(again,50,60,0);
+        TabletFlowProbe.tap(edgePoint[0],edgePoint[1]);Thread.sleep(400);
+        ui(()->check(field(again,"mode").equals("Edytuj szkic")&&rect[0].id.equals(field(again,"selectedSketchId"))&&field(again,"propertyEditor")!=null,
+            "17 one tap on the sketch in the model view opens it for editing with the element selected ("+describe(again)+")"));
         editDimension(again,rect[0].id,"width","120");
         tool(again,"Zakończ");Thread.sleep(300);
         double edited=filleted+20*60*20;v=volume(again);System.out.println("EDITED "+v+" "+state(again));
