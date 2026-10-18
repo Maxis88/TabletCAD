@@ -34,6 +34,12 @@ public final class SketchOffsetUiProbe {
         check(copy.type.equals("Prostokąt")&&copy.x1==-2.5&&copy.y1==-2.5&&copy.x2==102.5&&copy.y2==62.5,"decimal comma 2,5 mm offset is exact");
         check(field(view,"selectedSketchId").equals(copy.id),"new offset becomes the selection");
         call(view,"undo",new Class<?>[0]);check(((CadProject)field(view,"project")).sketch.size()==1,"undo removes the offset copy");
+        // Geometria/Przytnij → Przedłuż: the selected line grows to the offset rectangle edge.
+        ((CadProject)field(view,"project")).sketch.add(new SketchPrimitive("probe-line","Linia",10,30,20,30));
+        InteractionFixProbe.set(view,"selectedSketchId","probe-line");
+        call(view,"activateTopTool",new Class<?>[]{String.class},"Przedłuż");
+        SketchPrimitive grown=null;for(SketchPrimitive e:((CadProject)field(view,"project")).sketch)if(e.id.equals("probe-line"))grown=e;
+        check(grown!=null&&Math.abs(grown.x1-0)<1e-9&&Math.abs(grown.x2-20)<1e-9,"extend moves the nearer end to the rectangle edge: "+(grown==null?"none":grown.x1+","+grown.x2)+" "+field(view,"operationMessage"));
         System.out.println("ALL SKETCH OFFSET UI TESTS PASSED");
     }
 }

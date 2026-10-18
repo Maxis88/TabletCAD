@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.59.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.60.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,11 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.60.0: Przedłuż — linia (także pomocnicza) do najbliższego przecięcia
+z linią, prostokątem, wielokątem, okręgiem, istniejącą częścią łuku, konturem
+linia/łuk lub splajnem (bisekcja na dokładnej krzywej Béziera). Automatycznie
+wybierany koniec z krótszym przedłużeniem; zachowane UUID i więzy przez solver.
 
 0.59.0: Odsunięcie szkicu — niezależna kopia o stałej odległości: linia,
 łuk (współśrodkowy), okrąg, prostokąt, wielokąt (narożniki ostre, także wklęsłe)
@@ -98,7 +103,7 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
 ## Najważniejsze pozostałe luki
 
 1. Szkice: pozostałe prymitywy (elipsa, splajn, slot itd.), rzutowanie
-   krawędzi modelu, wydłużanie, szyki i pełne więzy parametryczne,
+   krawędzi modelu, szyki i pełne więzy parametryczne,
    w tym styczność oraz trwała zależność symetrii. Lustro obecnie kopiuje.
 2. Podstawowe bryły: Shell i narzędzie parametrycznych otworów.
    Otwór można obecnie wykonać przez wycięcie okręgu, bez dedykowanego Hole.

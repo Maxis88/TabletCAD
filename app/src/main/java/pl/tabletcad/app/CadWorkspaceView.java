@@ -1716,6 +1716,19 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }).show();
     }
 
+    /** Extends the selected line to the nearest sketch geometry along its direction. */
+    private void extendSelectedLine() {
+        SketchPrimitive source=null;
+        for(SketchPrimitive entity:project.sketch)if(entity.id.equals(selectedSketchId))source=entity;
+        if(source==null){operationMessage="Zaznacz linię (Edytuj), a następnie wybierz Przedłuż";return;}
+        try {
+            SketchPrimitive extended=SketchExtend.extend(source,project.sketch,SketchExtend.End.AUTO);
+            double added=Math.hypot(extended.x2-extended.x1,extended.y2-extended.y1)-Math.hypot(source.x2-source.x1,source.y2-source.y1);
+            replaceSketchEntity(source,extended);
+            if(selectedSketchId!=null&&selectedSketchId.equals(source.id))operationMessage="Przedłużono linię o "+formatMm(added)+" do najbliższej geometrii.";
+        }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+    }
+
     /** Offset copy of the selected sketch element; the copy is independent and editable. */
     private void showSketchOffset() {
         SketchPrimitive source=null;
@@ -4143,6 +4156,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(tool.equals("Zaokrąglij szkic")){showSketchFillet();return;}
         if(tool.equals("Lustro")){mode="Edytuj szkic";showSketchMirror();invalidate();return;}
         if(tool.equals("Odsunięcie")){mode="Edytuj szkic";showSketchOffset();invalidate();return;}
+        if(tool.equals("Przedłuż")){mode="Edytuj szkic";extendSelectedLine();invalidate();return;}
         if(tool.equals("Wymiar")) {
             if(!hadSketchPlane)operationMessage="Najpierw wybierz płaszczyznę szkicu";
             else {mode="Edytuj szkic";dimensionMode=true;operationMessage="Dotknij elementu, aby nadać mu wymiar sterujący";}

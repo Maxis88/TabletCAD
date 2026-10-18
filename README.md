@@ -1,11 +1,14 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.59.0-sketch-offset**, versionCode **67**.
+Wersja źródeł: **0.60.0-sketch-extend**, versionCode **68**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
+
+Wersja 0.60 dodaje Przytnij → Przedłuż: linia rośnie wzdłuż własnego kierunku
+do najbliższej geometrii szkicu ([audyt 0.60](docs/AUDIT-0.60.md)).
 
 Wersja 0.59 dodaje dokładne odsunięcie szkicu (Geometria → Odsunięcie) dla linii,
 łuków, okręgów, prostokątów, wielokątów i konturów linia/łuk. Szczegóły:
