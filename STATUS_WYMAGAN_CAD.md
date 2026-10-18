@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.65.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.68.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,13 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.68.0: obracanie szkicu, jednorazowe wyciąganie do równoległej ściany,
+odznaczanie, poprawione gwinty M6 × 1, indeksowanie widoczności i zbiorcze
+rysowanie podglądu bez zmiany B-Rep, strzałka nowych wyciągnięć i edycji
+zakresu oraz odroczona odbudowa modelu przy starcie do biblioteki.
+Audyt: docs/AUDIT-0.68-LOCAL.md. Pełne nazewnictwo topologiczne i wszystkie
+tryby zakończenia wyciągnięć nadal nie są zaimplementowane.
 
 0.67.0: biblioteka projektów z miniaturami brył (PNG generowane w tle po każdej
 zmianie i dla starych projektów przy otwarciu listy), datą zmiany, opisem

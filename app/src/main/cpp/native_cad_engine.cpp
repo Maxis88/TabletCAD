@@ -762,9 +762,15 @@ TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
     BRepOffsetAPI_MakePipeShell pipe(wire.Wire());pipe.SetMode(true);pipe.Add(profile.Wire(),false,false);pipe.Build();
     if(!pipe.IsDone()||!pipe.MakeSolid())return {};
     BRepAlgoAPI_Common clipped(pipe.Shape(),BRepPrimAPI_MakeCylinder(outer+.1,depth).Shape());clipped.Build();if(!clipped.IsDone())return {};
-    gp_Trsf placement;placement.SetDisplacement(gp_Ax3(),gp_Ax3(gp_Pnt(f[2],f[3],f[4]),gp_Dir(axis)));
+    // Use one canonical sweep frame for either entry end. Reversing the input
+    // axis must preserve the same axial interval and thread handedness; a frame
+    // rotated by 180 degrees otherwise makes OCCT lose some full-depth cuts.
+    gp_Pnt entry(f[2],f[3],f[4]);
+    const double leading=std::abs(axis.Z())>1e-9?axis.Z():std::abs(axis.Y())>1e-9?axis.Y():axis.X();
+    if(leading<0){entry.Translate(axis*depth);axis.Reverse();}
+    gp_Trsf placement;placement.SetDisplacement(gp_Ax3(),gp_Ax3(entry,gp_Dir(axis)));
     TopoDS_Shape tool=BRepBuilderAPI_Transform(clipped.Shape(),placement,true).Shape();
-    if(tool.IsNull()||!BRepCheck_Analyzer(tool).IsValid())return {};
+    if(tool.IsNull()||!BRepCheck_Analyzer(tool).IsValid()){kernelReason("Narzędzie gwintu ma niepoprawną topologię");return {};}
     TopoDS_Shape result=applyProfileFeature(shape,tool,true);
     if(result.IsNull()||countShapes(result,TopAbs_SOLID)!=countShapes(shape,TopAbs_SOLID))return {};
     return result;

@@ -123,6 +123,25 @@ public final class ExtrusionManipulatorProbe {
         ui(()->{call(view,"closePropertyEditor");check(release.getCount()==1,"UI cancels panel while geometry remains blocked on worker");});
         release.countDown();check(finished.await(5,java.util.concurrent.TimeUnit.SECONDS),"abandoned calculation finishes safely");
         instrumentation.waitForIdleSync();ui(()->check(!displayed[0]&&field(view,"featurePreview")==null,"closed tool never receives late geometry result"));
+        for(int plane=0;plane<3;plane++)for(double second:new double[]{0,5}) {
+            final int selectedPlane=plane;
+            ui(()->{CadProject p=document(selectedPlane);p.featureBase=ExtrusionPlan.base(p,p.sketch.get(0),20,second,false,false);p.depth=20+second;p.extrusionExtents.put(-1,new double[]{20,second,0});
+                WorkspaceHistoryProbe.invoke(view,"activateProject",CadProject.class,p);open(view,p.featureBase,p.featureBaseProfileId);
+                drag(view,canvas,8,false);check(Math.abs(depth(view)-28)<.002,"current extent editor arrow changes first length on plane "+selectedPlane+", second="+second);});
+            awaitPreview(view);
+            ui(()->{check(Math.abs(CurveTrimProbe.volume((double[])field(view,"featurePreview"))-40*30*(28+second))<.02,"extent arrow preview preserves independent second length");WorkspaceUiProbe.button((View)field(view,"propertyEditor"),"Anuluj").performClick();});
+        }
+        for(String operation:new String[]{"add","cut"}) {
+            ui(()->{CadProject p=document(0),plane=CadProject.blank();plane.sketchOriginZ=20;
+                p.committedFeatures.add(ExtrusionPlan.feature(plane,new SketchPrimitive("detail","Prostokąt",10,10,20,20),operation,5,2,false,false));p.committedProfileIds.add("");p.extrusionExtents.put(0,new double[]{5,2,0});
+                WorkspaceHistoryProbe.invoke(view,"activateProject",CadProject.class,p);
+                Method editor=CadWorkspaceView.class.getDeclaredMethod("showExtrusionExtentEditor",int.class);editor.setAccessible(true);editor.invoke(view,0);
+                check(Math.abs(((double[])field(view,"extrusionOrigin"))[2]-20)<1e-9,"history arrow restores source plane before independent second extent");
+                check(((double[])field(view,"extrusionAxis"))[2]==(operation.equals("cut")?-1:1),"history extent arrow follows "+operation+" direction");drag(view,canvas,2,false);});
+            awaitPreview(view);
+            ui(()->{double expected=40*30*20+(operation.equals("cut")?-1:1)*100*7;
+                check(Math.abs(CurveTrimProbe.volume((double[])field(view,"featurePreview"))-expected)<.02,"history "+operation+" arrow preview has correct volume");WorkspaceUiProbe.button((View)field(view,"propertyEditor"),"Anuluj").performClick();});
+        }
         bitmap.recycle();System.out.println("ALL EXTRUSION MANIPULATOR TESTS PASSED");
     }
 }

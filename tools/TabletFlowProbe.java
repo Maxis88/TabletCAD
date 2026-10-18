@@ -56,9 +56,17 @@ public final class TabletFlowProbe {
                 ui(()->{CadProject drilled=new CadProject();drilled.width=40;drilled.height=30;drilled.depth=10;for(double x:new double[]{10,30}){drilled.committedFeatures.add(new double[]{1,1,x,15,x+2.5,15,10,0,0,10,1,0,0,0,1,0});drilled.committedProfileIds.add("");}call(view,"activateProject",new Class<?>[]{CadProject.class},drilled);set(view,"zoom",5f);set(view,"cameraYaw",-10f);set(view,"cameraPitch",20f);call(view,"beginThreadTool",new Class<?>[0]);view.invalidate();});instrumentation.waitForIdleSync();
         double drilledVolume=parameters(view)[0];
         List<HoleThread.Cylinder> holes=new ArrayList<>();ui(()->holes.addAll((List<HoleThread.Cylinder>)field(view,"holeCylinders")));check(holes.size()==2,"two real cylindrical holes available in visible model");
-        for(HoleThread.Cylinder hole:holes){float[] location={Float.NaN,Float.NaN};ui(()->{for(Object triangle:(List<?>)field(view,"projectedTriangles")){if((int)field(triangle,"faceId")!=hole.face)continue;float[] x=(float[])field(triangle,"sx"),y=(float[])field(triangle,"sy");float cx=(x[0]+x[1]+x[2])/3,cy=(y[0]+y[1]+y[2])/3;if((int)call(view,"findFaceAt",new Class<?>[]{float.class,float.class},cx,cy)==hole.face){location[0]=cx;location[1]=cy;break;}}});check(Float.isFinite(location[0]),"visible cylinder wall has a selectable point");tap(location[0],location[1]);Thread.sleep(360);}
+        selectHoles(view,holes);
+        float[] empty=new float[2];ui(()->{float x=view.getWidth()*.25f,y=view.getHeight()*.2f;
+            check((boolean)call(view,"isInsideViewport",new Class<?>[]{float.class,float.class},x,y)
+                &&(int)call(view,"findFaceAt",new Class<?>[]{float.class,float.class},x,y)<0,"thread deselection point is empty viewport");
+            int[] origin=new int[2];view.getLocationOnScreen(origin);empty[0]=x+origin[0];empty[1]=y+origin[1];});
+        tap(empty[0],empty[1]);Thread.sleep(300);
+        ui(()->check(((Set<?>)field(view,"threadSelections")).isEmpty()&&(int)field(view,"selectedFace")==-1,
+            "empty tap clears both thread selections and selected face"));
+        selectHoles(view,holes);
         ui(()->check(((Set<?>)field(view,"threadSelections")).size()==2,"physical taps select both cylindrical hole walls"));screenshot(activity,"06-thread-presets");
-        ui(()->{View panel=(View)field(view,"propertyEditor");findCheck(panel,"Pełna długość każdego otworu").setChecked(false);InteractionFixProbe.input(panel).setText("3");apply[0]=WorkspaceUiProbe.button(panel,"Utwórz gwinty");});click(apply[0]);pending(view);instrumentation.waitForIdleSync();
+        ui(()->{View panel=(View)field(view,"propertyEditor");check(findCheck(panel,"Pełna długość każdego otworu").isChecked(),"thread defaults to the full 10 mm depth of the 5 mm holes");apply[0]=WorkspaceUiProbe.button(panel,"Utwórz gwinty");});click(apply[0]);pending(view);instrumentation.waitForIdleSync();
         result=parameters(view);check(result.length==7&&result[0]<drilledVolume-2&&result[5]==1,"one apply cuts two real helical threads in the target body");screenshot(activity,"07-real-threads");
         ui(()->{call(view,"undo",new Class<?>[0]);check(((CadProject)field(view,"project")).committedFeatures.size()==2,"one undo removes both threads together");});check(Math.abs(parameters(view)[0]-drilledVolume)<.001,"thread undo restores exact pre-thread volume");
         // A failing operation must name the history entry and the concrete kernel reason, keeping the model intact.
@@ -74,4 +82,7 @@ public final class TabletFlowProbe {
         ui(activity::finish);System.out.println("ALL VISIBLE TABLET FLOW TESTS PASSED");
     }
     static CheckBox findCheck(View view,String label){if(view instanceof CheckBox&&((CheckBox)view).getText().toString().equals(label))return (CheckBox)view;if(view instanceof android.view.ViewGroup)for(int i=0;i<((android.view.ViewGroup)view).getChildCount();i++){CheckBox found=findCheck(((android.view.ViewGroup)view).getChildAt(i),label);if(found!=null)return found;}return null;}
+    static void selectHoles(CadWorkspaceView view,List<HoleThread.Cylinder> holes)throws Exception {
+        for(HoleThread.Cylinder hole:holes){float[] location={Float.NaN,Float.NaN};ui(()->{for(Object triangle:(List<?>)field(view,"projectedTriangles")){if((int)field(triangle,"faceId")!=hole.face)continue;float[] x=(float[])field(triangle,"sx"),y=(float[])field(triangle,"sy");float cx=(x[0]+x[1]+x[2])/3,cy=(y[0]+y[1]+y[2])/3;if((int)call(view,"findFaceAt",new Class<?>[]{float.class,float.class},cx,cy)==hole.face){int[] origin=new int[2];view.getLocationOnScreen(origin);location[0]=cx+origin[0];location[1]=cy+origin[1];break;}}});check(Float.isFinite(location[0]),"visible cylinder wall has a selectable point");tap(location[0],location[1]);Thread.sleep(360);}
+    }
 }

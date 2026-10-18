@@ -40,6 +40,19 @@ public final class InteractionFixProbe {
         check(((double[])field(view,"nativeMesh")).length==0,"new project removes old rendered geometry");
         check(!new ProjectRepository(root).loadProject(oldId).sketch.isEmpty(),"new project preserves previous document");
         check(new ProjectRepository(root).loadOrCreate().id.equals(blank.id),"new blank document is active after reload");bitmap.recycle();
+        File startupRoot=new File(args[0],"startup-"+UUID.randomUUID());startupRoot.mkdirs();
+        Context startupContext=new ContextWrapper(applicationContext){@Override public File getFilesDir(){return startupRoot;}};
+        CadProject heavy=new CadProject();heavy.width=30;heavy.height=30;heavy.depth=10;
+        heavy.committedFeatures.add(new double[]{1,1,15,15,17.5,15,10,0,0,10,1,0,0,0,1,0});heavy.committedProfileIds.add("");
+        heavy.committedFeatures.add(new double[]{-8,1,15,15,0,0,0,1,2.5,3,1,10,10,0,0,0});heavy.committedProfileIds.add("");
+        ProjectRepository startupRepository=new ProjectRepository(startupRoot);startupRepository.save(heavy);
+        long start=System.nanoTime();CadWorkspaceView deferred=new CadWorkspaceView(startupContext,null,true);
+        System.out.println("STARTUP deferred constructor ms="+(System.nanoTime()-start)/1e6);
+        check(((double[])field(deferred,"nativeMesh")).length==0,"launch chooser defers rebuilding the last threaded model");
+        check(((CadProject)field(deferred,"project")).committedFeatures.size()==2&&startupRepository.loadProject(heavy.id).committedFeatures.size()==2,"deferred startup preserves the saved hole and thread history");
+        call(deferred,"activateProject",new Class<?>[]{CadProject.class},startupRepository.loadProject(heavy.id));
+        check(((double[])field(deferred,"nativeMesh")).length>0,"selecting the project rebuilds its actual threaded B-Rep");
+        check(((CadProject)field(deferred,"project")).committedFeatures.size()==2,"opening after deferred startup retains both operations");
         System.out.println("ALL INTERACTION FIX TESTS PASSED");
     }
 }

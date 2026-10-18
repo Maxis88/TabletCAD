@@ -38,7 +38,7 @@ public final class MainActivity extends Activity {
                             requestStepFile();
                         }).setNegativeButton("Anuluj",null).show();
             }
-        });
+        },savedInstanceState==null);
         android.widget.FrameLayout root = new android.widget.FrameLayout(this);
         root.addView(workspace);
         setContentView(root);

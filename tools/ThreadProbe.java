@@ -20,6 +20,14 @@ public final class ThreadProbe {
         double[] roundTrip=NativeCadEngine.bodyProperties(30,30,10,0,null,new double[0],args[0]);check(roundTrip.length==7&&Math.abs(roundTrip[0]-after[0])<.01,"thread STEP round trip preserves exact solid volume");
         raw[17]=-1;double[] left=NativeCadEngine.bodyProperties(30,30,10,0,null,BodyGraph.pack(p,raw),null);check(left.length==7&&Math.abs(left[0]-after[0])<.1,"left-hand preset generates real counterpart with matching volume");
         try{HoleThread.create(cylinder,preset,11,true,false);throw new AssertionError("over-depth accepted");}catch(IllegalArgumentException expected){check(true,"over-depth thread rejected before replacing document");}
+        for(double depth:new double[]{3,7.25,10})for(boolean leftHand:new boolean[]{false,true})for(boolean fromMaximum:new boolean[]{true,false}) {
+            double[] full=HoleThread.create(cylinder,preset,depth,fromMaximum,leftHand);
+            System.arraycopy(full,0,raw,16,16);
+            double[] fullResult=NativeCadEngine.bodyProperties(30,30,10,0,null,BodyGraph.pack(p,raw),null);
+            check(fullResult.length==7&&fullResult[0]<before[0]-depth*.5&&fullResult[5]==1,
+                "M6 x 1 in a 5 mm hole, depth="+depth+", left="+leftHand+", fromMaximum="+fromMaximum
+                +(fullResult.length==0?"; "+NativeCadEngine.lastFailure().reason:"; volume="+fullResult[0]));
+        }
         System.out.println("ALL THREAD TESTS PASSED");
     }
 }

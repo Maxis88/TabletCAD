@@ -56,6 +56,22 @@ public final class SemanticIcons {
             }
             canvas.restore();return true;
         }
+        if(id.equals("Obróć widok")||id.equals("Widok na szkic")) {
+            Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.7f);p.setStyle(Paint.Style.STROKE);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
+            canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
+            if(id.equals("Obróć widok")) {
+                // Sketch plane seen at an angle with an orbit arrow around it.
+                Path plane=new Path();plane.moveTo(-8,3);plane.lineTo(4,3);plane.lineTo(9,-3);plane.lineTo(-3,-3);plane.close();canvas.drawPath(plane,p);
+                canvas.drawArc(new RectF(-12,-11,12,11),200,250,false,p);
+                canvas.drawLine(10.3f,-6,12,-10,p);canvas.drawLine(10.3f,-6,6.5f,-7.5f,p);
+            } else {
+                // Sketch plane square to the eye: square, normal arrow pointing at the viewer.
+                canvas.drawRect(-10,-10,10,10,p);canvas.drawCircle(0,0,4,p);
+                p.setStyle(Paint.Style.FILL);canvas.drawCircle(0,0,1.6f,p);p.setStyle(Paint.Style.STROKE);
+                canvas.drawLine(-13,0,-10,0,p);canvas.drawLine(10,0,13,0,p);canvas.drawLine(0,-13,0,-10,p);canvas.drawLine(0,10,0,13,p);
+            }
+            canvas.restore();return true;
+        }
         if(id.equals("Przedłuż")) {
             Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.7f);p.setStyle(Paint.Style.STROKE);p.setStrokeCap(Paint.Cap.ROUND);
             canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);

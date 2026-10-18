@@ -20,6 +20,22 @@ public final class CadScenarioProbe {
     public static Instrumentation instrumentation;
     static void ui(TabletFlowProbe.Step step)throws Exception{TabletFlowProbe.ui(step);}
     static void check(boolean ok,String text){TabletFlowProbe.check(ok,text);}
+    static float[] visibleFace(CadWorkspaceView view,double nx,double ny,double nz)throws Exception {
+        float[] point={Float.NaN,Float.NaN};
+        ui(()->{Object preview=field(view,"featurePreview");TabletFlowProbe.set(view,"featurePreview",null);
+            try {call(view,"projectNativeMesh",new Class<?>[]{float.class,float.class},field(view,"workCenterX"),field(view,"workCenterY"));
+                for(Object triangle:(List<?>)field(view,"projectedTriangles")) {
+                    if(Math.abs((double)field(triangle,"nx")-nx)>1e-6||Math.abs((double)field(triangle,"ny")-ny)>1e-6||Math.abs((double)field(triangle,"nz")-nz)>1e-6)continue;
+                    float[] x=(float[])field(triangle,"sx"),y=(float[])field(triangle,"sy");float cx=(x[0]+x[1]+x[2])/3,cy=(y[0]+y[1]+y[2])/3;
+                    if((boolean)call(view,"isInsideViewport",new Class<?>[]{float.class,float.class},cx,cy)
+                        &&(int)call(view,"findFaceAt",new Class<?>[]{float.class,float.class},cx,cy)==(int)field(triangle,"faceId")) {
+                        int[] origin=new int[2];view.getLocationOnScreen(origin);point[0]=cx+origin[0];point[1]=cy+origin[1];break;
+                    }
+                }
+            } finally {TabletFlowProbe.set(view,"featurePreview",preview);}
+            check(Float.isFinite(point[0]),"requested target face is visible and selectable; camera="+field(view,"cameraYaw")+","+field(view,"cameraPitch"));
+        });return point;
+    }
     static Object field(Object o,String name)throws Exception{return TabletFlowProbe.field(o,name);}
     static Object call(Object o,String name,Class<?>[] types,Object... args)throws Exception{return TabletFlowProbe.call(o,name,types,args);}
     static void tool(CadWorkspaceView view,String name)throws Exception{ui(()->call(view,"activateTopTool",new Class<?>[]{String.class},name));instrumentation.waitForIdleSync();}
@@ -94,14 +110,33 @@ public final class CadScenarioProbe {
         ui(()->{View panel=(View)field(view,"propertyEditor");check(panel!=null,"extrusion panel opens ("+state(view)+")");List<EditText> inputs=new ArrayList<>();WorkspaceUiProbe.editors(panel,inputs);inputs.get(0).setText("20");});
         Thread.sleep(400);float[] inside=screen(view,(rect[0].x1+rect[0].x2)/2,(rect[0].y1+rect[0].y2)/2);TabletFlowProbe.tap(inside[0],inside[1]);Thread.sleep(400);
         View[] apply={null};ui(()->{check(((Set<?>)field(view,"extrusionSelections")).size()==1,"7 tap selects the profile to extrude");apply[0]=WorkspaceUiProbe.button((View)field(view,"propertyEditor"),"Zastosuj");});
+        instrumentation.waitForIdleSync();float[] arrow=new float[4];float[] arrowYaw={0};
+        ui(()->{PointF h=(PointF)field(view,"extrusionHandle");check(h!=null,"7 current profile selection shows the extrusion arrow");int[] o=new int[2];view.getLocationOnScreen(o);
+            double start=(double)call(view,"extrusionParameter",new Class<?>[]{float.class,float.class},h.x,h.y);double[] origin=(double[])field(view,"extrusionOrigin"),axis=(double[])field(view,"extrusionAxis");
+            double[] end=(double[])call(view,"projectWorldPoint",new Class<?>[]{double.class,double.class,double.class},origin[0]+axis[0]*(start+5),origin[1]+axis[1]*(start+5),origin[2]+axis[2]*(start+5));
+            arrow[0]=h.x+o[0];arrow[1]=h.y+o[1];arrow[2]=(float)end[0]+o[0];arrow[3]=(float)end[1]+o[1];arrowYaw[0]=(float)field(view,"cameraYaw");});
+        drag(arrow[0],arrow[1],arrow[2],arrow[3]);
+        ui(()->{check(Math.abs(Double.parseDouble(((EditText)field(view,"extrusionDimension")).getText().toString())-25)<.01,"7 real window arrow drag changes extrusion from 20 to 25 mm");check((float)field(view,"cameraYaw")==arrowYaw[0],"7 arrow drag does not rotate the camera");((EditText)field(view,"extrusionDimension")).setText("20");});
+        Thread.sleep(400);TabletFlowProbe.screenshot(activity,"scenario-extrusion-arrow");
         TabletFlowProbe.click(apply[0]);TabletFlowProbe.pending(view);instrumentation.waitForIdleSync();
         double v=volume(view);check(Math.abs(v-120000)<1e-6,"7 extrusion volume 100×60×20 = 120000 mm³ ("+v+", "+state(view)+")");
         TabletFlowProbe.screenshot(activity,"scenario-02-extruded");
+        // Orbit right after the extrusion, without choosing Wybierz: one finger on empty space.
+        float[] yaw0={0};int[] loc=new int[2];ui(()->{yaw0[0]=(float)field(view,"cameraYaw");view.getLocationOnScreen(loc);});
+        float ex=loc[0]+view.getWidth()*0.80f,ey=loc[1]+view.getHeight()*0.30f;drag(ex,ey,ex-160,ey+40);
+        ui(()->check(Math.abs((float)field(view,"cameraYaw")-yaw0[0])>5,"7 one-finger drag orbits right after the extrusion ("+describe(view)+")"));
         // 8. Second sketch on the top face, picked with a real tap.
         ui(()->{TabletFlowProbe.set(view,"cameraYaw",-28f);TabletFlowProbe.set(view,"cameraPitch",22f);call(view,"fitView",new Class<?>[0]);view.invalidate();});instrumentation.waitForIdleSync();
         tool(view,"Wybierz");float[] top=world(view,70,40,20);TabletFlowProbe.tap(top[0],top[1]);Thread.sleep(300);
         ui(()->check((int)field(view,"selectedFace")>=0&&Math.abs((double)field(view,"selectedNormalZ")-1)<1e-6,"8 tap selects the top face (normal +Z): "+describe(view)));
         ui(()->check(field(view,"propertyEditor")==null,"8 tapping a face only selects it, no editor opens ("+describe(view)+")"));
+        ui(()->check((int)call(view,"findFaceAt",new Class<?>[]{float.class,float.class},ex-loc[0],ey-loc[1])<0,"8 deselection tap lies outside the solid"));
+        TabletFlowProbe.tap(ex,ey);Thread.sleep(250);
+        ui(()->check((int)field(view,"selectedFace")==-1&&(int)field(view,"highlightBody")==0
+            &&(int)field(view,"highlightFeature")==Integer.MIN_VALUE&&!(boolean)field(view,"highlightSketch")
+            &&field(view,"selectedSketchId")==null&&field(view,"selectedTreeKey").equals("")
+            &&(int)field(view,"selectedTimelineIndex")==-1,"8 empty viewport tap clears all model highlights"));
+        TabletFlowProbe.tap(top[0],top[1]);Thread.sleep(250);
         // Long press on the face edits the operation that created it; Cancel keeps the selection.
         long down=SystemClock.uptimeMillis();MotionEvent press=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,top[0],top[1],0);instrumentation.sendPointerSync(press);press.recycle();
         SystemClock.sleep(900);press=MotionEvent.obtain(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,top[0],top[1],0);instrumentation.sendPointerSync(press);press.recycle();instrumentation.waitForIdleSync();Thread.sleep(200);
@@ -110,8 +145,18 @@ public final class CadScenarioProbe {
         tool(view,"Szkic");
         ui(()->{CadProject p=(CadProject)field(view,"project");check(Math.abs(p.sketchOriginZ-20)<1e-9&&Math.abs(p.sketchOriginX)<1e-9&&Math.abs(p.sketchOriginY)<1e-9&&Math.abs(p.sketchUx-1)<1e-9&&Math.abs(p.sketchVy-1)<1e-9,
             "8 face sketch frame: origin is the model origin projected on the face ("+p.sketchOriginX+","+p.sketchOriginY+","+p.sketchOriginZ+")");});
+        // Sketch on a body: Obróć widok orbits with one finger without drawing; touches stay exact on the plane.
+        int[] count={0};ui(()->{yaw0[0]=(float)field(view,"cameraYaw");count[0]=((CadProject)field(view,"project")).sketch.size();});
+        tool(view,"Obróć widok");drag(ex,ey,ex-160,ey+60);
+        ui(()->{check(Math.abs((float)field(view,"cameraYaw")-yaw0[0])>5&&((CadProject)field(view,"project")).sketch.size()==count[0],"9 Obróć widok: a finger drag orbits the face sketch and draws nothing ("+describe(view)+")");
+            PointF at=(PointF)call(view,"projectSketchPoint",new Class<?>[]{double.class,double.class},37.5,12.25);double[] back=(double[])call(view,"screenToSketch",new Class<?>[]{float.class,float.class},at.x,at.y);
+            check(Math.abs(back[0]-37.5)<1e-3&&Math.abs(back[1]-12.25)<1e-3,"9 rotated perspective view maps a touch exactly onto the sketch plane ("+back[0]+","+back[1]+")");});
+        tool(view,"Widok na szkic");
+        ui(()->check(Math.abs((float)field(view,"cameraYaw"))<1e-3&&Math.abs((float)field(view,"cameraPitch"))<1e-3&&!(boolean)field(view,"sketchOrbit"),"9 Widok na szkic re-aligns the view square to the face and resumes drawing"));
         // 9. Circle drawn with a finger, diameter typed into its Ø label.
+        tool(view,"Obróć widok");
         tool(view,"Okrąg");ui(()->{View panel=(View)field(view,"propertyEditor");if(panel!=null){Button cancel=WorkspaceUiProbe.button(panel,"Anuluj");if(cancel!=null)cancel.performClick();}});instrumentation.waitForIdleSync();
+        ui(()->check(!(boolean)field(view,"sketchOrbit"),"9 choosing a drawing tool exits orbit mode and resumes drawing"));
         float[] c1=screen(view,24,31),c2=screen(view,28,31);drag(c1[0],c1[1],c2[0],c2[1]);Thread.sleep(300);
         SketchPrimitive[] hole={null};ui(()->{for(SketchPrimitive p:((CadProject)field(view,"project")).sketch)if(p.type.equals("Okrąg"))hole[0]=p;});
         check(hole[0]!=null,"9 finger drag draws a circle on the face sketch ("+state(view)+")");
@@ -127,6 +172,21 @@ public final class CadScenarioProbe {
         ui(()->{View panel=(View)field(view,"propertyEditor");check(panel!=null,"11 extrusion panel opens on face sketch ("+describe(view)+")");spinner(panel).setSelection(2);List<EditText> inputs=new ArrayList<>();WorkspaceUiProbe.editors(panel,inputs);inputs.get(0).setText("20");});
         Thread.sleep(400);float[] holeCentre=screen(view,25,30);TabletFlowProbe.tap(holeCentre[0],holeCentre[1]);Thread.sleep(400);
         ui(()->{check(((Set<?>)field(view,"extrusionSelections")).size()==1,"11 tap selects the circle profile");apply[0]=WorkspaceUiProbe.button((View)field(view,"propertyEditor"),"Zastosuj");});
+        // "Do powierzchni…": rotate during the extrusion (one finger), tap the bottom face → length 20 mm.
+        ui(()->{View panel=(View)field(view,"propertyEditor");List<EditText> inputs=new ArrayList<>();WorkspaceUiProbe.editors(panel,inputs);inputs.get(0).setText("5");WorkspaceUiProbe.button(panel,"Do powierzchni…").performClick();});
+        ui(()->yaw0[0]=(float)field(view,"cameraYaw"));drag(ex,ey,ex-120,ey);
+        ui(()->check(Math.abs((float)field(view,"cameraYaw")-yaw0[0])>5,"11 the view orbits while choosing extrusion profiles ("+describe(view)+")"));
+        ui(()->{TabletFlowProbe.set(view,"cameraYaw",152f);TabletFlowProbe.set(view,"cameraPitch",22f);call(view,"fitView",new Class<?>[0]);view.invalidate();});instrumentation.waitForIdleSync();
+        float[] wall=visibleFace(view,0,1,0);TabletFlowProbe.tap(wall[0],wall[1]);Thread.sleep(300);
+        ui(()->{View panel=(View)field(view,"propertyEditor");List<EditText> inputs=new ArrayList<>();WorkspaceUiProbe.editors(panel,inputs);
+            check(field(view,"extrusionFacePick")!=null&&inputs.get(0).getText().toString().equals("5"),"11 a side wall (not parallel) is refused: "+field(view,"operationMessage"));});
+        // Turn underneath the plate: at yaw -28 the top occludes this bottom point.
+        // A screen tap must select the visible face, never a hidden face through the solid.
+        ui(()->{TabletFlowProbe.set(view,"cameraYaw",152f);call(view,"fitView",new Class<?>[0]);view.invalidate();});instrumentation.waitForIdleSync();
+        float[] floor=world(view,80,45,0);TabletFlowProbe.tap(floor[0],floor[1]);Thread.sleep(500);
+        ui(()->{View panel=(View)field(view,"propertyEditor");List<EditText> inputs=new ArrayList<>();WorkspaceUiProbe.editors(panel,inputs);
+            check(field(view,"extrusionFacePick")==null&&inputs.get(0).getText().toString().equals("20")&&!((CompoundButton)WorkspaceUiProbe.button(panel,"Odwróć kierunek")).isChecked()&&((Set<?>)field(view,"extrusionSelections")).size()==1,
+                "11 tapping the bottom face sets the cut length to exactly 20 mm ("+inputs.get(0).getText()+", "+describe(view)+")");});
         TabletFlowProbe.click(apply[0]);TabletFlowProbe.pending(view);instrumentation.waitForIdleSync();
         double drilled=120000-Math.PI*25*20;v=volume(view);System.out.println("CUT "+v+" "+state(view));
         check(Math.abs(v-drilled)<1e-6,"11 through hole: volume 120000 − 500π = "+drilled+" ("+v+")");

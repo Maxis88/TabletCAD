@@ -7,17 +7,21 @@ import java.lang.reflect.*;
 
 /** Test APK only. Production application has no test intents or storage overrides. */
 public final class WorkspaceInstrumentation extends Instrumentation {
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    private String onlyProbe;
+    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments);onlyProbe=arguments==null?null:arguments.getString("probe"); start(); }
     @Override public void onStart() {
         ByteArrayOutputStream bytes=new ByteArrayOutputStream();PrintStream capture=new PrintStream(bytes);
         PrintStream previous=System.out;final Throwable[] failure={null};System.setOut(capture);
+        int executed=0;
         try {
-            for(String name:new String[]{"KernelDiagnosticsProbe","SketchOffsetProbe","SketchExtendProbe","SketchPatternProbe","LibraryThumbnailProbe","ExtrusionPlanProbe","ThreadProbe","BodyGraphProbe","RelationProbe","ConstructionAndSnapProbe","BooleanModeProbe","SplineProbe","SketchFilletProbe","DirectionProbe","SymmetricProbe","SketchWorkflowProbe","SketchTransactionProbe","TimelineProbe","ToolbarProbe"}) {
+            for(String name:new String[]{"VisibilityProbe","KernelDiagnosticsProbe","SketchOffsetProbe","SketchExtendProbe","ExtrudeToFaceProbe","SketchPatternProbe","LibraryThumbnailProbe","ExtrusionPlanProbe","ThreadProbe","BodyGraphProbe","RelationProbe","ConstructionAndSnapProbe","BooleanModeProbe","SplineProbe","SketchFilletProbe","DirectionProbe","SymmetricProbe","SketchWorkflowProbe","SketchTransactionProbe","TimelineProbe","ToolbarProbe"}) {
+                if(onlyProbe!=null&&!onlyProbe.equals(name))continue;executed++;
                 File scratch=new File(getTargetContext().getCacheDir(),"workflow-"+java.util.UUID.randomUUID()+".step");
                 try {Class.forName(name).getMethod("main",String[].class).invoke(null,(Object)new String[]{scratch.getAbsolutePath()});}
                 finally {scratch.delete();}
             }
-            for(String name:new String[]{"WorkspaceUiProbe","InteractionFixProbe","ViewCameraProbe","SketchOffsetUiProbe","LibraryAuditProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe","TabletFlowProbe","CadScenarioProbe"}) {
+            for(String name:new String[]{"WorkspaceUiProbe","InteractionFixProbe","ViewCameraProbe","SketchOffsetUiProbe","LibraryAuditProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe","TabletFlowProbe","CadScenarioProbe","ThreadRenderProbe"}) {
+                if(onlyProbe!=null&&!onlyProbe.equals(name))continue;executed++;
                 Runnable execute=()-> {
                     try {
                         Class<?> probe=Class.forName(name);
@@ -30,6 +34,7 @@ public final class WorkspaceInstrumentation extends Instrumentation {
                 if(name.equals("WorkspaceUiProbe")||name.equals("InteractionFixProbe")||name.equals("ViewCameraProbe")||name.equals("SketchOffsetUiProbe")||name.equals("LibraryAuditProbe"))runOnMainSync(execute);else execute.run();
                 if(failure[0]!=null)break;
             }
+            if(executed==0)throw new IllegalArgumentException("Unknown probe: "+onlyProbe);
         }catch(Throwable error){failure[0]=error;}
         finally{System.setOut(previous);}
         if(failure[0]!=null)failure[0].printStackTrace(capture);

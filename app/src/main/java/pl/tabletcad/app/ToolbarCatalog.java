@@ -19,7 +19,7 @@ public final class ToolbarCatalog {
             new Group("Przytnij","Przytnij","Przytnij","Przedłuż"),
             new Group("Więzy","Więzy","Więzy","Wymiar"),
             new Group("Usuń","Usuń","Usuń","Wyczyść szkic"),
-            new Group("Widok","Ukryj bryłę","Ukryj bryłę","Wymiary","Dopasuj"),
+            new Group("Widok","Obróć widok","Obróć widok","Widok na szkic","Ukryj bryłę","Wymiary","Dopasuj"),
             new Group("Anuluj szkic","Anuluj szkic","Anuluj szkic"),
             new Group("Zakończ","Zakończ","Zakończ")
         }:new Group[]{

@@ -141,7 +141,11 @@ public final class CadWorkspaceView extends View {
     private double selectedPointY;
     private double selectedPointZ;
     private final List<ProjectedTriangle> projectedTriangles = new ArrayList<>();
-    private final List<HiddenLineVisibility.Triangle> depthSurfaces = new ArrayList<>();
+    private final List<HiddenLineVisibility.Triangle> depthSurfaces = new HiddenLineVisibility.Index();
+    private DisplayMeshTopology displayTopology;
+    private final List<ProjectedTriangle> projectionPool=new ArrayList<>();
+    private float[] surfaceVertices=new float[0];
+    private int[] surfaceColors=new int[0];
     private MeasurePoint measureA;
     private MeasurePoint measureB;
     private double[] measureEdges=new double[0],measureProperties=new double[0],measuredCurve;
@@ -190,6 +194,10 @@ public final class CadWorkspaceView extends View {
     private boolean showExtrusionSketch;
     private final java.util.Set<String> extrusionSelections=new java.util.LinkedHashSet<>();
     private Runnable extrusionSelectionChanged;
+    /** Waiting for a target face tap ("Do powierzchni"); receives the signed plane distance. */
+    private java.util.function.DoubleConsumer extrusionFacePick;
+    /** One-finger drag orbits the view instead of drawing while a sketch is active. */
+    private boolean sketchOrbit;
     private static final class DimensionHit {
         final String entityId,kind;final int segment;final RectF bounds;
         DimensionHit(String id,String kind,int segment,RectF bounds){this.entityId=id;this.kind=kind;this.segment=segment;this.bounds=bounds;}
@@ -230,10 +238,47 @@ public final class CadWorkspaceView extends View {
 
     private boolean inSketch() { return mode.equals("Szkic") || mode.equals("Edytuj szkic"); }
 
+    /** One finger on empty space orbits in every mode except while drawing sketch geometry. */
+    private boolean orbitAllowed() {
+        if(mode.equals("Szkic"))return !sketchPlaneChosen||sketchOrbit;
+        return !mode.equals("Rysunek");
+    }
+
+    /** Target face tap for "Do powierzchni": picks the committed model, never the preview. */
+    private void pickExtrusionFace(float x,float y) {
+        double[] preview=featurePreview;featurePreview=null;projectNativeMesh(workCenterX,workCenterY);
+        try {
+            int face=findFaceAt(x,y);
+            if(face<0){operationMessage="Dotknij ściany bryły, do której ma sięgać wyciągnięcie";return;}
+            List<Double> points=new ArrayList<>();
+            for(ProjectedTriangle t:projectedTriangles)if(t.faceId==face)for(int i=0;i<3;i++){points.add(t.wx[i]+meshCenterX);points.add(t.wy[i]+meshCenterY);points.add(t.wz[i]+meshCenterZ);}
+            double[] vertices=new double[points.size()];for(int i=0;i<vertices.length;i++)vertices[i]=points.get(i);
+            double distance=ExtrudeToFace.distance(new double[]{project.sketchOriginX,project.sketchOriginY,project.sketchOriginZ},
+                new double[]{project.sketchUx,project.sketchUy,project.sketchUz},new double[]{project.sketchVx,project.sketchVy,project.sketchVz},vertices);
+            java.util.function.DoubleConsumer target=extrusionFacePick;extrusionFacePick=null;selectedFace=face;target.accept(distance);
+        }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+        finally {featurePreview=preview;invalidate();}
+    }
+
     private float topToolWidth() {return dp(64);}
 
+    /** Clear visual picks without changing the document or leaving an active tool. */
+    private void clearViewportSelection() {
+        selectedFace=-1;selectedSketchId=null;highlightBody=0;highlightFeature=Integer.MIN_VALUE;
+        highlightSketch=false;selectedTreeKey="";selectedTimelineIndex=-1;
+        measureA=measureB=null;measuredCurve=null;measuredEdgeText="";
+        coincidenceFirst=null;cornerFirst=null;
+        threadSelections.clear();extrusionSelections.clear();filletSelections.clear();
+        if(mode.equals("Gwint"))showThreadPanel();
+        else if(extrusionSelectionChanged!=null)extrusionSelectionChanged.run();
+        else if(filletSelectionChanged!=null)filletSelectionChanged.run();
+        else if(mode.equals("Zmierz"))updateMeasurementOutput();
+        else closePropertyEditor();
+        operationMessage="Odznaczono wszystkie elementy";invalidate();
+    }
+
     private void closePropertyEditor() {
-        showExtrusionSketch=false;extrusionSelectionChanged=null;
+        showExtrusionSketch=false;extrusionSelectionChanged=null;extrusionFacePick=null;
         invalidateGeometryPreview();
         removeCallbacks(extrusionPreviewTask);extrusionPreviewScheduled=false;
         extrusionDimension=null;extrusionReverse=extrusionSymmetric=null;
@@ -303,6 +348,11 @@ public final class CadWorkspaceView extends View {
     }
 
     public CadWorkspaceView(Context context, FileRequestListener fileRequestListener) {
+        this(context,fileRequestListener,false);
+    }
+
+    /** The launch chooser needs metadata, not an eager rebuild of the last heavy model. */
+    public CadWorkspaceView(Context context, FileRequestListener fileRequestListener,boolean deferInitialGeometry) {
         super(context);
         this.fileRequestListener = fileRequestListener;
         density = getResources().getDisplayMetrics().density;
@@ -335,8 +385,7 @@ public final class CadWorkspaceView extends View {
         sketchPlane = project.sketchPlane;
         try{projectRepository.save(project);}catch(RuntimeException error){operationMessage=projectRepository.readOnly()?projectRepository.loadNotice():"Nie można zapisać bieżącego stanu; poprzednie pliki zachowano.";}
         kernelStatus = NativeCadEngine.status();
-        updateNativeModel();
-        if(!projectRepository.readOnly())resumeSketchWork();
+        if(!deferInitialGeometry){updateNativeModel();if(!projectRepository.readOnly())resumeSketchWork();}
         // STEP is deliberately not exercised during Activity construction. A native
         // importer failure must never prevent the workspace from opening.
         stepStatus = "STEP: moduł zainstalowany";
@@ -438,7 +487,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     else if (py >= dp(432) && py <= dp(484)) chooseSketchPlane("XZ");
                     else if (py >= dp(490) && py <= dp(542)) chooseSketchPlane("YZ");
                 } else if (isInsideViewport(e.getX(), e.getY())) {
-                    if(mode.equals("Profile wyciągnięcia")){toggleExtrusionProfile(e.getX(),e.getY());return true;}
+                    if(mode.equals("Profile wyciągnięcia")){if(extrusionFacePick!=null)pickExtrusionFace(e.getX(),e.getY());else toggleExtrusionProfile(e.getX(),e.getY());return true;}
+                    if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchOrbit)return true;
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Łuk")){arcTap(e.getX(),e.getY());return true;}
                     if(filletSelectionChanged!=null) {
                         selectFilletEdge(e.getX(),e.getY());return true;
@@ -458,8 +508,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                             selectedSketchId = entity.id;
                             showSketchEntityEditor(entity);
                         } else {
-                            operationMessage = "Dotknij elementu szkicu do edycji";
-                            invalidate();
+                            clearViewportSelection();
                         }
                         return true;
                     }
@@ -480,7 +529,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                             operationMessage="Zaznaczono ścianę — Szkic utworzy na niej szkic. Przytrzymaj ścianę, aby edytować operację, która ją utworzyła.";
                         }
                         invalidate();
-                    }
+                    } else clearViewportSelection();
                 }
                 return true;
             }
@@ -506,8 +555,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     panX -= dx;
                     panY -= dy;
                     invalidate();
-                } else if (!scaleGestures.isInProgress()
-                        && (mode.equals("Wybierz") || mode.equals("Zmierz"))) {
+                } else if (!scaleGestures.isInProgress() && orbitAllowed()) {
                     cameraYaw -= dx * 0.22f;
                     cameraPitch = Math.max(-89f, Math.min(89f, cameraPitch - dy * 0.22f));
                     invalidate();
@@ -544,6 +592,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             if(inSketch() && isInsideViewport(event.getX(),event.getY())) closePropertyEditor();
             touchDownX = event.getX();
             touchDownY = event.getY();
+        }
+        if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchOrbit) {
+            scaleGestures.onTouchEvent(event);gestures.onTouchEvent(event);return true;
         }
         if(mode.equals("Szkic")&&(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn"))&&sketchPlaneChosen) {
             if(event.getActionMasked()==MotionEvent.ACTION_DOWN&&isInsideViewport(event.getX(),event.getY())&&event.getY()>=dp(152)) {
@@ -1124,13 +1175,20 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     private void drawNativeSolid(Canvas canvas, float cx, float cy) {
         projectNativeMesh(cx, cy);
         projectedTriangles.sort((a, b) -> Float.compare(a.depth, b.depth));
+        int vertexValues=projectedTriangles.size()*6;
+        if(surfaceVertices.length<vertexValues){surfaceVertices=new float[vertexValues];surfaceColors=new int[vertexValues/2];}
+        int position=0,colorIndex=0;
         for (ProjectedTriangle triangle : projectedTriangles) {
-            Path facePath = triangle.path();
-            paint.setStyle(Paint.Style.FILL);
-            if (triangle.faceId == selectedFace || (mode.equals("Gwint")&&threadSelections.contains(triangle.faceId)) || (featurePreview==null&&((highlightBody>0&&faceBodies.getOrDefault(triangle.faceId,0)==highlightBody)||(highlightFeature!=Integer.MIN_VALUE&&faceFeatures.getOrDefault(triangle.faceId,Integer.MIN_VALUE)==highlightFeature)))) paint.setColor(Color.rgb(255, 190, 70));
-            else paint.setColor(meshFaceColor(triangle));
-            canvas.drawPath(facePath, paint);
+            int color;
+            if (triangle.faceId == selectedFace || (mode.equals("Gwint")&&threadSelections.contains(triangle.faceId)) || (featurePreview==null&&((highlightBody>0&&faceBodies.getOrDefault(triangle.faceId,0)==highlightBody)||(highlightFeature!=Integer.MIN_VALUE&&faceFeatures.getOrDefault(triangle.faceId,Integer.MIN_VALUE)==highlightFeature)))) color=Color.rgb(255,190,70);
+            else color=meshFaceColor(triangle);
+            for(int i=0;i<3;i++){surfaceVertices[position++]=triangle.sx[i];surfaceVertices[position++]=triangle.sy[i];surfaceColors[colorIndex++]=color;}
         }
+        // Submit ordered surfaces together; only true display boundaries are stroked below.
+        // Disabling AA on adjacent filled patches prevents internal seam lines.
+        boolean antiAlias=paint.isAntiAlias();paint.setAntiAlias(false);paint.setStyle(Paint.Style.FILL);paint.setColor(Color.WHITE);
+        if(vertexValues>0)canvas.drawVertices(Canvas.VertexMode.TRIANGLES,vertexValues,surfaceVertices,0,null,0,surfaceColors,0,null,0,0,paint);
+        paint.setAntiAlias(antiAlias);
         for (ProjectedTriangle triangle : projectedTriangles) {
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(dp(triangle.faceId == selectedFace ? 2.6f : 1.35f));
@@ -1665,8 +1723,22 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         double dx = sx - origin.x, dy = sy - origin.y;
         double determinant = ax * by - ay * bx;
         if (Math.abs(determinant) < 1.0e-9) return new double[] {0.0, 0.0};
-        return new double[] {(dx * by - dy * bx) / determinant,
-            (ax * dy - ay * dx) / determinant};
+        double u=(dx * by - dy * bx) / determinant, v=(ax * dy - ay * dx) / determinant;
+        // The affine guess is exact only for a view square to the sketch; in a rotated
+        // perspective view refine with Newton steps on the real projection.
+        for(int iteration=0;iteration<6;iteration++) {
+            PointF at=projectSketchPoint(u,v);double ex=sx-at.x,ey=sy-at.y;
+            if(!Float.isFinite(at.x)||!Float.isFinite(at.y))break;
+            if(ex*ex+ey*ey<1e-6)break;
+            double h=Math.max(1e-3,1e-4*Math.max(1,Math.hypot(u,v)));
+            PointF pu=projectSketchPoint(u+h,v),pv=projectSketchPoint(u,v+h);
+            double jax=(pu.x-at.x)/h,jay=(pu.y-at.y)/h,jbx=(pv.x-at.x)/h,jby=(pv.y-at.y)/h,det=jax*jby-jay*jbx;
+            if(Math.abs(det)<1e-12)break;
+            double du=(ex*jby-ey*jbx)/det,dv=(jax*ey-jay*ex)/det;
+            if(!Double.isFinite(du)||!Double.isFinite(dv))break;
+            u+=du;v+=dv;
+        }
+        return new double[] {u, v};
     }
 
     private double[] polylinePoint(float x,float y) {
@@ -2352,6 +2424,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         projectedTriangles.clear();
         depthSurfaces.clear();
         double[] displayedMesh=featurePreview==null?nativeMesh:featurePreview;
+        if(displayTopology==null||displayTopology.mesh!=displayedMesh){displayTopology=new DisplayMeshTopology(displayedMesh);projectionPool.clear();}
+        java.util.Arrays.fill(displayTopology.visible,false);
         double yaw = Math.toRadians(cameraYaw);
         double pitch = Math.toRadians(cameraPitch);
         double cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
@@ -2359,7 +2433,10 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         float scale = dp(3.2f) * zoom;
         final double distance = viewDistance();
         for (int offset = 0; offset + 12 < displayedMesh.length; offset += 13) {
-            ProjectedTriangle triangle = new ProjectedTriangle();
+            int meshIndex=offset/13;
+            if(projectionPool.size()<=meshIndex)projectionPool.add(new ProjectedTriangle());
+            ProjectedTriangle triangle=projectionPool.get(meshIndex);triangle.depth=0;
+            triangle.meshIndex=offset/13;
             triangle.faceId = (int)Math.round(displayedMesh[offset + 12]) - 1;
             if(featurePreview==null&&project.hiddenBodies.contains(faceBodies.getOrDefault(triangle.faceId,1)))continue;
             triangle.nx = displayedMesh[offset + 9];
@@ -2392,9 +2469,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             }
             if (!(facing > 1.0e-9 * distance)) continue;
             projectedTriangles.add(triangle);
-            triangle.surface=new HiddenLineVisibility.Triangle(
-                new double[]{triangle.sx[0],triangle.sx[1],triangle.sx[2]},
-                new double[]{triangle.sy[0],triangle.sy[1],triangle.sy[2]},triangle.q);
+            displayTopology.visible[triangle.meshIndex]=true;
+            if(triangle.surface==null)triangle.surface=new HiddenLineVisibility.Triangle(new double[3],new double[3],new double[3]);
+            triangle.surface.update(triangle.sx,triangle.sy,triangle.q);
             depthSurfaces.add(triangle.surface);
         }
         projectMeasurePoint(measureA, cx, cy, scale, cyaw, syaw, cpitch, spitch);
@@ -2454,20 +2531,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private boolean isVisibleCadEdge(ProjectedTriangle source, int edge) {
-        int next = (edge + 1) % 3;
-        for (ProjectedTriangle candidate : projectedTriangles) {
-            if (candidate == source || candidate.faceId != source.faceId) continue;
-            for (int otherEdge = 0; otherEdge < 3; otherEdge++) {
-                int otherNext = (otherEdge + 1) % 3;
-                if ((samePoint(source, edge, candidate, otherEdge)
-                        && samePoint(source, next, candidate, otherNext))
-                        || (samePoint(source, edge, candidate, otherNext)
-                        && samePoint(source, next, candidate, otherEdge))) {
-                    return false;
-                }
-            }
-        }
-        return true;
+        int neighbour=displayTopology.neighbours[source.meshIndex*3+edge];
+        return neighbour<0||!displayTopology.visible[neighbour];
     }
 
     private boolean samePoint(ProjectedTriangle a, int ai, ProjectedTriangle b, int bi) {
@@ -2974,7 +3039,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             double d=HiddenLineVisibility.distanceToVisibleSegment(x,y,a,b,depthSurfaces);
             if(d<distance){distance=d;selected=i;}
         }
-        if(selected<0){operationMessage="Dotknij bliżej widocznej krawędzi";invalidate();return;}
+        if(selected<0){if(findFaceAt(x,y)<0)clearViewportSelection();else {operationMessage="Dotknij bliżej widocznej krawędzi";invalidate();}return;}
         int id=(int)filletEdges[selected+15];
         if(!filletSelections.containsKey(id)&&filletSelections.size()>=256){operationMessage="Limit jednej operacji: 256 krawędzi";invalidate();return;}
         if(filletSelections.containsKey(id))filletSelections.remove(id);else filletSelections.put(id,selected);
@@ -3059,6 +3124,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
     private void handleMeasureTap(float x, float y) {
         if(measurementOutput==null)showMeasurementPanel();
+        if(findFaceAt(x,y)<0&&nearestBrepVertex(x,y)==null&&nearestMeasurePoint(x,y)==null){clearViewportSelection();return;}
         if(!measurePointMode&&project.importedMeshSource==null) {
             double distance=dp(18);int selected=-1;
             for(int i=0;i+15<measureEdges.length;i+=16) {
@@ -3582,13 +3648,15 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         for(int i=0,j=n-1;i<n;j=i++){double ax=points[2*i],ay=points[2*i+1],bx=points[2*j],by=points[2*j+1];if((ay>y)!=(by>y)&&x<(bx-ax)*(y-ay)/(by-ay)+ax)inside=!inside;}return inside;
     }
     private void toggleExtrusionProfile(float x,float y) {
-        double[] point=screenToSketch(x,y);SketchPrimitive chosen=null;double area=Double.POSITIVE_INFINITY;
-        for(SketchPrimitive p:project.sketch)if(p.closedProfile()) {
+        double[] point=screenToSketch(x,y);SketchPrimitive chosen=null;double area=Double.POSITIVE_INFINITY;boolean overConstruction=false;
+        for(SketchPrimitive p:project.sketch)if(p.closedGeometry()) {
             boolean inside=p.type.equals("Okrąg")?Math.hypot(point[0]-p.x1,point[1]-p.y1)<Math.hypot(p.x2-p.x1,p.y2-p.y1):p.vertices!=null?polygonContains(p.vertices,point[0],point[1]):p.curves!=null?polygonContains(SketchCurves.samples(p.curves,96),point[0],point[1]):point[0]>=Math.min(p.x1,p.x2)&&point[0]<=Math.max(p.x1,p.x2)&&point[1]>=Math.min(p.y1,p.y2)&&point[1]<=Math.max(p.y1,p.y2);
             double size=p.type.equals("Okrąg")?Math.PI*Math.pow(Math.hypot(p.x2-p.x1,p.y2-p.y1),2):Math.abs((p.x2-p.x1)*(p.y2-p.y1));
-            if(inside&&size<area){chosen=p;area=size;}
+            if(inside&&p.construction)overConstruction=true;
+            if(inside&&!p.construction&&size<area){chosen=p;area=size;}
         }
         if(chosen!=null){if(!extrusionSelections.add(chosen.id))extrusionSelections.remove(chosen.id);if(extrusionSelectionChanged!=null)extrusionSelectionChanged.run();}
+        else if(!overConstruction&&findFaceAt(x,y)<0)clearViewportSelection();
         else operationMessage="Dotknij wnętrza zamkniętego obszaru szkicu";
         invalidate();
     }
@@ -3627,17 +3695,36 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         EditText first=labeledCoordinate(form,"Pierwszy kierunek [mm]",10),second=coordinateInput("Drugi kierunek [mm]",5);
         android.widget.CheckBox reverse=directionCheck(1),symmetric=symmetricCheck(false,reverse),both=new android.widget.CheckBox(getContext());both.setText("Dwa kierunki · niezależne długości");form.addView(reverse);form.addView(symmetric);form.addView(both);android.widget.TextView secondLabel=new android.widget.TextView(getContext());secondLabel.setText("Drugi kierunek [mm]");form.addView(secondLabel);form.addView(second);second.setEnabled(false);
         android.widget.TextView status=new android.widget.TextView(getContext());status.setText("Dotknij wnętrza jednego lub kilku profili. Pomarańczowy oznacza wybrany obszar.");form.addView(status);
+        android.widget.Button toFace=new android.widget.Button(getContext());toFace.setText("Do powierzchni…");toFace.setAllCaps(false);form.addView(toFace);
         new PropertyBuilder().setTitle("Wyciąganie · wybór na szkicu").setView(form).setNegativeButton("Anuluj",(d,w)->{mode="Wybierz";extrusionSelections.clear();}).setPositiveButton("Zastosuj",(d,w)->{
             try {String baseline=project.toJson().toString();CadProject next=extrusionCandidate(new ArrayList<>(extrusionSelections),new String[]{"new","add","cut","common"}[operation.getSelectedItemPosition()],parseCoordinate(first),both.isChecked()?parseCoordinate(second):0,reverse.isChecked(),symmetric.isChecked(),bodies.get(target.getSelectedItemPosition()));commitProjectAsync(next,baseline,"Wyciągnięto profile: "+extrusionSelections.size());}
             catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
         }).show();
         android.widget.ScrollView owner=propertyEditor;
         Runnable preview=()->{
-            if(propertyEditor!=owner)return;selected.setText("Wybrane profile: "+extrusionSelections.size());target.setEnabled(operation.getSelectedItemPosition()!=0);if(extrusionSelections.isEmpty()){featurePreview=null;invalidate();return;}
+            if(propertyEditor!=owner)return;selected.setText("Wybrane profile: "+extrusionSelections.size());target.setEnabled(operation.getSelectedItemPosition()!=0);if(extrusionSelections.isEmpty()){invalidateGeometryPreview();featurePreview=null;extrusionDimension=null;extrusionHandle=null;invalidate();return;}
+            for(SketchPrimitive shape:project.sketch)if(extrusionSelections.contains(shape.id)){
+                double[] center=profileCenter(shape),origin=sketchToWorld(center[0],center[1]);double sign=operation.getSelectedItemPosition()==2?-1:1;
+                // Principal XZ base extrusions follow native +Y, whereas placed features follow U×V.
+                if(!project.hasSolid()&&project.sketchPlane.equals("XZ"))sign=-sign;
+                double[] axis={sign*(project.sketchUy*project.sketchVz-project.sketchUz*project.sketchVy),sign*(project.sketchUz*project.sketchVx-project.sketchUx*project.sketchVz),sign*(project.sketchUx*project.sketchVy-project.sketchUy*project.sketchVx)};
+                if(extrusionDimension!=first)bindExtrusionManipulator(first,reverse,symmetric,origin,axis,extrusionSelectionChanged);
+                else {extrusionOrigin=origin;extrusionAxis=axis;}
+                break;
+            }
             try {CadProject next=extrusionCandidate(new ArrayList<>(extrusionSelections),new String[]{"new","add","cut","common"}[operation.getSelectedItemPosition()],parseCoordinate(first),both.isChecked()?parseCoordinate(second):0,reverse.isChecked(),symmetric.isChecked(),bodies.get(target.getSelectedItemPosition()));status.setText("Obliczanie podglądu…");submitGeometryPreview(owner,candidateQuery(next),mesh->status.setText(mesh.length>0?"Podgląd gotowy. Zastosuj tworzy jedną transakcję Cofnij.":previewFailure("Brak poprawnego wyniku; sprawdź zakres i cel operacji.")));}
             catch(IllegalArgumentException error){status.setText(error.getMessage());}invalidate();
         };
         extrusionSelectionChanged=preview;showExtrusionSketch=true;selected.setText("Wybrane profile: "+extrusionSelections.size());
+        toFace.setOnClickListener(v->{
+            if(!project.hasSolid()){status.setText("Brak bryły — wyciągnięcie do powierzchni wymaga istniejącej ściany");return;}
+            extrusionFacePick=distance->{
+                symmetric.setChecked(false);both.setChecked(false);
+                first.setText(ExtrudeToFace.format(distance));reverse.setChecked(ExtrudeToFace.reverse(distance,operation.getSelectedItemPosition()==2));
+                status.setText("Głębokość do wskazanej ściany: "+ExtrudeToFace.format(distance)+" mm");operationMessage="Długość pobrana ze ściany: "+ExtrudeToFace.format(distance)+" mm";preview.run();
+            };
+            status.setText("Dotknij ściany bryły, do której ma sięgać wyciągnięcie. Jednym palcem obrócisz widok.");operationMessage="Wskaż ścianę docelową";invalidate();
+        });
         android.text.TextWatcher watcher=new android.text.TextWatcher(){public void beforeTextChanged(CharSequence t,int a,int c,int d){}public void onTextChanged(CharSequence t,int a,int b,int c){removeCallbacks(preview);postDelayed(preview,300);}public void afterTextChanged(android.text.Editable text){}};first.addTextChangedListener(watcher);second.addTextChangedListener(watcher);
         symmetric.setOnCheckedChangeListener((button,checked)->{if(checked)both.setChecked(false);reverse.setEnabled(!checked);preview.run();});both.setOnCheckedChangeListener((button,checked)->{if(checked)symmetric.setChecked(false);second.setEnabled(checked);preview.run();});reverse.setOnCheckedChangeListener((button,checked)->preview.run());
         android.widget.AdapterView.OnItemSelectedListener changed=new android.widget.AdapterView.OnItemSelectedListener(){public void onItemSelected(android.widget.AdapterView<?> p,View v,int position,long id){preview.run();}public void onNothingSelected(android.widget.AdapterView<?> p){}};operation.setOnItemSelectedListener(changed);target.setOnItemSelectedListener(changed);
@@ -3649,7 +3736,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(range==null)range=new double[]{feature[1],feature[2],0};final double[] oldRange=range.clone();
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);EditText first=labeledCoordinate(form,"Pierwszy kierunek [mm]",Math.abs(range[0])),second=labeledCoordinate(form,"Drugi kierunek [mm]",range[1]);
         android.widget.CheckBox reverse=directionCheck(range[0]),symmetric=symmetricCheck(range[2]!=0,reverse);form.addView(reverse);form.addView(symmetric);
-        new PropertyBuilder().setTitle("Zakres wyciągania · historia").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
+        android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
+        java.util.function.Supplier<CadProject> candidate=()->{
             try {
                 double a=parseCoordinate(first),b=symmetric.isChecked()?0:parseCoordinate(second);String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));double[] updated;
                 if(index<0) {
@@ -3657,9 +3745,36 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     else {CadProject plane=CadProject.blank();plane.sketchPlane=FeatureDirection.basePlane(feature[5])==1?"XZ":FeatureDirection.basePlane(feature[5])==2?"YZ":"XY";plane.setPrincipalSketchFrame(plane.sketchPlane);updated=ExtrusionPlan.base(plane,SketchPrimitive.fromFeature(next.featureBaseProfileId,feature[0]==1?"Okrąg":"Prostokąt",feature,1,7),a,b,reverse.isChecked(),symmetric.isChecked());}
                     next.featureBase=updated;next.depth=a+b;
                 } else {updated=ExtrusionPlan.resizeFeature(feature,oldRange[1],a,b,reverse.isChecked(),symmetric.isChecked());next.committedFeatures.set(index,updated);}
-                next.extrusionExtents.put(index,new double[]{FeatureDirection.signed(a,reverse.isChecked(),symmetric.isChecked()),b,symmetric.isChecked()?1:0});commitProjectAsync(next,baseline,"Zaktualizowano zakres wyciągania");
-            }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+                next.extrusionExtents.put(index,new double[]{FeatureDirection.signed(a,reverse.isChecked(),symmetric.isChecked()),b,symmetric.isChecked()?1:0});return next;
+            }catch(org.json.JSONException error){throw new IllegalArgumentException(error);}
+        };
+        new PropertyBuilder().setTitle("Zakres wyciągania · historia").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
+            try{String baseline=project.toJson().toString();commitProjectAsync(candidate.get(),baseline,"Zaktualizowano zakres wyciągania");}
+            catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
         }).show();
+        android.widget.ScrollView owner=propertyEditor;
+        Runnable preview=()->{if(propertyEditor!=owner)return;try{status.setText("Obliczanie podglądu…");submitGeometryPreview(owner,candidateQuery(candidate.get()),mesh->status.setText(mesh.length>0?"Przeciągnij strzałkę lub wpisz długość. Zastosuj zapisuje zmianę.":previewFailure("Niepoprawny zakres wyciągania")));}catch(IllegalArgumentException error){status.setText(error.getMessage());}invalidate();};
+        android.text.TextWatcher watcher=new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,300);}public void afterTextChanged(android.text.Editable e){}};
+        first.addTextChangedListener(watcher);second.addTextChangedListener(watcher);reverse.setOnCheckedChangeListener((button,checked)->preview.run());symmetric.setOnCheckedChangeListener((button,checked)->{reverse.setEnabled(!checked);preview.run();});
+        double[] origin,axis;
+        if(index<0&&!ExtrusionPlan.placedBase(feature)) {
+            double[] c=profileCenter(SketchPrimitive.fromFeature("manipulator",feature[0]==1?"Okrąg":"Prostokąt",feature,1,7));int plane=FeatureDirection.basePlane(feature[5]);
+            origin=plane==1?new double[]{c[0],0,c[1]}:plane==2?new double[]{0,c[0],c[1]}:new double[]{c[0],c[1],0};axis=plane==1?new double[]{0,1,0}:plane==2?new double[]{1,0,0}:new double[]{0,0,1};
+        } else {
+            double[] f=index<0?java.util.Arrays.copyOfRange(feature,7,feature.length):feature;
+            double[] c=profileCenter(SketchPrimitive.fromFeature("manipulator",f[0]==1?"Okrąg":"Prostokąt",f,2,16));double cut=FeatureDirection.isCut(f[1])?-1:1;
+            double[] n={f[11]*f[15]-f[12]*f[14],f[12]*f[13]-f[10]*f[15],f[10]*f[14]-f[11]*f[13]};
+            origin=new double[3];axis=new double[3];double flip=index<0?Math.signum(f[6])*Math.signum(oldRange[0]):1;
+            for(int i=0;i<3;i++){origin[i]=f[7+i]+c[0]*f[10+i]+c[1]*f[13+i]+n[i]*cut*Math.signum(f[6])*oldRange[1];axis[i]=n[i]*cut*flip;}
+        }
+        bindExtrusionManipulator(first,reverse,symmetric,origin,axis,preview);post(preview);
+    }
+
+    private static double[] profileCenter(SketchPrimitive shape) {
+        if(shape.type.equals("Okrąg"))return new double[]{shape.x1,shape.y1};
+        if(shape.curves!=null){double[] b=SketchCurves.bounds(shape.curves);return new double[]{(b[0]+b[2])*.5,(b[1]+b[3])*.5};}
+        if(shape.vertices!=null){double minX=Double.POSITIVE_INFINITY,minY=minX,maxX=-minX,maxY=-minX;for(int i=0;i<shape.vertices.length;i+=2){minX=Math.min(minX,shape.vertices[i]);maxX=Math.max(maxX,shape.vertices[i]);minY=Math.min(minY,shape.vertices[i+1]);maxY=Math.max(maxY,shape.vertices[i+1]);}return new double[]{(minX+maxX)*.5,(minY+maxY)*.5};}
+        return new double[]{(shape.x1+shape.x2)*.5,(shape.y1+shape.y2)*.5};
     }
 
     private boolean holeFromMaximum(HoleThread.Cylinder hole) {
@@ -3673,6 +3788,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         for(HoleThread.Cylinder hole:holeCylinders)if(hole.face==selectedFace)threadSelections.add(hole.face);showThreadPanel();
     }
     private void threadTap(int face) {
+        if(face<0){clearViewportSelection();return;}
         for(HoleThread.Cylinder hole:holeCylinders)if(hole.face==face){if(!threadSelections.add(face))threadSelections.remove(face);showThreadPanel();invalidate();return;}
         operationMessage="Dotknij wewnętrznej, walcowej ściany otworu. Obróć model, jeśli nie jest widoczna.";invalidate();
     }
@@ -4357,6 +4473,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private static final class ProjectedTriangle {
+        int meshIndex;
         final double[] q = new double[3];
         HiddenLineVisibility.Triangle surface;
         final double[] wx = new double[3];
@@ -4367,9 +4484,10 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         double nx, ny, nz;
         float depth;
         int faceId;
+        final Path facePath=new Path();
 
         Path path() {
-            Path path = new Path();
+            Path path=facePath;path.rewind();
             path.moveTo(sx[0], sy[0]);
             path.lineTo(sx[1], sy[1]);
             path.lineTo(sx[2], sy[2]);
@@ -4466,6 +4584,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }
         if (tool.equals("Edytuj")) return mode.equals("Edytuj szkic")&&!trimMode&&!dimensionMode&&!coincidenceMode;
         if (tool.equals("Zmierz")) return mode.equals("Zmierz");
+        if (tool.equals("Obróć widok")) return inSketch()&&sketchOrbit;
         if (tool.equals("Rysunek")) return mode.equals("Rysunek");
         return tool.equals("Wybierz") && mode.equals("Wybierz")
             || tool.equals("Szkic") && mode.equals("Szkic") && !sketchPlaneChosen;
@@ -4580,6 +4699,11 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             invalidate();return;
         }
         if(tool.equals("Ukryj bryłę")) {showSolid=!showSolid;invalidate();return;}
+        if(tool.equals("Obróć widok")) {
+            sketchOrbit=!sketchOrbit;
+            operationMessage=sketchOrbit?"Obracanie widoku: przeciągnij jednym palcem. Rysowanie wstrzymane — wyłącz Obróć widok lub wybierz Widok na szkic.":"Rysowanie wznowione";invalidate();return;
+        }
+        if(tool.equals("Widok na szkic")) {sketchOrbit=false;alignToCurrentSketchPlane();fitView();operationMessage="Widok prostopadły do szkicu";invalidate();return;}
         if(tool.equals("Usuń")) {
             if(selectedSketchId!=null) deleteSketchEntity(selectedSketchId);
             else operationMessage="Zaznacz element narzędziem Edytuj, potem wybierz Usuń";
@@ -4606,6 +4730,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if (!tool.equals("Wyciągnij")) selectedSketchId = null;
         if (tool.equals("Wybierz")) mode = "Wybierz";
         else if (tool.equals("Szkic")) {
+            sketchOrbit = false;
             mode = "Szkic";
             sketchPlaneChosen = false;
             sketchPlane = "Wybierz płaszczyznę";
@@ -4620,6 +4745,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 }
             }
         } else if (SketchShapes.drawingTool(tool)) {
+            sketchOrbit = false;
             mode = "Szkic";
             sketchTool = tool;
             project.splineDraft=tool.equals("Splajn");

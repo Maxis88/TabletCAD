@@ -31,5 +31,20 @@ public final class VisibilityProbe {
         require(close(HiddenLineVisibility.distanceToVisibleSegment(-3,6,a,b,face),1),"visible sketch fragment selectable");
         require(close(HiddenLineVisibility.distanceToVisibleSegment(5,5,a,b,Collections.emptyList()),0),"hide solid restores complete sketch selection");
         require(close(HiddenLineVisibility.distanceToVisibleSegment(5,5,new double[]{1,5,.004},new double[]{9,5,.004},face),0),"coplanar front sketch selectable");
+        Random random=new Random(9031);List<HiddenLineVisibility.Triangle> naive=new ArrayList<>();HiddenLineVisibility.Index index=new HiddenLineVisibility.Index();
+        for(int cycle=0;cycle<3;cycle++) {
+            naive.clear();index.clear();
+            for(int i=0;i<350;i++){double x=random.nextDouble()*1000-500,y=random.nextDouble()*1000-500;
+                HiddenLineVisibility.Triangle t=new HiddenLineVisibility.Triangle(new double[]{x,x+random.nextDouble()*150,x-20},new double[]{y,y-10,y+random.nextDouble()*150},new double[]{.002,.003,.004});naive.add(t);index.add(t);}
+            for(int i=0;i<500;i++) {
+                double ax=random.nextDouble()*1200-600,ay=random.nextDouble()*1200-600,bx=ax+random.nextDouble()*300-150,by=ay+random.nextDouble()*300-150;
+                List<double[]> expected=HiddenLineVisibility.segments(ax,ay,.001,bx,by,.005,naive),actual=HiddenLineVisibility.segments(ax,ay,.001,bx,by,.005,index);
+                if(expected.size()!=actual.size())throw new AssertionError("indexed clipping interval count");
+                for(int k=0;k<expected.size();k++)if(!close(expected.get(k)[0],actual.get(k)[0])||!close(expected.get(k)[1],actual.get(k)[1]))throw new AssertionError("indexed clipping changes exact visibility");
+                if(HiddenLineVisibility.visible(ax,ay,.003,naive)!=HiddenLineVisibility.visible(ax,ay,.003,index))throw new AssertionError("indexed point visibility differs");
+            }
+        }
+        index.clear();require(HiddenLineVisibility.visible(0,0,.001,index),"cleared index has no stale occluders");
+        require(true,"1500 indexed segment and point queries match exhaustive clipping after rebuilds");
     }
 }
