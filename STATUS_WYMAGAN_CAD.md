@@ -15,6 +15,10 @@ lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT
 
 ## Działające podzbiory
 
+0.67.0: biblioteka projektów z miniaturami brył (PNG generowane w tle po każdej
+zmianie i dla starych projektów przy otwarciu listy), datą zmiany, opisem
+i usuwaniem do projects/trash z potwierdzeniem. Audyt: docs/AUDIT-0.67.md.
+
 0.65.0: zaznacz = edytuj. Widoczne szkice wybierane bezpośrednio w widoku bryły
 (tylko widoczne fragmenty), ściany otwierają operację źródłową, drzewo i oś
 czasu edytują po jednym dotknięciu. Audyt: docs/AUDIT-0.65.md.

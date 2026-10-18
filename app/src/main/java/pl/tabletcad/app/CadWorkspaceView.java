@@ -3321,7 +3321,43 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         technicalSheet=null;
         if(mode.equals("Zmierz")){loadMeasurementGeometry();updateMeasurementOutput();}
         if(mode.equals("Rysunek")) prepareTechnicalSheet();
+        scheduleThumbnail();
         return true;
+    }
+
+    /** Debounced background PNG preview of the current solid for the project library. */
+    private final Runnable thumbnailTask=this::writeCurrentThumbnail;
+    private void writeCurrentThumbnail() {
+        if(project==null||nativeMesh.length<13||projectRepository.readOnly())return;
+        final String id=project.id;final double[] mesh=nativeMesh;final int w=(int)dp(160),h=(int)dp(110);
+        new Thread(()->{try{writeThumbnail(id,mesh,w,h);}catch(Exception ignored){}},"TabletCAD-thumbnail").start();
+    }
+    private void scheduleThumbnail(){removeCallbacks(thumbnailTask);postDelayed(thumbnailTask,1200);}
+    private void writeThumbnail(String id,double[] mesh,int w,int h)throws IOException {
+        android.graphics.Bitmap bitmap=ThumbnailRenderer.render(mesh,w,h);
+        java.io.ByteArrayOutputStream png=new java.io.ByteArrayOutputStream();bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,png);bitmap.recycle();
+        projectRepository.saveThumbnail(id,png.toByteArray());
+    }
+
+    /** Builds previews for library projects that have none yet (opened before thumbnails existed). */
+    private void generateMissingThumbnails(List<CadProject> projects,android.widget.BaseAdapter adapter) {
+        List<Object[]> jobs=new ArrayList<>();CadProject current=project;
+        try {
+            for(CadProject p:projects) {
+                if(!p.hasSolid()||p.importedStep||p.importedMeshSource!=null||projectRepository.thumbnailFile(p.id).isFile())continue;
+                project=p;double[] base=evaluationBase();jobs.add(new Object[]{p.id,p.width,p.height,p.depth,p.filletRadius,base==null?null:base.clone(),kernelFeatures()});
+            }
+        }catch(RuntimeException ignored){}finally{project=current;}
+        if(jobs.isEmpty())return;
+        final int w=(int)dp(160),h=(int)dp(110);
+        new Thread(()->{
+            for(Object[] job:jobs) {
+                try {
+                    double[] packed=NativeCadEngine.evaluateModelChecked((double)job[1],(double)job[2],(double)job[3],(double)job[4],(double[])job[5],(double[])job[6],null);
+                    writeThumbnail((String)job[0],new CadModelResult(packed).mesh,w,h);post(adapter::notifyDataSetChanged);
+                }catch(Exception ignored){}
+            }
+        },"TabletCAD-library-thumbnails").start();
     }
 
     private SketchPrimitive latestClosedProfile() {
@@ -3692,7 +3728,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 if(error!=null)throw new IllegalArgumentException(error.getMessage());CadModelResult result=new CadModelResult(packed);
                 if(!project.toJson().toString().equals(baseline))throw new IllegalArgumentException("Dokument zmienił się podczas obliczania. Wynik nie został zastosowany.");
                 projectRepository.save(next);project=next;nativeMesh=result.mesh;faceBodies=result.bodies;faceFeatures=result.features;holeCylinders=result.holes;
-                modelWidth=next.width;modelHeight=next.height;modelDepth=next.depth;nativePrism=NativeCadEngine.createPrism(modelWidth,modelHeight,modelDepth);modelSnapGeometry=null;updateMeshCenter();technicalSheet=null;
+                modelWidth=next.width;modelHeight=next.height;modelDepth=next.depth;nativePrism=NativeCadEngine.createPrism(modelWidth,modelHeight,modelDepth);modelSnapGeometry=null;updateMeshCenter();technicalSheet=null;scheduleThumbnail();
                 undoStack.push(baseline);while(undoStack.size()>50)undoStack.removeLast();redoStack.clear();mode="Wybierz";selectedFace=-1;threadSelections.clear();highlightBody=0;highlightFeature=next.committedFeatures.size()-1;operationMessage=success;
             }catch(Exception failure){operationMessage="Nie zatwierdzono operacji: "+kernelFailureMessage(next,error!=null?error:failure);}
             invalidate();
@@ -4653,13 +4689,61 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(projectChooser!=null&&projectChooser.isShowing())return;
         try {
             List<CadProject> projects=projectRepository.listProjects();
-            String[] names=new String[projects.size()];for(int i=0;i<names.length;i++)names[i]="Otwórz: "+projects.get(i).name;
-            projectChooser=new android.app.AlertDialog.Builder(getContext()).setTitle("TabletCAD · projekty")
-                .setItems(names,(d,index)->{
+            android.widget.BaseAdapter adapter=projectListAdapter(projects);
+            projectChooser=new android.app.AlertDialog.Builder(getContext()).setTitle("Projekty · TabletCAD v"+appVersion())
+                .setAdapter(adapter,(d,index)->{
                     try {activateProject(projectRepository.loadProject(projects.get(index).id));}
                     catch(IOException|RuntimeException error){operationMessage="Nie można otworzyć projektu";post(this::showStartupProjects);}
                 }).setPositiveButton("Utwórz nowy projekt",(d,w)->showNewProject()).setCancelable(false).show();
+            generateMissingThumbnails(projects,adapter);
         }catch(RuntimeException error){operationMessage="Nie można odczytać biblioteki projektów";invalidate();}
+    }
+
+    /** Project cards for the startup chooser: name, last change and model summary. */
+    private android.widget.BaseAdapter projectListAdapter(List<CadProject> projects) {
+        java.text.DateFormat format=java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM,java.text.DateFormat.SHORT);
+        return new android.widget.BaseAdapter() {
+            @Override public int getCount(){return projects.size();}
+            @Override public Object getItem(int position){return projects.get(position);}
+            @Override public long getItemId(int position){return position;}
+            @Override public View getView(int position,View reuse,android.view.ViewGroup parent) {
+                CadProject p=projects.get(position);
+                LinearLayout card=new LinearLayout(getContext());card.setOrientation(LinearLayout.HORIZONTAL);card.setGravity(android.view.Gravity.CENTER_VERTICAL);
+                card.setPadding((int)dp(20),(int)dp(10),(int)dp(12),(int)dp(10));
+                android.widget.ImageView preview=new android.widget.ImageView(getContext());preview.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+                android.graphics.drawable.GradientDrawable frame=new android.graphics.drawable.GradientDrawable();frame.setColor(Color.rgb(236,241,244));frame.setCornerRadius(dp(10));frame.setStroke((int)dp(1),DIVIDER);
+                preview.setBackground(frame);preview.setClipToOutline(true);
+                File thumb=projectRepository.thumbnailFile(p.id);
+                if(thumb.isFile()){android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeFile(thumb.getAbsolutePath());if(bitmap!=null)preview.setImageBitmap(bitmap);}
+                card.addView(preview,new LinearLayout.LayoutParams((int)dp(120),(int)dp(82)));
+                LinearLayout texts=new LinearLayout(getContext());texts.setOrientation(LinearLayout.VERTICAL);texts.setPadding((int)dp(16),0,(int)dp(8),0);
+                android.widget.TextView name=new android.widget.TextView(getContext());name.setText(p.name);name.setTextSize(16);name.setTextColor(INK);
+                name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);texts.addView(name);
+                long changed=projectRepository.modifiedAt(p.id);
+                String model=p.importedMeshSource!=null?"siatka STL":p.importedStep?(p.committedFeatures.isEmpty()?"import STEP":"import STEP + "+p.committedFeatures.size()+" operacji"):p.hasSolid()?(p.committedFeatures.size()+1)+" operacji · bryła B-Rep":p.sketch.isEmpty()?"pusty":"szkic, bez bryły";
+                android.widget.TextView details=new android.widget.TextView(getContext());details.setTextSize(12);details.setTextColor(MUTED);
+                details.setText((changed>0?"zmieniono "+format.format(new java.util.Date(changed))+"\n":"")+model+(p.id.equals(project.id)?" · otwarty":""));
+                texts.addView(details);card.addView(texts,new LinearLayout.LayoutParams(0,android.view.ViewGroup.LayoutParams.WRAP_CONTENT,1));
+                android.widget.TextView delete=new android.widget.TextView(getContext());delete.setText("Usuń");delete.setTextSize(13);
+                delete.setTextColor(p.id.equals(project.id)?Color.rgb(170,180,188):Color.rgb(200,70,60));delete.setPadding((int)dp(14),(int)dp(14),(int)dp(14),(int)dp(14));
+                delete.setFocusable(false);delete.setContentDescription("Usuń projekt "+p.name);
+                delete.setOnClickListener(v->confirmDeleteProject(p));card.addView(delete);
+                card.setContentDescription("Otwórz projekt "+p.name);
+                return card;
+            }
+        };
+    }
+
+    private void confirmDeleteProject(CadProject target) {
+        if(target.id.equals(project.id)){android.widget.Toast.makeText(getContext(),"Nie można usunąć otwartego projektu — najpierw otwórz inny",android.widget.Toast.LENGTH_LONG).show();return;}
+        new android.app.AlertDialog.Builder(getContext()).setTitle("Usunąć projekt „"+target.name+"”?")
+            .setMessage("Projekt zniknie z listy. Pliki zostaną przeniesione do kosza aplikacji (projects/trash), więc można je odzyskać.")
+            .setNegativeButton("Anuluj",null).setPositiveButton("Usuń",(d,w)->{
+                try{projectRepository.deleteProject(target.id,project.id);operationMessage="Usunięto projekt: "+target.name;}
+                catch(IOException|RuntimeException error){operationMessage="Nie usunięto projektu: "+error.getMessage();}
+                if(projectChooser!=null){projectChooser.dismiss();projectChooser=null;}
+                showStartupProjects();invalidate();
+            }).show();
     }
 
     private void showProjectMenu() {

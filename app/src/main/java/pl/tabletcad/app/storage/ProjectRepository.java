@@ -71,6 +71,37 @@ public final class ProjectRepository {
         return loaded;
     }
 
+    /** Last modification time of a stored project document (0 when unknown). */
+    public synchronized long modifiedAt(String id) {
+        File file=new File(folder,"document-"+id+".tcad");return file.isFile()?file.lastModified():0;
+    }
+
+    /** PNG preview of a project's solid (may not exist yet). */
+    public File thumbnailFile(String id) {
+        projectFile(id);File folder=new File(this.folder,"thumbnails");folder.mkdirs();return new File(folder,id+".png");
+    }
+
+    /** Writes the preview atomically (temporary file + rename). */
+    public void saveThumbnail(String id,byte[] png)throws IOException {
+        File target=thumbnailFile(id),temporary=new File(target.getPath()+".tmp");
+        try(FileOutputStream output=new FileOutputStream(temporary)){output.write(png);output.getFD().sync();}
+        Files.move(temporary.toPath(),target.toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);
+    }
+
+    /**
+     * Removes a project from the library without destroying data: its document, backup and preview
+     * are moved to projects/trash (timestamped). The open document cannot be deleted.
+     */
+    public synchronized void deleteProject(String id,String openProjectId)throws IOException {
+        if(recoveryFailure!=null)throw new IOException("Biblioteka jest tylko do odczytu");
+        if(id.equals(openProjectId))throw new IOException("Nie można usunąć otwartego projektu — najpierw otwórz inny");
+        File file=projectFile(id);if(!file.isFile())throw new IOException("Projekt nie istnieje");
+        File trash=new File(folder,"trash");if(!trash.isDirectory()&&!trash.mkdirs())throw new IOException("Nie można utworzyć kosza");
+        String stamp=String.valueOf(System.currentTimeMillis());
+        for(File source:new File[]{file,new File(file.getPath()+".bak"),thumbnailFile(id)})
+            if(source.isFile())Files.move(source.toPath(),new File(trash,stamp+"-"+source.getName()).toPath(),StandardCopyOption.REPLACE_EXISTING);
+    }
+
     public synchronized List<CadProject> listProjects() {
         File[] files=folder.listFiles((dir,name)->name.startsWith("document-")&&name.endsWith(".tcad"));
         List<CadProject> result=new ArrayList<>();if(files==null)return result;
