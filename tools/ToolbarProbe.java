@@ -8,7 +8,7 @@ public final class ToolbarProbe {
         Set<String> all=new HashSet<>(),groups=new HashSet<>();
         for(ToolbarCatalog.Group group:ToolbarCatalog.groups(sketch)) {
             require(groups.add(group.title),"unique group "+group.title);
-            String[] commands=group.commands();require(commands.length>0&&commands.length<=4,"bounded nonempty icon menu "+group.title);
+            String[] commands=group.commands();require(commands.length>0&&commands.length<=12,"bounded nonempty icon menu "+group.title);
             require(!group.icon.isEmpty(),"group has icon "+group.title);
             for(String command:commands){require(all.add(command),"single command location "+command);require(ToolbarCatalog.allows(sketch,command),"context permits "+command);}
             String first=commands[0];commands[0]="invalid";require(group.commands()[0].equals(first),"menu data immutable to consumer");
@@ -17,10 +17,14 @@ public final class ToolbarProbe {
     }
     public static void main(String[] args) {
         Set<String> model=commands(false),sketch=commands(true);
-        require(model.equals(new HashSet<>(Arrays.asList("Wybierz","Szkic","Edytuj","Wyciągnij","Wytnij","Obrót profilu","Głębokość","Zaokrąglij","Fazuj","Usuń cechę","Zmierz","Właściwości bryły","Dopasuj","Wyczyść widok","Rysunek"))),"all modeling commands retained plus revolution and exact properties");
-        require(sketch.equals(new HashSet<>(Arrays.asList("Edytuj","Linia","Polilinia","Prostokąt","Okrąg","Łuk","Pomocnicza","Geometria","Więzy","Połącz kontur","Przytnij","Lustro","Wymiar","Usuń","Wyczyść szkic","Ukryj bryłę","Dopasuj","Anuluj szkic","Zakończ"))),"all sketch commands retained plus mirror");
-        for(String draw:Arrays.asList("Linia","Polilinia","Prostokąt","Okrąg","Łuk","Pomocnicza","Przytnij","Lustro","Wymiar","Więzy"))require(!ToolbarCatalog.allows(false,draw),"drawing command absent from solid toolbar "+draw);
-        for(String solid:Arrays.asList("Wyciągnij","Wytnij","Obrót profilu","Zaokrąglij","Fazuj","Usuń cechę","Rysunek"))require(!ToolbarCatalog.allows(true,solid),"solid command absent from sketch toolbar "+solid);
+        require(model.equals(new HashSet<>(Arrays.asList("Wybierz","Szkic","Edytuj","Wyciągnij","Obrót profilu","Głębokość","Zaokrąglij","Fazuj","Usuń cechę","Zmierz","Właściwości bryły","Dopasuj","Wyczyść widok","Rysunek"))),"all modeling commands retained plus revolution and exact properties");
+        require(sketch.equals(new HashSet<>(Arrays.asList("Edytuj","Wyciągnij","Linia","Polilinia","Prostokąt","Prostokąt od środka","Wielokąt","Okrąg","Łuk","Splajn","Pomocnicza","Geometria","Więzy","Połącz kontur","Przytnij","Lustro","Zaokrąglij szkic","Wymiar","Usuń","Wyczyść szkic","Ukryj bryłę","Wymiary","Dopasuj","Anuluj szkic","Zakończ"))),"all sketch commands retained plus mirror");
+        for(String draw:Arrays.asList("Linia","Polilinia","Prostokąt","Okrąg","Łuk","Pomocnicza","Przytnij","Lustro","Zaokrąglij szkic","Wymiar","Więzy"))require(!ToolbarCatalog.allows(false,draw),"drawing command absent from solid toolbar "+draw);
+        for(String solid:Arrays.asList("Obrót profilu","Zaokrąglij","Fazuj","Usuń cechę","Rysunek"))require(!ToolbarCatalog.allows(true,solid),"solid command absent from sketch toolbar "+solid);
+        for(ToolbarCatalog.Group group:ToolbarCatalog.groups(true)) {
+            if(group.title.equals("Rysuj"))for(String drawing:Arrays.asList("Linia","Polilinia","Prostokąt","Prostokąt od środka","Wielokąt","Okrąg","Łuk","Splajn"))require(Arrays.asList(group.commands()).contains(drawing),"drawing grouped in Rysuj: "+drawing);
+            if(group.title.equals("Geometria"))require(!Arrays.asList(group.commands()).contains("Przytnij"),"trim stays outside geometry group");
+        }
         ToolbarCatalog.Group finish=ToolbarCatalog.groups(true)[ToolbarCatalog.groups(true).length-1];
         require(finish.direct()&&finish.commands()[0].equals("Zakończ"),"finish sketch always one tap");
         require(ToolbarCatalog.groups(false)[0].direct(),"select always one tap");

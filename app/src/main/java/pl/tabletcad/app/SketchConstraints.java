@@ -177,7 +177,7 @@ public final class SketchConstraints {
             for(double v:c)if(!Double.isFinite(v)||Math.abs(v)>5000)throw new IllegalArgumentException("Więzy wyprowadzają geometrię poza ±5000 mm");
             SketchPrimitive solved;
             if(p.curves!=null)solved=p;
-            else if(p.vertices!=null){SketchContours.validate(c);solved=new SketchPrimitive(p.id,c);}
+            else if(p.vertices!=null){if(SketchSpline.is(p))solved=new SketchPrimitive(p.id,c,"Splajn");else {SketchContours.validate(c);solved=new SketchPrimitive(p.id,c);}}
             else {
                 if(Math.hypot(c[2]-c[0],c[3]-c[1])<.01||p.type.equals("Prostokąt")&&(Math.abs(c[2]-c[0])<.01||Math.abs(c[3]-c[1])<.01))
                     throw new IllegalArgumentException("Połączenie tworzy element o zerowym rozmiarze");

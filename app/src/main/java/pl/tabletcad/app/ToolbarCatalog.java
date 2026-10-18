@@ -14,13 +14,13 @@ public final class ToolbarCatalog {
         return sketch?new Group[]{
             new Group("Edytuj","Edytuj","Edytuj"),
             new Group("Wyci\u0105gnij","Wyci\u0105gnij","Wyci\u0105gnij"),
-            new Group("Rysuj","Polilinia","Linia","Polilinia","Prostokąt"),
-            new Group("Krzywe","Łuk","Okrąg","Łuk"),
+            new Group("Rysuj","Polilinia","Linia","Polilinia","Prostokąt","Prostokąt od środka","Wielokąt","Okrąg","Łuk","Splajn"),
             new Group("Pomocnicza","Pomocnicza","Pomocnicza"),
-            new Group("Zmień","Geometria","Geometria","Połącz kontur","Przytnij","Lustro"),
+            new Group("Geometria","Geometria","Geometria","Połącz kontur","Lustro","Zaokrąglij szkic"),
+            new Group("Przytnij","Przytnij","Przytnij"),
             new Group("Więzy","Więzy","Więzy","Wymiar"),
             new Group("Usuń","Usuń","Usuń","Wyczyść szkic"),
-            new Group("Widok","Ukryj bryłę","Ukryj bryłę","Dopasuj"),
+            new Group("Widok","Ukryj bryłę","Ukryj bryłę","Wymiary","Dopasuj"),
             new Group("Anuluj szkic","Anuluj szkic","Anuluj szkic"),
             new Group("Zakończ","Zakończ","Zakończ")
         }:new Group[]{

@@ -69,9 +69,10 @@ public final class WorkspaceUiProbe {
         float yaw=(float)field(view,"cameraYaw"),pitch=(float)field(view,"cameraPitch");
         float y=1400-40*density;swipe(view,2000,800,y);float offset=(float)field(view,"timelineScroll");
         check(offset>0&&(float)field(view,"cameraYaw")==yaw&&(float)field(view,"cameraPitch")==pitch,"timeline swipe scrolls features without orbiting camera");
-        float x=400*density;int index=(int)((x-340*density+offset)/(82*density));
+        float x=400*density;int index=(int)((x-340*density+offset)/(64*density));
         CadTimeline.Item selected=CadTimeline.entries(project).get(index);check(selected.kind==CadTimeline.Kind.FEATURE,"scrolled test item is a model feature");
-        tap(view,x,y);check(field(view,"propertyEditor")!=null&&visible(view),"tap on scrolled history opens actual native parameter editor");
+        tap(view,x,y);check(field(view,"propertyEditor")==null,"single history tap selects without editor");
+        tap(view,x,y);check(field(view,"propertyEditor")!=null&&visible(view),"double history tap opens actual native parameter editor");
         List<EditText> fields=new ArrayList<>();editors((View)field(view,"propertyEditor"),fields);
         check(fields.size()==5&&Math.abs(Double.parseDouble(fields.get(4).getText().toString().replace(',','.'))-project.committedFeatures.get(selected.featureIndex)[6])<.001,
             "scrolled icon edits correct feature rather than unscrolled index");
@@ -81,6 +82,25 @@ public final class WorkspaceUiProbe {
         swipe(view,2000,-20000,y);check(Math.abs((float)field(view,"timelineScroll")-result(view,"maxTimelineScroll"))<.01,"timeline clamps at last entry");
         set(view,"operationMessage","Testowy komunikat pozostaje widoczny po zamknięciu panelu.");view.draw(canvas);
         try(OutputStream output=new FileOutputStream(new File(root,"view.png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,output);}bitmap.recycle();
+        File sketchRoot=new File(root,"spline");check(sketchRoot.mkdirs(),"isolated spline gesture fixture");
+        Context sketchContext=new ContextWrapper(base){@Override public File getFilesDir(){return sketchRoot;}};
+        new ProjectRepository(sketchRoot).save(CadProject.blank());
+        CadWorkspaceView sketchView=new CadWorkspaceView(sketchContext,null);FrameLayout sketchHost=new FrameLayout(sketchContext);sketchHost.addView(sketchView);
+        sketchHost.measure(View.MeasureSpec.makeMeasureSpec(2200,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(1400,View.MeasureSpec.EXACTLY));sketchHost.layout(0,0,2200,1400);
+        Method tool=CadWorkspaceView.class.getDeclaredMethod("activateTopTool",String.class);tool.setAccessible(true);tool.invoke(sketchView,"Szkic");
+        Method plane=CadWorkspaceView.class.getDeclaredMethod("chooseSketchPlane",String.class);plane.setAccessible(true);plane.invoke(sketchView,"XY");tool.invoke(sketchView,"Splajn");
+        Bitmap sketchBitmap=Bitmap.createBitmap(2200,1400,Bitmap.Config.ARGB_8888);Canvas sketchCanvas=new Canvas(sketchBitmap);sketchView.draw(sketchCanvas);
+        Method projectPoint=CadWorkspaceView.class.getDeclaredMethod("projectSketchPoint",double.class,double.class);projectPoint.setAccessible(true);
+        for(double[] uv:new double[][]{{-20,0},{0,20},{20,0}}){PointF point=(PointF)projectPoint.invoke(sketchView,uv[0],uv[1]);tap(sketchView,point.x,point.y);}
+        CadProject draft=(CadProject)field(sketchView,"project");check(draft.splineDraft&&draft.polylineDraft.size()==3,"three real taps create persisted spline draft");
+        Method finish=CadWorkspaceView.class.getDeclaredMethod("finishPolyline",boolean.class);finish.setAccessible(true);check((boolean)finish.invoke(sketchView,false),"spline saved through sketch transaction");
+        check(draft.sketch.size()==1&&SketchSpline.is(draft.sketch.get(0)),"gesture produces spline rather than straight lines");
+        sketchView.draw(sketchCanvas);call(sketchView,"finishSketchWork");check(!SketchTransactions.active((CadProject)field(sketchView,"project")),"spline sketch commits successfully");
+        check(SketchSpline.is(new ProjectRepository(sketchRoot).loadOrCreate().sketch.get(0)),"spline survives actual autosave reload");
+        call(sketchView,"showProjectMenu");View editor=(View)field(sketchView,"propertyEditor");check(editor.getLayoutParams().height<1400-110*density,"short property panel fits content");call(sketchView,"closePropertyEditor");
+        sketchView.draw(sketchCanvas);tap(sketchView,40*density,200*density);
+        check(field(sketchView,"propertyEditor")==null && field(sketchView,"mode").equals("Wybierz"),"single sketch tree tap does not open property editor");
+        sketchBitmap.recycle();
         System.out.println("ALL WORKSPACE UI TESTS PASSED");
     }
 }

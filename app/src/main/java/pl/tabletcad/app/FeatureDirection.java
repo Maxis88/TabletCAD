@@ -13,10 +13,22 @@ public final class FeatureDirection {
     }
     /** Operation bits: 1=cut, 2=symmetric. Base-plane bits: 0..2=plane, 4=symmetric. */
     public static int featureCode(boolean cut,boolean symmetric){return (cut?1:0)|(symmetric?2:0);}
+    public static int featureCode(String operation,boolean symmetric) {
+        return (operation.equals("cut")?1:operation.equals("new")?4:operation.equals("common")?8:0)|(symmetric?2:0);
+    }
+    public static String label(double code) {
+        String op=operation(code);return op.equals("new")?"Nowa bryła":op.equals("common")?"Część wspólna":op.equals("cut")?"Wycięcie":"Połączenie";
+    }
+    public static String operation(double code) {
+        validateOperation(code);return ((int)code&8)!=0?"common":((int)code&4)!=0?"new":isCut(code)?"cut":"add";
+    }
+    public static int withSymmetric(double code,boolean symmetric) {
+        validateOperation(code);return ((int)code&~2)|(symmetric?2:0);
+    }
     public static boolean isCut(double code){validateOperation(code);return ((int)code&1)!=0;}
     public static boolean isSymmetric(double code){validateOperation(code);return ((int)code&2)!=0;}
     public static void validateOperation(double code) {
-        if(!Double.isFinite(code)||code!=Math.floor(code)||code<0||code>3)throw new IllegalArgumentException("Niepoprawny tryb operacji");
+        if(!Double.isFinite(code)||code!=Math.floor(code)||!java.util.Arrays.asList(0,1,2,3,4,6,8,10).contains((int)code))throw new IllegalArgumentException("Niepoprawny tryb operacji");
     }
     public static int basePlane(double code) {
         if(!Double.isFinite(code)||code!=Math.floor(code)||code<0||code>6||((int)code&3)>2)throw new IllegalArgumentException("Niepoprawna płaszczyzna wyciągnięcia");

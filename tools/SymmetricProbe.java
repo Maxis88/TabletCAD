@@ -49,9 +49,9 @@ public final class SymmetricProbe {
         require(CadTimeline.entries(restored).stream().anyMatch(item->item.kind==CadTimeline.Kind.FEATURE&&item.featureIndex==1&&item.title.equals("Wycięcie")),"symmetric cut is not mislabeled as addition");
         close(FeatureDirection.signed(12,true,true),12,"symmetric UI ignores reverse direction");
         for(double bad:new double[]{-1,3,7,1.5,Double.NaN})try{FeatureDirection.basePlane(bad);throw new AssertionError();}catch(IllegalArgumentException expected){System.out.println("PASS invalid base mode rejected "+bad);}
-        for(double bad:new double[]{-1,4,1.5,Double.NaN})try{FeatureDirection.validateOperation(bad);throw new AssertionError();}catch(IllegalArgumentException expected){System.out.println("PASS invalid operation mode rejected "+bad);}
+        for(double bad:new double[]{-1,5,7,9,1.5,Double.NaN})try{FeatureDirection.validateOperation(bad);throw new AssertionError();}catch(IllegalArgumentException expected){System.out.println("PASS invalid operation mode rejected "+bad);}
         double[] invalid=base.clone();invalid[5]=3;require(NativeCadEngine.evaluateFeatures(80,48,32,0,invalid,new double[0],null).length==0,"native invalid base mode rejected");
-        invalid=add.clone();invalid[1]=4;require(NativeCadEngine.evaluateFeatures(80,48,32,0,null,invalid,null).length==0,"native invalid operation mode rejected");
+        invalid=add.clone();invalid[1]=5;require(NativeCadEngine.evaluateFeatures(80,48,32,0,null,invalid,null).length==0,"native invalid operation mode rejected");
         try{CadProject.fromJson(doc.toJson().put("featureBase",new JSONArray().put(0).put(0).put(0).put(40).put(20).put(3).put(12)));throw new AssertionError();}catch(JSONException expected){System.out.println("PASS invalid persisted base mode rejected");}
         System.out.println("ALL SYMMETRIC EXTRUSION TESTS PASSED");
     }

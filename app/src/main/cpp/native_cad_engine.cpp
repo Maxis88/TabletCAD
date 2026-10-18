@@ -23,6 +23,9 @@
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepAlgoAPI_Common.hxx>
+#include <BRep_Builder.hxx>
+#include <TopoDS_Compound.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
@@ -846,13 +849,24 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
             if (u.SquareMagnitude() < 1.0e-20 || v.SquareMagnitude() < 1.0e-20) {
                 return env->NewDoubleArray(0);
             }
-            if(f[1]!=std::floor(f[1])||f[1]<0||f[1]>3)return env->NewDoubleArray(0);
+            if(f[1]!=std::floor(f[1])||!(f[1]==0||f[1]==1||f[1]==2||f[1]==3||f[1]==4||f[1]==6||f[1]==8||f[1]==10))return env->NewDoubleArray(0);
             const bool cut=(static_cast<int>(f[1])&1)!=0,symmetric=(static_cast<int>(f[1])&2)!=0;
             const TopoDS_Shape tool = curves>0?curvedPrism(f+16,curves,f[6],gp_Pnt(f[7],f[8],f[9]),u,v,u.Crossed(v),true,cut,symmetric):vertices>0 ? polygonPrism(f+16,vertices,f[6],gp_Pnt(f[7],f[8],f[9]),
                 u,v,u.Crossed(v),true,cut,symmetric) : profileFeature(f[0] == 1.0 ? "Okrąg" : "Prostokąt",
                 f[2], f[3], f[4], f[5], f[6], gp_Pnt(f[7], f[8], f[9]),
                 gp_Dir(u), gp_Dir(v), cut,symmetric);
-            shape = applyProfileFeature(shape, tool, cut);
+            if(tool.IsNull())return env->NewDoubleArray(0);
+            if((static_cast<int>(f[1])&4)!=0) {
+                BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);
+                builder.Add(compound,shape);builder.Add(compound,tool);shape=compound;
+                if(!BRepCheck_Analyzer(shape).IsValid())return env->NewDoubleArray(0);
+            } else if((static_cast<int>(f[1])&8)!=0) {
+                BRepAlgoAPI_Common operation(shape,tool);operation.Build();
+                if(!operation.IsDone())return env->NewDoubleArray(0);
+                TopoDS_Shape result=operation.Shape();
+                if(result.IsNull()||!BRepCheck_Analyzer(result).IsValid()||countShapes(result,TopAbs_SOLID)==0)return env->NewDoubleArray(0);
+                shape=result;
+            } else shape = applyProfileFeature(shape, tool, cut);
             if (shape.IsNull()) return env->NewDoubleArray(0);
             i+=stride;
         }

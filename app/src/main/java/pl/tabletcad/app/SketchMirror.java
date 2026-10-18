@@ -33,6 +33,7 @@ public final class SketchMirror {
             for(int i=0;i<result.length;i+=2){double[] p=point(result[i],result[i+1],ax,ay,ux,uy);result[i]=p[0];result[i+1]=p[1];}
             if(source.type.equals("Prostokąt")&&(Math.abs(result[0]-result[2])<1e-8||Math.abs(result[1]-result[3])<1e-8))
                 return new SketchPrimitive(id,"Prostokąt",result[0],result[1],result[4],result[5]);
+            if(SketchSpline.is(source))return new SketchPrimitive(id,result,"Splajn");
             SketchContours.validate(result);return new SketchPrimitive(id,result);
         }
         if(!source.type.equals("Linia")&&!source.type.equals("Pomocnicza")&&!source.type.equals("Okrąg"))

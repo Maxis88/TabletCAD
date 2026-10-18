@@ -6,7 +6,7 @@ import pl.tabletcad.app.model.SketchPrimitive;
 public final class SketchShapes {
     private SketchShapes() {}
     public static boolean threePointTool(String kind){return "Łuk".equals(kind)||"Okrąg 3 pkt".equals(kind)||"Szczelina".equals(kind);}
-    public static boolean drawingTool(String kind){return threePointTool(kind)||"Linia".equals(kind)||"Polilinia".equals(kind)||"Pomocnicza".equals(kind)||"Okrąg".equals(kind)||"Prostokąt".equals(kind)||"Prostokąt od środka".equals(kind)||"Wielokąt".equals(kind);}
+    public static boolean drawingTool(String kind){return "Splajn".equals(kind)||threePointTool(kind)||"Linia".equals(kind)||"Polilinia".equals(kind)||"Pomocnicza".equals(kind)||"Okrąg".equals(kind)||"Prostokąt".equals(kind)||"Prostokąt od środka".equals(kind)||"Wielokąt".equals(kind);}
     private static void point(double x,double y) {
         if(!Double.isFinite(x)||!Double.isFinite(y)||Math.abs(x)>5000||Math.abs(y)>5000)
             throw new IllegalArgumentException("Szkic poza zakresem ±5000 mm");

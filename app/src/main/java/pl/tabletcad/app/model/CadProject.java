@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /** Versioned, geometry-independent source of truth for a TabletCAD document. */
 public final class CadProject {
-    public static final int CURRENT_SCHEMA = 30;
+    public static final int CURRENT_SCHEMA = 31;
     public String sketchEditBaseline;
     public final java.util.Map<String,String> sketchLineage=new java.util.LinkedHashMap<>();
     public final java.util.Map<String,String> sketchBindings=new java.util.LinkedHashMap<>();
@@ -20,6 +20,8 @@ public final class CadProject {
     public final List<double[]> threePointDraft = new ArrayList<>();
     public String threePointTool="";
     public int polygonSides=6;
+    public boolean splineDraft;
+    public String sketchName="Szkic";
     public String drawingNumber = "", drawingAuthor = "", drawingMaterial = "", drawingRevision = "A";
     public double drawingSectionFraction = .5;
 
@@ -101,6 +103,8 @@ public final class CadProject {
         root.put("drawingData",drawingData);
         root.put("id", id);
         root.put("name", name);
+        root.put("splineDraft",splineDraft);
+        root.put("sketchName",sketchName);
         root.put("units", units);
         root.put("sketchPlane", sketchPlane);
         root.put("sketchId", sketchId);
@@ -218,6 +222,8 @@ public final class CadProject {
         }
         project.featureOperation = schema >= 6 ? root.optString("featureOperation", "none") : "none";
         project.featureDepth = schema >= 6 ? root.optDouble("featureDepth", 10.0) : 10.0;
+        project.splineDraft=root.optBoolean("splineDraft",false);
+        project.sketchName=root.optString("sketchName","Szkic");
         project.featureSymmetric=root.optBoolean("featureSymmetric",false);
         JSONArray history = root.optJSONArray("committedFeatures");
         JSONArray base = root.optJSONArray("featureBase");
@@ -281,7 +287,7 @@ public final class CadProject {
 
     public JSONObject captureSketch() throws JSONException {
         JSONObject snapshot = new JSONObject();
-        snapshot.put("id", sketchId).put("plane", sketchPlane);
+        snapshot.put("id", sketchId).put("plane", sketchPlane).put("name",sketchName);
         JSONArray frame = new JSONArray();
         double[] values = {sketchOriginX,sketchOriginY,sketchOriginZ,
             sketchUx,sketchUy,sketchUz,sketchVx,sketchVy,sketchVz};
@@ -330,7 +336,7 @@ public final class CadProject {
             restored.add(p);
         }
         List<pl.tabletcad.app.SketchConstraints.Link> restoredLinks=pl.tabletcad.app.SketchConstraints.fromJson(snapshot.optJSONArray("coincidences"),restored);
-        sketchId = snapshot.getString("id"); sketchPlane = snapshot.getString("plane");
+        sketchId = snapshot.getString("id"); sketchPlane = snapshot.getString("plane");sketchName=snapshot.optString("name","Szkic");
         sketchOriginX=frame.getDouble(0); sketchOriginY=frame.getDouble(1); sketchOriginZ=frame.getDouble(2);
         sketchUx=frame.getDouble(3); sketchUy=frame.getDouble(4); sketchUz=frame.getDouble(5);
         sketchVx=frame.getDouble(6); sketchVy=frame.getDouble(7); sketchVz=frame.getDouble(8);

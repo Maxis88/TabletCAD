@@ -15,6 +15,7 @@ public final class SketchEditing {
     }
 
     public static List<SketchPrimitive> explode(SketchPrimitive source) {
+        if(SketchSpline.is(source))throw new IllegalArgumentException("Splajn zachowuje krzywiznę; edytuj jego punkty");
         if(source.curves!=null) {
             if(!source.closedProfile())throw new IllegalArgumentException("Łuk jest już pojedynczym elementem");
             List<SketchPrimitive> result=new ArrayList<>();

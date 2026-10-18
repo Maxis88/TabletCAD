@@ -8,7 +8,7 @@ public final class SketchTrimmer {
     private SketchTrimmer() {}
     static List<double[]> edges(SketchPrimitive p) {
         List<double[]> result=new ArrayList<>();
-        if(p.curves!=null)return result;
+        if(p.curves!=null||SketchSpline.is(p))return result;
         if(p.vertices!=null) {
             for(int i=0;i<p.vertices.length;i+=2) {int j=(i+2)%p.vertices.length;
                 result.add(new double[]{p.vertices[i],p.vertices[i+1],p.vertices[j],p.vertices[j+1]});}

@@ -28,6 +28,13 @@ public final class SketchPrimitive {
         if(this.driving!=null) pl.tabletcad.app.SketchDimensions.validate(this);
     }
 
+    public SketchPrimitive(String id, double[] points, String kind) {
+        if(!kind.equals("Splajn"))throw new IllegalArgumentException("Niepoprawny rodzaj krzywej");
+        pl.tabletcad.app.SketchSpline.spans(points);
+        this.id=id;this.type=kind;this.vertices=points.clone();this.curves=null;this.driving=null;
+        x1=points[0];y1=points[1];x2=points[points.length-2];y2=points[points.length-1];
+    }
+
     public SketchPrimitive(String id, double[] points) {
         if(points==null||points.length<6||points.length>512||points.length%2!=0)
             throw new IllegalArgumentException("Kontur wymaga 3–256 wierzchołków");
@@ -51,8 +58,8 @@ public final class SketchPrimitive {
             double[] bounds=pl.tabletcad.app.SketchCurves.bounds(segments);x1=bounds[0];y1=bounds[1];x2=bounds[2];y2=bounds[3];
         }
     }
-    public boolean closedProfile() {return vertices!=null||type.equals("Kontur krzywy")||type.equals("Prostokąt")||type.equals("Okrąg");}
-    public double featureType() {return curves!=null?1000+curves.length/7:vertices==null?(type.equals("Okrąg")?1:0):2+vertices.length/2;}
+    public boolean closedProfile() {return (vertices!=null&&!type.equals("Splajn"))||type.equals("Kontur krzywy")||type.equals("Prostokąt")||type.equals("Okrąg");}
+    public double featureType() {if(type.equals("Splajn"))throw new IllegalArgumentException("Otwarty splajn nie jest zamkniętym profilem wyciągania");return curves!=null?1000+curves.length/7:vertices==null?(type.equals("Okrąg")?1:0):2+vertices.length/2;}
     public double[] appendVertices(double[] prefix) {
         double[] tail=curves!=null?curves:vertices;
         double[] result=java.util.Arrays.copyOf(prefix,prefix.length+(tail==null?0:tail.length));
@@ -88,7 +95,7 @@ public final class SketchPrimitive {
         if(json.has("vertices")) {
             org.json.JSONArray points=json.getJSONArray("vertices");double[] values=new double[points.length()];
             for(int i=0;i<values.length;i++) values[i]=points.getDouble(i);
-            try{pl.tabletcad.app.SketchContours.validate(values);return new SketchPrimitive(json.getString("id"),values);}
+            try{if(json.getString("type").equals("Splajn"))return new SketchPrimitive(json.getString("id"),values,"Splajn");pl.tabletcad.app.SketchContours.validate(values);return new SketchPrimitive(json.getString("id"),values);}
             catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
         }
         org.json.JSONArray locked=json.optJSONArray("driving");double[] driving=null;
