@@ -1,11 +1,23 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.72.0-sketch-solid-links**, versionCode **81**.
+Wersja źródeł: **0.73.0-solid-tools**, versionCode **82**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
+
+Wersja 0.73 — narzędzia bryłowe: parametryczne lustro oraz szyk liniowy
+i kołowy operacji (kopie śledzą zmiany źródeł), Otwór na płaskiej ścianie
+(na wylot/na głębokość, stożek wiertła, pogłębienie walcowe/stożkowe),
+Powłoka z usuwanymi ścianami, Pochylenie ścian, Połącz/Odejmij/Część wspólna
+brył, Podziel bryłę, Przesuń/Obróć/Skaluj bryłę, usuwanie
+dowolnej operacji z osi czasu z listą konsekwencji. Jednostki projektu
+(mm/cm/m/cale), dokładność wyświetlania i wyrażenia w polach (100/3, 1in+2mm).
+Widoki: cieniowany, krawędzie, przezroczystość i przekrój OCCT.
+Schemat .tcad 36. Jądro sprawdzone na komputerze przez
+`tools/host-kernel-tests.sh` (OCCT 8.0.1 dla Linux x86-64, te same funkcje JNI);
+interfejs nie był uruchamiany na tablecie. [Audyt 0.73](docs/AUDIT-0.73.md).
 
 Wersja 0.72 — pakiet projektowania: okrąg przez trzy punkty, szczelina,
 numeryczne przesunięcie/obrót/skala zaznaczonego elementu szkicu, przejście
@@ -161,6 +173,19 @@ org.json dla JVM (pobieraną do ignorowanego build/ i sprawdzaną SHA-256).
 Nie uruchamiają Androida ani OCCT i nie zastępują weryfikacji interfejsu.
 
 ## Weryfikacja
+
+### Bez tabletu (Linux, od 0.73)
+
+```bash
+tools/host-kernel-tests.sh --android-jar <SDK>/platforms/android-36/android.jar \
+    --json-jar build/host-tests/lib/json-20240303.jar
+```
+
+Skrypt buduje przypięty OCCT 8.0.1 dla x86-64, kompiluje `native_cad_engine.cpp`
+do `libtabletcad.so` i uruchamia na JVM komputera testy hosta oraz próby jądra
+(`*KernelProbe`, `KernelDiagnosticsProbe`), które korzystają tylko z modelu dokumentu
+i `NativeCadEngine`. Sprawdza to rzeczywiste wyniki B-Rep (objętości analityczne),
+ale nie zastępuje testu interfejsu, gestów ani biblioteki ARM64 na urządzeniu.
 
 Kompilacja APK sprawdza Java, C++, zasoby i podpis. `tools/*Probe.java` to
 samodzielne testy regresyjne uruchamiane na Androidzie przez `app_process`;

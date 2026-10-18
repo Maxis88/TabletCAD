@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.72.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.73.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,15 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.73.0: lustro, szyk liniowy i kołowy operacji (parametryczne, rekord -13),
+Otwór na płaskiej ścianie z pogłębieniami i stożkiem wiertła (-14), Powłoka (-12),
+Pochylenie ścian (-16), Podziel bryłę (-18), Przesuń/Obróć/Skaluj bryłę (-17),
+Połącz/Odejmij/Część wspólna brył (-15), usuwanie dowolnej operacji z listą
+konsekwencji, rodowód ścian w jądrze, jednostki mm/cm/m/in z wyrażeniami,
+tryby krawędzi/przezroczystości i przekrój OCCT. Schemat .tcad 36.
+Wyniki B-Rep sprawdzone na komputerze (OCCT x86-64); UI bez testu na Androidzie.
+Audyt: docs/AUDIT-0.73.md.
 
 0.72.0: rysowanie okręgu 3 pkt i szczeliny z zapisem rozpoczętej konstrukcji,
 przesunięcie/obrót/skala zaznaczonego elementu szkicu, nawigacja do źródła
@@ -167,8 +176,8 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
    w tym styczność oraz trwała zależność symetrii. Lustro i szyki obecnie kopiują.
    Splajn istnieje; okrąg 3 pkt i szczelina podłączone w 0.72, z runtime
    gestów i nowych ścieżek OCCT nadal do potwierdzenia.
-2. Podstawowe bryły: Shell i narzędzie parametrycznych otworów.
-   Otwór można obecnie wykonać przez wycięcie okręgu, bez dedykowanego Hole.
+2. Podstawowe bryły: od 0.73 są Powłoka i Otwór (prosty, pogłębiony walcowo
+   i stożkowo). Brak wymiarowania środka otworu względem krawędzi ściany.
 3. Referencje topologiczne: od 0.44 powiązania obsługiwanych krawędzi bazowych
    śledzą zmianę parametrów generatora. Nadal brak ogólnego nazewnictwa
    krawędzi/ścian po dowolnych operacjach, aktualizacji wszystkich płaszczyzn
@@ -176,9 +185,12 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
    najbliższą krawędzią.
 4. Historia: kompletne drzewo brył/komponentów, zmiana kolejności operacji,
    szersze zarządzanie zależnościami i diagnostyka regeneracji.
-5. Parametry użytkownika: nazwy, jednostki, wyrażenia i cykle zależności.
-6. Sweep, Loft, szyki brył, lustro brył, podziały, pochylenia i narzędzia
-   powierzchniowe; pozostałe operacje modelowania z promptu.
+5. Parametry użytkownika: nazwy, wyrażenia powiązane z wymiarami i cykle zależności.
+   Od 0.73 są jednostki projektu (mm/cm/m/in), dokładność wyświetlania i wyrażenia
+   arytmetyczne z jednostkami w polach wartości (obliczane jednorazowo).
+6. Sweep, Loft i narzędzia powierzchniowe; szyki i lustra
+   całych brył oraz szyk po ścieżce. Od 0.73: lustro i szyki operacji oraz
+   operacje Boolean między bryłami, pochylenie ścian, przesunięcie/obrót/skala brył.
 7. Zespoły: komponenty, instancje, wiązania montażowe i kolizje.
 8. Analizy OCCT: katalog materiałów, różne gęstości poszczególnych brył,
    bezwładność i odległość minimalna. Masa z własnej jednorodnej gęstości
@@ -188,7 +200,8 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
 10. IGES/3MF/SVG, import OBJ, pełne ustawienia dokładności i zakresu eksportu,
     weryfikacja we wskazanych zewnętrznych programach CAD.
 11. UI/renderowanie: pełny ViewCube (ortografia i standardowe orientacje są od 0.58),
-    tryby szkieletowy/przezroczysty, motywy i szersza obsługa urządzeń wejścia.
+    motywy i szersza obsługa urządzeń wejścia. Tryby krawędzi/przezroczystości
+    i przekrój są od 0.73.
 12. Wydajność: przeniesienie wszystkich kosztownych obliczeń poza wątek UI,
     anulowanie/postęp, testy obciążeniowe i zużycia pamięci/temperatury.
 13. Gwinty, biblioteki techniczne, blachy i rozwinięcia: późniejszy zakres.

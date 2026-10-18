@@ -52,7 +52,7 @@ public final class BodyMassHostTest {
         JSONObject serialized=p.toJson();CadProject loaded=CadProject.fromJson(serialized);
         check(loaded.id.equals(p.id)&&loaded.sketchId.equals(p.sketchId),"document and sketch UUID preserved");
         near(loaded.materialDensityKgM3,p.materialDensityKgM3,"density survives schema 35 round trip");
-        check(serialized.getInt("schema")==35,"new format is versioned");
+        check(serialized.getInt("schema")==CadProject.CURRENT_SCHEMA&&CadProject.CURRENT_SCHEMA>=35,"new format is versioned");
         for(int schema:new int[]{1,29,34}) {
             JSONObject old=new JSONObject(serialized.toString());old.put("schema",schema);old.remove("materialDensityKgM3");
             near(CadProject.fromJson(old).materialDensityKgM3,0,"legacy schema "+schema+" opens without inventing density");

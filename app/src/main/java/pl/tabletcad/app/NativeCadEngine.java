@@ -124,6 +124,18 @@ public final class NativeCadEngine {
         return result;
     }
 
+    /**
+     * Display-only section of the evaluated model: every body intersected with the half-space
+     * behind the plane (point xyz, normal xyz). Same packed format as {@link #evaluateModel}.
+     */
+    public static double[] sectionModel(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep,double[] plane) {
+        if(!LOADED)return new double[0];
+        nativeSetSectionPlane(plane);
+        try{return nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,9);}
+        finally{nativeSetSectionPlane(null);}
+    }
+    private static native void nativeSetSectionPlane(double[] plane);
+
     public static double[] faceOrigins(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep) {
         return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,6):new double[0];
     }

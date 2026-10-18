@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /** Versioned, geometry-independent source of truth for a TabletCAD document. */
 public final class CadProject {
-    public static final int CURRENT_SCHEMA = 35;
+    public static final int CURRENT_SCHEMA = 36;
     public String sketchEditBaseline;
     public final java.util.Map<String,String> sketchLineage=new java.util.LinkedHashMap<>();
     public final java.util.Map<String,String> sketchBindings=new java.util.LinkedHashMap<>();
@@ -33,6 +33,8 @@ public final class CadProject {
     public double drawingSectionFraction = .5;
     /** Uniform density for all solids; 0 means unspecified. */
     public double materialDensityKgM3;
+    /** Decimal places of lengths shown on the canvas (values are stored exactly in mm). */
+    public int displayDecimals=3;
 
     public final String id;
     public String name;
@@ -124,7 +126,10 @@ public final class CadProject {
         JSONObject extents=new JSONObject();for(java.util.Map.Entry<Integer,double[]> e:extrusionExtents.entrySet())extents.put(e.getKey().toString(),new JSONArray(e.getValue()));root.put("extrusionExtents",extents);
         root.put("hiddenBodies",new JSONArray(hiddenBodies)).put("hiddenSketchParts",new JSONArray(hiddenSketchParts));
         root.put("sketchName",sketchName);
+        if(!pl.tabletcad.app.Units.valid(units))throw new JSONException("Nieznana jednostka projektu: "+units);
+        try{pl.tabletcad.app.Units.validateDecimals(displayDecimals);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
         root.put("units", units);
+        root.put("displayDecimals", displayDecimals);
         root.put("sketchPlane", sketchPlane);
         root.put("sketchId", sketchId);
         JSONArray saved = new JSONArray();
@@ -182,6 +187,9 @@ public final class CadProject {
             feature.getDouble("height"), feature.getDouble("depth"),
             root.optString("sketchPlane", "XY"));
         project.emptyDocument=root.optBoolean("emptyDocument",false);
+        if(!pl.tabletcad.app.Units.valid(project.units))throw new JSONException("Nieznana jednostka projektu: "+project.units);
+        project.displayDecimals=root.optInt("displayDecimals",3);
+        try{pl.tabletcad.app.Units.validateDecimals(project.displayDecimals);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
         if (root.has("materialDensityKgM3")) {
             Object density = root.get("materialDensityKgM3");
             if (!(density instanceof Number)) throw new JSONException("Invalid material density");
@@ -269,6 +277,9 @@ public final class CadProject {
                 project.committedFeatures.add(values);
                 JSONArray profileIds = root.optJSONArray("committedProfileIds");
                 project.committedProfileIds.add(profileIds == null ? "" : profileIds.optString(i, ""));
+            }
+            for(int i=0;i<project.committedFeatures.size();i++)if(pl.tabletcad.app.FeaturePattern.is(project.committedFeatures.get(i))) {
+                try{pl.tabletcad.app.FeaturePattern.validateSources(project.committedFeatures,i);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
             }
         }
         JSONArray entities = root.optJSONArray("sketch");
@@ -372,6 +383,7 @@ public final class CadProject {
     private static void validateFeatureArray(JSONArray data,int prefix) throws JSONException {
         if(data.length()<prefix) throw new JSONException("Invalid feature length");
         if(prefix==7&&data.getDouble(0)==-10){double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);try{pl.tabletcad.app.ExtrusionPlan.validateBase(f);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}return;}
+        if(prefix==16&&(data.getDouble(0)==pl.tabletcad.app.FeaturePattern.TYPE||data.getDouble(0)==pl.tabletcad.app.ShellFeature.TYPE||data.getDouble(0)==pl.tabletcad.app.HoleFeature.TYPE||data.getDouble(0)==pl.tabletcad.app.BodyCombine.TYPE||data.getDouble(0)==pl.tabletcad.app.DraftFeature.TYPE||data.getDouble(0)==pl.tabletcad.app.BodyTransform.TYPE||data.getDouble(0)==pl.tabletcad.app.BodySplit.TYPE)){double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);try{if(f[0]==pl.tabletcad.app.FeaturePattern.TYPE)pl.tabletcad.app.FeaturePattern.validate(f);else if(f[0]==pl.tabletcad.app.HoleFeature.TYPE)pl.tabletcad.app.HoleFeature.validate(f);else if(f[0]==pl.tabletcad.app.BodyCombine.TYPE)pl.tabletcad.app.BodyCombine.validate(f);else if(f[0]==pl.tabletcad.app.DraftFeature.TYPE)pl.tabletcad.app.DraftFeature.validate(f);else if(f[0]==pl.tabletcad.app.BodyTransform.TYPE)pl.tabletcad.app.BodyTransform.validate(f);else if(f[0]==pl.tabletcad.app.BodySplit.TYPE)pl.tabletcad.app.BodySplit.validate(f);else pl.tabletcad.app.ShellFeature.validate(f);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}return;}
         if(prefix==16&&data.getDouble(0)==-8){double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);try{pl.tabletcad.app.HoleThread.validate(f);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}return;}
         if(data.getDouble(0)==-3) {
             double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);

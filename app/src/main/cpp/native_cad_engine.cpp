@@ -76,11 +76,22 @@
 #include <BRepLib.hxx>
 #include <BRepAlgoAPI_Section.hxx>
 #include <gp_Pln.hxx>
+#include <BRepOffsetAPI_MakeThickSolid.hxx>
+#include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <BRepClass_FaceClassifier.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <TopoDS_Solid.hxx>
+#include <TopoDS_Shell.hxx>
+#include <BRepPrimAPI_MakeCone.hxx>
+#include <Geom_Surface.hxx>
+#include <BRepOffsetAPI_DraftAngle.hxx>
 
 namespace {
 // Diagnostics of the last failed evaluation on this thread (feature -1 = base body, -2 = output stage).
 struct KernelError { int feature=-2; std::string message; };
 thread_local KernelError g_kernelError;
+// View-only section plane for query mode 9 (point xyz, normal xyz; material behind the normal is kept).
+thread_local std::array<double,6> g_sectionPlane{};thread_local bool g_sectionActive=false;
 void kernelReset(){g_kernelError=KernelError();}
 void kernelReason(const char* message){if(g_kernelError.message.empty())g_kernelError.message=message;}
 void kernelFailAt(int feature,const char* message){g_kernelError.feature=feature;kernelReason(message);}
@@ -775,7 +786,11 @@ TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
     if(result.IsNull()||countShapes(result,TopAbs_SOLID)!=countShapes(shape,TopAbs_SOLID))return {};
     return result;
 }
-using FaceOrigins=std::vector<std::pair<TopoDS_Shape,int>>;
+// Creator of each face (history tag) and the tags of the faces it was trimmed from. A Boolean or
+// edge operation that only trims a face keeps its underlying surface, so a face that is not the
+// same shape but lies on the identical surface handle inherits the ancestor's lineage.
+struct FaceOrigin { TopoDS_Shape first; int second; std::vector<int> lineage; };
+using FaceOrigins=std::vector<FaceOrigin>;
 using BodyShapes=std::map<int,TopoDS_Shape>;
 
 // Evaluation state at a top-level history record boundary ("before record at offset").
@@ -794,14 +809,155 @@ EvalCache g_evalCache;
 void updateOrigins(const TopoDS_Shape& before,const TopoDS_Shape& after,int tag,FaceOrigins& origins) {
     static_cast<void>(before);FaceOrigins next;
     for(TopExp_Explorer e(after,TopAbs_FACE);e.More();e.Next()) {
-        int origin=tag;for(const auto& known:origins)if(e.Current().IsSame(known.first)){origin=known.second;break;}
-        next.emplace_back(e.Current(),origin);
+        const FaceOrigin* same=nullptr;for(const auto& known:origins)if(e.Current().IsSame(known.first)){same=&known;break;}
+        if(same){next.push_back(*same);continue;}
+        FaceOrigin created{e.Current(),tag,{}};
+        TopLoc_Location location;const Handle(Geom_Surface) surface=BRep_Tool::Surface(TopoDS::Face(e.Current()),location);
+        if(!surface.IsNull())for(const auto& known:origins) {
+            TopLoc_Location other;if(BRep_Tool::Surface(TopoDS::Face(known.first),other)!=surface||!other.IsEqual(location))continue;
+            for(int ancestor:known.lineage)if(std::find(created.lineage.begin(),created.lineage.end(),ancestor)==created.lineage.end())created.lineage.push_back(ancestor);
+            if(std::find(created.lineage.begin(),created.lineage.end(),known.second)==created.lineage.end())created.lineage.push_back(known.second);
+        }
+        next.push_back(std::move(created));
     }
     origins=std::move(next);
 }
-TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& values,const std::vector<double>& rootBase,const TopoDS_Shape& rootShape,bool imported,BodyShapes* finalBodies,FaceOrigins* finalOrigins,EvalCache* cache=nullptr) {
+double shapeVolume(const TopoDS_Shape& shape){GProp_GProps props;BRepGProp::VolumeProperties(shape,props);return std::abs(props.Mass());}
+// Planar face referenced by a shell record: same creating operation and outward normal;
+// a stored interior point resolves several candidates. Never falls back to the nearest face.
+TopoDS_Face shellFace(const TopoDS_Shape& solid,const double* ref,const FaceOrigins& origins,std::string& error,const char* subject="usuwanej przez powłokę") {
+    const std::string lost=std::string("Nie odnaleziono ściany ")+subject+" – topologia zmieniła się. Wskaż ścianę ponownie";
+    const gp_Pnt point(ref[0],ref[1],ref[2]);const gp_Dir normal(ref[3],ref[4],ref[5]);const int origin=static_cast<int>(ref[6]);
+    std::vector<TopoDS_Face> candidates;
+    for(TopExp_Explorer e(solid,TopAbs_FACE);e.More();e.Next()) {
+        const TopoDS_Face face=TopoDS::Face(e.Current());BRepAdaptor_Surface surface(face);if(surface.GetType()!=GeomAbs_Plane)continue;
+        gp_Dir n=surface.Plane().Axis().Direction();if(face.Orientation()==TopAbs_REVERSED)n.Reverse();
+        if(n.Dot(normal)<1-1e-6)continue;
+        bool created=false;
+        for(const auto& known:origins)if(face.IsSame(known.first)){created=known.second==origin||std::find(known.lineage.begin(),known.lineage.end(),origin)!=known.lineage.end();break;}
+        if(!created)continue;
+        bool duplicate=false;for(const auto& c:candidates)if(c.IsSame(face))duplicate=true;if(!duplicate)candidates.push_back(face);
+    }
+    if(candidates.size()==1)return candidates.front();
+    if(candidates.empty()){error=lost;return {};}
+    std::vector<TopoDS_Face> inside;
+    for(const auto& face:candidates) {
+        BRepAdaptor_Surface surface(face);if(surface.Plane().Distance(point)>1e-3)continue;
+        BRepClass_FaceClassifier classifier(face,point,1e-4);if(classifier.State()==TopAbs_IN||classifier.State()==TopAbs_ON)inside.push_back(face);
+    }
+    if(inside.size()==1)return inside.front();
+    error=inside.empty()?lost:std::string("Ściana ")+subject+" jest niejednoznaczna – wskaż ją ponownie";return {};
+}
+TopoDS_Shape shellBody(const TopoDS_Shape& shape,const double* f,const FaceOrigins& origins) {
+    if(shape.IsNull()){kernelReason("Brak bryły, na której można wykonać powłokę");return {};}
+    if(countShapes(shape,TopAbs_SOLID)!=1){kernelReason("Powłoka wymaga dokładnie jednej bryły zamkniętej");return {};}
+    TopExp_Explorer find(shape,TopAbs_SOLID);const TopoDS_Shape solid=find.Current();
+    const int faces=static_cast<int>(f[1]);const double thickness=f[2];const bool outside=f[3]==1;
+    NCollection_List<TopoDS_Shape> removed;
+    for(int k=0;k<faces;k++) {
+        std::string error;TopoDS_Face face=shellFace(solid,f+16+k*7,origins,error);if(face.IsNull()){kernelReason(error.c_str());return {};}
+        for(const auto& existing:removed)if(existing.IsSame(face)){kernelReason("Ta sama ściana została wskazana dwukrotnie");return {};}
+        removed.Append(face);
+    }
+    const double before=shapeVolume(solid);TopoDS_Shape result;
+    if(faces>0) {
+        BRepOffsetAPI_MakeThickSolid maker;maker.MakeThickSolidByJoin(solid,removed,outside?thickness:-thickness,1e-4,BRepOffset_Skin,false,false,GeomAbs_Arc,false);
+        maker.Build();if(!maker.IsDone()){kernelReason("OCCT nie może wykonać powłoki o tej grubości (zmniejsz grubość lub zmień usuwane ściany)");return {};}
+        result=maker.Shape();
+    } else {
+        BRepOffsetAPI_MakeOffsetShape offset;offset.PerformByJoin(solid,outside?thickness:-thickness,1e-4,BRepOffset_Skin,false,false,GeomAbs_Arc);
+        offset.Build();if(!offset.IsDone()){kernelReason("OCCT nie może odsunąć ścian bryły o tę grubość");return {};}
+        TopoDS_Shape other=offset.Shape();
+        if(countShapes(other,TopAbs_SOLID)==0) {
+            TopExp_Explorer shells(other,TopAbs_SHELL);if(!shells.More()){kernelReason("Odsunięcie nie utworzyło zamkniętej powłoki");return {};}
+            BRepBuilderAPI_MakeSolid solidMaker(TopoDS::Shell(shells.Current()));if(!solidMaker.IsDone()){kernelReason("Odsunięcie nie utworzyło zamkniętej powłoki");return {};}
+            other=solidMaker.Solid();BRepLib::OrientClosedSolid(TopoDS::Solid(other));
+        }
+        BRepAlgoAPI_Cut hollow(outside?other:solid,outside?solid:other);hollow.Build();
+        if(!hollow.IsDone()){kernelReason("OCCT nie wydrążył bryły");return {};}
+        result=hollow.Shape();
+    }
+    if(result.IsNull()||!BRepCheck_Analyzer(result).IsValid()||countShapes(result,TopAbs_SOLID)!=1){kernelReason("Powłoka dała niepoprawną bryłę (zmniejsz grubość ścianki)");return {};}
+    const double after=shapeVolume(result);
+    if(!std::isfinite(after)||after<=1e-9||(!outside&&after>=before-1e-9)){kernelReason("Powłoka nie zmieniła bryły – sprawdź grubość ścianki");return {};}
+    return result;
+}
+// Parametric hole on a planar face. The stored point is projected onto the CURRENT plane of the
+// referenced face (same creator and normal), so the hole follows parametric edits of that face.
+TopoDS_Shape holeFeature(const TopoDS_Shape& shape,const double* f,const FaceOrigins& origins) {
+    if(shape.IsNull()){kernelReason("Brak bryły, w której można wykonać otwór");return {};}
+    const double ref[7]={f[2],f[3],f[4],f[5],f[6],f[7],f[8]};std::string error;
+    TopoDS_Face face=shellFace(shape,ref,origins,error,"otworu");
+    if(face.IsNull()){kernelReason(error.c_str());return {};}
+    BRepAdaptor_Surface surface(face);const gp_Pln plane=surface.Plane();
+    gp_Dir normal(f[5],f[6],f[7]);gp_Pnt point(f[2],f[3],f[4]);
+    const double offset=gp_Vec(plane.Location(),point).Dot(gp_Vec(normal));point.Translate(gp_Vec(normal)*(-offset));
+    BRepClass_FaceClassifier inside(face,point,1e-4);
+    if(inside.State()!=TopAbs_IN&&inside.State()!=TopAbs_ON){kernelReason("Środek otworu leży poza wskazaną ścianą");return {};}
+    Bnd_Box box;BRepBndLib::Add(shape,box);double xmin,ymin,zmin,xmax,ymax,zmax;box.Get(xmin,ymin,zmin,xmax,ymax,zmax);
+    const double span=std::sqrt((xmax-xmin)*(xmax-xmin)+(ymax-ymin)*(ymax-ymin)+(zmax-zmin)*(zmax-zmin))+10;
+    const double r=f[9]/2,margin=1e-3;const bool through=f[1]==1;const double depth=through?span*2:f[10];
+    const gp_Ax2 frame(gp_Pnt(0,0,-margin),gp_Dir(0,0,1));
+    TopoDS_Shape tool=BRepPrimAPI_MakeCylinder(frame,r,depth+margin).Shape();
+    auto fuse=[&](const TopoDS_Shape& part)->bool{BRepAlgoAPI_Fuse join(tool,part);join.Build();if(!join.IsDone())return false;tool=join.Shape();return true;};
+    if(!through&&f[14]>0) {
+        const double h=r/std::tan(f[14]*M_PI/360);
+        if(!fuse(BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0,0,depth),gp_Dir(0,0,1)),r,0,h).Shape())){kernelReason("Nie można utworzyć stożkowego dna otworu");return {};}
+    }
+    if(f[11]==1) {
+        if(!fuse(BRepPrimAPI_MakeCylinder(frame,f[12]/2,f[13]+margin).Shape())){kernelReason("Nie można utworzyć pogłębienia walcowego");return {};}
+    } else if(f[11]==2) {
+        const double R=f[12]/2,h=(R-r)/std::tan(f[13]*M_PI/360);
+        if(!fuse(BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0,0,-margin),gp_Dir(0,0,1)),R+margin*(R-r)/h,r,h+margin).Shape())){kernelReason("Nie można utworzyć pogłębienia stożkowego");return {};}
+    }
+    gp_Trsf placement;placement.SetDisplacement(gp_Ax3(),gp_Ax3(point,normal.Reversed()));
+    tool=BRepBuilderAPI_Transform(tool,placement,true).Shape();
+    if(tool.IsNull()||!BRepCheck_Analyzer(tool).IsValid()){kernelReason("Narzędzie otworu ma niepoprawną topologię");return {};}
+    TopoDS_Shape result=applyProfileFeature(shape,tool,true);
+    if(result.IsNull())return {};
+    return result;
+}
+// Box covering the half-space behind (front=false) or in front of a plane, sized from the shape.
+TopoDS_Shape halfSpace(const TopoDS_Shape& shape,const gp_Pnt& point,const gp_Dir& normal,bool front) {
+    Bnd_Box box;BRepBndLib::Add(shape,box);double x0,y0,z0,x1,y1,z1;box.Get(x0,y0,z0,x1,y1,z1);
+    const double size=2*std::sqrt((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0)+(z1-z0)*(z1-z0))+gp_Vec(gp_Pnt(0,0,0),point).Magnitude()+100;
+    TopoDS_Shape half=BRepPrimAPI_MakeBox(gp_Pnt(-size,-size,front?0:-size),gp_Pnt(size,size,front?size:0)).Shape();
+    gp_Trsf placement;placement.SetDisplacement(gp_Ax3(),gp_Ax3(point,normal));
+    return BRepBuilderAPI_Transform(half,placement,true).Shape();
+}
+// Draft (taper) of referenced planar faces about a neutral plane, pulled along its normal.
+TopoDS_Shape draftFaces(const TopoDS_Shape& shape,const double* f,const FaceOrigins& origins) {
+    if(shape.IsNull()){kernelReason("Brak bryły do pochylenia ścian");return {};}
+    const gp_Dir pull(f[6],f[7],f[8]);const gp_Pln neutral(gp_Pnt(f[3],f[4],f[5]),pull);
+    BRepOffsetAPI_DraftAngle draft(shape);
+    for(int k=0;k<static_cast<int>(f[1]);k++) {
+        std::string error;TopoDS_Face face=shellFace(shape,f+16+k*7,origins,error,"pochylanej");if(face.IsNull()){kernelReason(error.c_str());return {};}
+        BRepAdaptor_Surface surface(face);
+        if(std::abs(surface.Plane().Axis().Direction().Dot(pull))>1-1e-6){kernelReason("Ściana równoległa do płaszczyzny neutralnej nie może zostać pochylona");return {};}
+        draft.Add(face,pull,f[2]*M_PI/180,neutral);
+        if(!draft.AddDone()){kernelReason("OCCT nie może pochylić wskazanej ściany (sprawdź płaszczyznę neutralną i kąt)");return {};}
+    }
+    draft.Build();if(!draft.IsDone()){kernelReason("OCCT nie wykonał pochylenia ścian");return {};}
+    TopoDS_Shape result=draft.Shape();
+    if(result.IsNull()||!BRepCheck_Analyzer(result).IsValid()||countShapes(result,TopAbs_SOLID)!=countShapes(shape,TopAbs_SOLID)){kernelReason("Pochylenie dało niepoprawną bryłę");return {};}
+    if(std::abs(shapeVolume(result)-shapeVolume(shape))<=1e-9*std::max(1.0,shapeVolume(shape))){kernelReason("Pochylenie nie zmieniło bryły");return {};}
+    return result;
+}
+// Rigid move, rotation or uniform scale of the target body.
+TopoDS_Shape transformBody(const TopoDS_Shape& shape,const double* f) {
+    if(shape.IsNull()){kernelReason("Brak bryły do przekształcenia");return {};}
+    gp_Trsf t;
+    if(f[1]==1)t.SetTranslation(gp_Vec(f[2],f[3],f[4]));
+    else if(f[1]==2)t.SetRotation(gp_Ax1(gp_Pnt(f[2],f[3],f[4]),gp_Dir(f[5],f[6],f[7])),f[8]*M_PI/180);
+    else t.SetScale(gp_Pnt(f[2],f[3],f[4]),f[8]);
+    TopoDS_Shape result=BRepBuilderAPI_Transform(shape,t,true).Shape();
+    if(result.IsNull()||!BRepCheck_Analyzer(result).IsValid()){kernelReason("Przekształcenie dało niepoprawną bryłę");return {};}
+    return result;
+}
+TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& values,const std::vector<double>& rootBase,const TopoDS_Shape& rootShape,bool imported,BodyShapes* finalBodies,FaceOrigins* finalOrigins,EvalCache* cache=nullptr,const FaceOrigins* seed=nullptr,int seedTag=0) {
     const int count=static_cast<int>(values.size());int featureNumber=0;BodyShapes bodies;bool indexed=false;FaceOrigins origins;
-    if(!rootShape.IsNull())updateOrigins({},rootShape,-1,origins);if(!shape.IsNull()&&!shape.IsSame(rootShape))updateOrigins(rootShape,shape,-2,origins);
+    if(seed)origins=*seed;
+    else {if(!rootShape.IsNull())updateOrigins({},rootShape,-1,origins);if(!shape.IsNull()&&!shape.IsSame(rootShape))updateOrigins(rootShape,shape,-2,origins);}
         jsize i=0;
         if(cache) {
             // Resume from the deepest cached boundary whose record prefix is unchanged.
@@ -818,7 +974,7 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
             if(cache)cache->states.push_back(EvalState{static_cast<int>(i),featureNumber,shape,bodies,indexed,origins});
             if(count-i<16){kernelFailAt(featureNumber,"Niekompletny zapis operacji w historii");return {};}
             const double* f = values.data() + i;
-            const TopoDS_Shape prior=shape;const int tag=featureNumber++;
+            const TopoDS_Shape prior=shape;const int tag=seed?seedTag:featureNumber;featureNumber++;
             if(f[0]==-9) {
                 if(f[1]<0||f[1]!=std::floor(f[1])||f[2]<1||f[2]!=std::floor(f[2])||f[3]<16||f[3]!=std::floor(f[3])||f[3]>count-i-16){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                 for(int k=4;k<16;k++)if(f[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
@@ -827,12 +983,72 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                 if(target==0&&bodies.contains(output)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                 if(target!=0&&(!bodies.contains(target)||output!=target)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                 std::vector<double> record(f+16,f+16+length);TopoDS_Shape input=target==0?TopoDS_Shape():bodies[target];
-                TopoDS_Shape result=evaluateRecords(input,record,rootBase,rootShape,imported,nullptr,nullptr);
+                if(length==16&&record[0]==-18) {
+                    // Split the target body by a plane: the side behind the normal stays, the other side becomes a new body.
+                    const double* c=record.data();const int created=static_cast<int>(c[1]);
+                    if(target==0||c[1]!=std::floor(c[1])||created<2||bodies.contains(created)||std::abs(c[5]*c[5]+c[6]*c[6]+c[7]*c[7]-1)>1e-6){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    for(int k=8;k<16;k++)if(c[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    const TopoDS_Shape a=bodies[target];const gp_Pnt point(c[2],c[3],c[4]);const gp_Dir normal(c[5],c[6],c[7]);
+                    TopoDS_Shape sides[2];
+                    for(int side=0;side<2;side++){BRepAlgoAPI_Common op(a,halfSpace(a,point,normal,side==1));op.Build();if(!op.IsDone()){kernelFailAt(tag,"OCCT nie podzielił bryły");return {};}op.SimplifyResult(true,true);sides[side]=op.Shape();}
+                    const double total=shapeVolume(a),eps=std::max(1e-7,total*1e-9);
+                    for(const auto& part:sides)if(part.IsNull()||countShapes(part,TopAbs_SOLID)==0||shapeVolume(part)<=eps||!BRepCheck_Analyzer(part).IsValid()){kernelFailAt(tag,"Płaszczyzna podziału nie przecina bryły");return {};}
+                    bodies[target]=sides[0];bodies[created]=sides[1];
+                    BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
+                    updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
+                }
+                if(length==16&&record[0]==-15) {
+                    // Body Boolean: the tool body is another document body, consumed unless kept.
+                    const double* c=record.data();const int tool=static_cast<int>(c[2]);
+                    if(target==0||(c[1]!=0&&c[1]!=1&&c[1]!=2)||c[2]!=std::floor(c[2])||(c[3]!=0&&c[3]!=1)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    for(int k=4;k<16;k++)if(c[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    if(tool==target||!bodies.contains(tool)){kernelFailAt(tag,"Bryła narzędzia nie istnieje albo jest bryłą docelową");return {};}
+                    const TopoDS_Shape a=bodies[target],b=bodies[tool];TopoDS_Shape combined;
+                    if(c[1]==0){BRepAlgoAPI_Fuse op(a,b);op.Build();if(op.IsDone()){op.SimplifyResult(true,true);combined=op.Shape();}}
+                    else if(c[1]==1){BRepAlgoAPI_Cut op(a,b);op.Build();if(op.IsDone()){op.SimplifyResult(true,true);combined=op.Shape();}}
+                    else {BRepAlgoAPI_Common op(a,b);op.Build();if(op.IsDone()){op.SimplifyResult(true,true);combined=op.Shape();}}
+                    if(combined.IsNull()||!BRepCheck_Analyzer(combined).IsValid()){kernelFailAt(tag,"OCCT nie wykonał operacji na bryłach");return {};}
+                    const double va=shapeVolume(a),vb=shapeVolume(b),vr=shapeVolume(combined),eps=std::max(1e-7,(va+vb)*1e-10);
+                    if(countShapes(combined,TopAbs_SOLID)==0||vr<=eps){kernelFailAt(tag,c[1]==2?"Bryły nie mają części wspólnej":"Operacja usunęłaby całą bryłę");return {};}
+                    if(c[1]==1&&va-vr<=eps){kernelFailAt(tag,"Bryła narzędzia nie przecina bryły docelowej – nic nie odjęto");return {};}
+                    if(c[1]==0&&vr<va+vb-eps&&vr<=va+eps){kernelFailAt(tag,"Bryła narzędzia w całości mieści się w bryle docelowej");return {};}
+                    bodies[output]=combined;if(c[3]==0)bodies.erase(tool);
+                    BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
+                    updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
+                }
+                TopoDS_Shape result=evaluateRecords(input,record,rootBase,rootShape,imported,nullptr,nullptr,nullptr,&origins,tag);
                 if(result.IsNull()){kernelFailAt(tag,"Operacja na wskazanej bryle nie powiodła się");return {};}bodies[output]=result;
                 BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
                 updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
             }
             if(indexed){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+            if(f[0]==-16) {
+                if(f[1]!=std::floor(f[1])||f[1]<1||f[1]>16||f[2]==0||std::abs(f[2])>60||std::abs(f[6]*f[6]+f[7]*f[7]+f[8]*f[8]-1)>1e-6){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                for(int k=9;k<16;k++)if(f[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                const int stride=16+static_cast<int>(f[1])*7;if(count-i<stride){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                shape=draftFaces(shape,f,origins);if(shape.IsNull()){kernelFailAt(tag,"Pochylenie ścian nie powiodło się");return {};}
+                updateOrigins(prior,shape,tag,origins);i+=stride;continue;
+            }
+            if(f[0]==-17) {
+                const bool ok=(f[1]==1&&std::abs(f[2])+std::abs(f[3])+std::abs(f[4])>1e-9)||(f[1]==2&&std::abs(f[5]*f[5]+f[6]*f[6]+f[7]*f[7]-1)<1e-6&&f[8]!=0&&std::abs(f[8])<=360)||(f[1]==3&&f[8]>=.001&&f[8]<=1000&&f[8]!=1);
+                if(!ok){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                for(int k=9;k<16;k++)if(f[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                shape=transformBody(shape,f);if(shape.IsNull()){kernelFailAt(tag,"Przekształcenie bryły nie powiodło się");return {};}
+                updateOrigins(prior,shape,tag,origins);i+=16;continue;
+            }
+            if(f[0]==-14) {
+                if((f[1]!=0&&f[1]!=1)||f[9]<.05||f[9]>2000||(f[1]==0&&(f[10]<.01||f[10]>5000))||(f[11]!=0&&f[11]!=1&&f[11]!=2)||f[15]!=0||(f[14]!=0&&(f[14]<30||f[14]>179))){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                if(f[11]!=0&&(f[12]<=f[9]||(f[11]==1&&(f[13]<.01||(f[1]==0&&f[13]>=f[10])))||(f[11]==2&&(f[13]<30||f[13]>179)))){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                shape=holeFeature(shape,f,origins);if(shape.IsNull()){kernelFailAt(tag,"Otwór nie powiódł się");return {};}
+                updateOrigins(prior,shape,tag,origins);i+=16;continue;
+            }
+            if(f[0]==-12) {
+                if(f[1]!=std::floor(f[1])||f[1]<0||f[1]>16||f[2]<.01||f[2]>1000||(f[3]!=0&&f[3]!=1)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                for(int k=4;k<16;k++)if(f[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                const int stride=16+static_cast<int>(f[1])*7;if(count-i<stride){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                shape=shellBody(shape,f,origins);if(shape.IsNull()){kernelFailAt(tag,"Powłoka nie powiodła się");return {};}
+                updateOrigins(prior,shape,tag,origins);i+=stride;continue;
+            }
             if(f[0]==-8){shape=threadedHole(shape,f);if(shape.IsNull()){kernelFailAt(tag,"Nie można wyciąć gwintu w tym otworze (sprawdź średnicę, skok i głębokość)");return {};}updateOrigins(prior,shape,tag,origins);i+=16;continue;}
             if(f[0]==-6||f[0]==-7) {
                 if(f[1]!=std::floor(f[1])||f[1]<1||f[1]>256||f[11]<.1||f[11]>1000){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
@@ -930,13 +1146,21 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
 }
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_pl_tabletcad_app_NativeCadEngine_nativeSetSectionPlane(JNIEnv* env,jclass,jdoubleArray plane) {
+    g_sectionActive=false;if(plane==nullptr||env->GetArrayLength(plane)!=6)return;
+    env->GetDoubleArrayRegion(plane,0,6,g_sectionPlane.data());
+    for(double v:g_sectionPlane)if(!std::isfinite(v))return;g_sectionActive=true;
+}
+
 extern "C" JNIEXPORT jdoubleArray JNICALL
 Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         JNIEnv* env, jclass, jdouble width, jdouble height, jdouble depth,
         jdouble radius, jdoubleArray javaBase, jdoubleArray javaFeatures, jstring javaExportPath,
         jstring javaSourceStep, jint queryMode) {
     kernelReset();
-    if((queryMode<0||queryMode>3)&&queryMode!=6&&queryMode!=8)return env->NewDoubleArray(0);
+    if((queryMode<0||queryMode>3)&&queryMode!=6&&queryMode!=8&&queryMode!=9)return env->NewDoubleArray(0);
+    if(queryMode==9&&!g_sectionActive){kernelFailAt(-2,"Brak płaszczyzny przekroju");return env->NewDoubleArray(0);}
     if (javaFeatures == nullptr || width <= 0 || height <= 0 || depth <= 0) {
         kernelFailAt(-1,"Niepoprawne wymiary bryły bazowej");
         return env->NewDoubleArray(0);
@@ -1041,6 +1265,25 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
                 kernelFailAt(-2,"Kontrolny odczyt zapisanego pliku STEP nie powiódł się");
                 return env->NewDoubleArray(0);
             }
+        }
+        if(queryMode==9) {
+            // Display-only section: each body is intersected with the half-space behind the plane,
+            // so cut faces are real capped B-Rep faces and body identity is kept per face.
+            gp_Vec n(g_sectionPlane[3],g_sectionPlane[4],g_sectionPlane[5]);if(n.Magnitude()<1e-9){kernelFailAt(-2,"Niepoprawna płaszczyzna przekroju");return env->NewDoubleArray(0);}
+            const TopoDS_Shape half=halfSpace(shape,gp_Pnt(g_sectionPlane[0],g_sectionPlane[1],g_sectionPlane[2]),gp_Dir(n),false);
+            if(bodies.empty())bodies[1]=shape;
+            BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);std::vector<std::pair<TopoDS_Shape,int>> parts;
+            for(const auto& body:bodies) {
+                BRepAlgoAPI_Common cut(body.second,half);cut.Build();if(!cut.IsDone()){kernelFailAt(-2,"OCCT nie wyznaczył przekroju");return env->NewDoubleArray(0);}
+                if(countShapes(cut.Shape(),TopAbs_FACE)==0)continue;builder.Add(compound,cut.Shape());parts.emplace_back(cut.Shape(),body.first);
+            }
+            std::vector<double> mesh=tessellatedTriangles(compound),info;int face=0;
+            for(TopExp_Explorer e(compound,TopAbs_FACE);e.More();e.Next()) {
+                int bodyId=1;face++;for(const auto& part:parts){bool found=false;for(TopExp_Explorer f(part.first,TopAbs_FACE);f.More();f.Next())if(e.Current().IsSame(f.Current())){found=true;break;}if(found){bodyId=part.second;break;}}
+                info.push_back(face);info.push_back(bodyId);info.push_back(-1);
+            }
+            std::vector<double> combined;combined.push_back(static_cast<double>(mesh.size()));combined.insert(combined.end(),mesh.begin(),mesh.end());combined.insert(combined.end(),info.begin(),info.end());
+            jdoubleArray result=env->NewDoubleArray(static_cast<jsize>(combined.size()));if(result)env->SetDoubleArrayRegion(result,0,static_cast<jsize>(combined.size()),combined.data());return result;
         }
         if(queryMode==6||queryMode==8) {
             std::vector<double> info,cylinders;int face=0;

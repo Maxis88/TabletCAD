@@ -25,10 +25,12 @@ public final class ToolbarCatalog {
         }:new Group[]{
             new Group("Wybierz","Wybierz","Wybierz"),
             new Group("Szkice","Szkic","Szkic","Edytuj"),
-            new Group("Modeluj","Wyciągnij","Wyciągnij","Obrót profilu","Gwint","Edytuj profil źródłowy","Powiązania profilu"),
-            new Group("Zmień","Zaokrąglij","Głębokość","Zaokrąglij","Fazuj","Usuń cechę"),
+            new Group("Modeluj","Wyciągnij","Wyciągnij","Obrót profilu","Otwór","Gwint","Powłoka","Edytuj profil źródłowy","Powiązania profilu"),
+            new Group("Bryły","Połącz bryły","Połącz bryły","Odejmij bryły","Część wspólna brył","Podziel bryłę","Przesuń bryłę","Obróć bryłę","Skaluj bryłę"),
+            new Group("Powiel","Szyk liniowy operacji","Lustro operacji","Szyk liniowy operacji","Szyk kołowy operacji"),
+            new Group("Zmień","Zaokrąglij","Głębokość","Zaokrąglij","Fazuj","Pochyl ściany","Usuń cechę"),
             new Group("Sprawdź","Zmierz","Zmierz","Właściwości bryły","Rysunek"),
-            new Group("Widok","Dopasuj","Dopasuj","Izometryczny","Przód","Góra","Prawy bok","Rzut prostokątny","Wyczyść widok")
+            new Group("Widok","Dopasuj","Dopasuj","Izometryczny","Przód","Góra","Prawy bok","Rzut prostokątny","Cieniowanie","Krawędzie","Przezroczystość","Przekrój","Wyczyść widok")
         };
     }
     public static boolean allows(boolean sketch,String command) {

@@ -30,7 +30,7 @@ public final class BodyGraph {
     public static void removeRoute(CadProject p,int index){Map<Integer,double[]> shifted=new LinkedHashMap<>();for(Map.Entry<Integer,double[]> e:p.extrusionExtents.entrySet())if(e.getKey()!=index)shifted.put(e.getKey()>index?e.getKey()-1:e.getKey(),e.getValue());p.extrusionExtents.clear();p.extrusionExtents.putAll(shifted);if(index<p.featureBodyTargets.size()){p.featureBodyTargets.remove(index);p.featureBodyOutputs.remove(index);}if(p.bodyGraphStart>index)p.bodyGraphStart--;}
     public static LinkedHashSet<Integer> bodies(CadProject p) {
         LinkedHashSet<Integer> ids=new LinkedHashSet<>();if(p.hasSolid())ids.add(1);
-        for(int i=0;i<p.featureBodyOutputs.size();i++)if(p.featureBodyTargets.get(i)==0)ids.add(p.featureBodyOutputs.get(i));
+        for(int i=0;i<p.featureBodyOutputs.size();i++){if(p.featureBodyTargets.get(i)==0)ids.add(p.featureBodyOutputs.get(i));if(i<p.committedFeatures.size()&&BodyCombine.consumes(p.committedFeatures.get(i)))ids.remove(BodyCombine.tool(p.committedFeatures.get(i)));if(i<p.committedFeatures.size()&&BodySplit.is(p.committedFeatures.get(i)))ids.add(BodySplit.created(p.committedFeatures.get(i)));}
         if(p.featureOperation.equals("new")&&p.activeBodyOutput>0)ids.add(p.activeBodyOutput);return ids;
     }
     public static String name(CadProject p,int id){return p.bodyNames.getOrDefault(id,"Bryła "+id);}
@@ -44,14 +44,25 @@ public final class BodyGraph {
         if(type==-9)return 16+(int)packed[offset+3];
         if(type==-6||type==-7){int end=offset+16;for(int i=0;i<(int)packed[offset+1];i++){if(end>=packed.length)throw new IllegalArgumentException("Niekompletna grupa");end+=1+(int)packed[end];}return end-offset;}
         if(type==-4||type==-5)return 17+(int)packed[offset+16];
+        if(type==FeaturePattern.TYPE)return 16+(int)packed[offset+2];
+        if(type==ShellFeature.TYPE)return 16+(int)packed[offset+1]*ShellFeature.FACE;
+        if(type==DraftFeature.TYPE)return 16+(int)packed[offset+1]*DraftFeature.FACE;
         if(type==-3){double t=packed[offset+20];return 22+(t>=1001?((int)t-1000)*7:t>=5?((int)t-2)*2:0);}
         return 16+(type>=1001?((int)type-1000)*7:type>=5?((int)type-2)*2:0);
     }
     public static double[] pack(CadProject p,double[] raw) {
-        if(p.bodyGraphStart<0)return raw.clone();List<double[]> records=new ArrayList<>();int length=0,index=0;
+        if(p.bodyGraphStart<0){for(double[] f:p.committedFeatures)if(FeaturePattern.is(f)||ShellFeature.is(f))throw new IllegalArgumentException("Szyk i powłoka wymagają grafu brył");return raw.clone();}
+        List<double[]> records=new ArrayList<>();int length=0,index=0;
         for(int offset=0;offset<raw.length;index++) {
             int size=recordLength(raw,offset);if(size<16||size>raw.length-offset)throw new IllegalArgumentException("Niepoprawna długość operacji");
             double[] record=Arrays.copyOfRange(raw,offset,offset+size);offset+=size;
+            // Patterns are expanded here, from the current source operations, into one routed record.
+            if(FeaturePattern.is(record)) {
+                if(index>=p.committedFeatures.size()||index<p.bodyGraphStart)throw new IllegalArgumentException("Szyk musi być zatwierdzoną operacją grafu brył");
+                record=FeaturePattern.expand(p.committedFeatures,index);
+                double[] wrapped=new double[16+record.length];wrapped[0]=-9;wrapped[1]=p.featureBodyTargets.get(index);wrapped[2]=p.featureBodyOutputs.get(index);wrapped[3]=record.length;System.arraycopy(record,0,wrapped,16,record.length);
+                records.add(wrapped);length+=wrapped.length;continue;
+            }
             if(record[0]!=-9&&index>=p.bodyGraphStart) {
                 int target,output;
                 if(index<p.featureBodyTargets.size()){target=p.featureBodyTargets.get(index);output=p.featureBodyOutputs.get(index);}
@@ -67,9 +78,22 @@ public final class BodyGraph {
         Set<Integer> ids=new HashSet<>();ids.add(1);int max=1;
         for(int i=0;i<p.featureBodyTargets.size();i++) {
             int target=p.featureBodyTargets.get(i),output=p.featureBodyOutputs.get(i);
-            if(target==-1){if(p.bodyGraphStart>=0&&i>=p.bodyGraphStart)throw new IllegalArgumentException("Brak celu operacji");continue;}
+            if(target==-1){if(p.bodyGraphStart>=0&&i>=p.bodyGraphStart)throw new IllegalArgumentException("Brak celu operacji");if(FeaturePattern.is(p.committedFeatures.get(i))||ShellFeature.is(p.committedFeatures.get(i))||BodyCombine.is(p.committedFeatures.get(i))||BodySplit.is(p.committedFeatures.get(i)))throw new IllegalArgumentException("Szyk i powłoka wymagają celu w grafie brył");continue;}
+            if((FeaturePattern.is(p.committedFeatures.get(i))||ShellFeature.is(p.committedFeatures.get(i)))&&target<1)throw new IllegalArgumentException("Szyk i powłoka nie tworzą nowej bryły");
             if(target==0){if(!creates(p.committedFeatures.get(i))||ids.contains(output)||output<2)throw new IllegalArgumentException("Powtórzona bryła");ids.add(output);max=Math.max(max,output);}
             else if(!ids.contains(target)||target!=output)throw new IllegalArgumentException("Operacja odwołuje się do nieistniejącej bryły");
+            double[] combine=p.committedFeatures.get(i);
+            if(BodyCombine.is(combine)) {
+                int tool=BodyCombine.tool(combine);
+                if(target<1||tool==target||!ids.contains(tool))throw new IllegalArgumentException("Operacja na bryłach odwołuje się do nieistniejącej bryły");
+                if(BodyCombine.consumes(combine))ids.remove(tool);
+            }
+            if(BodySplit.is(combine)) {
+                int created=BodySplit.created(combine);
+                if(target<1||ids.contains(created)||created<2||!p.bodyUuids.containsKey(created))throw new IllegalArgumentException("Podział tworzy bryłę o powtórzonym identyfikatorze");
+                for(int j=0;j<i;j++)if(p.featureBodyOutputs.get(j)==created)throw new IllegalArgumentException("Podział tworzy bryłę o powtórzonym identyfikatorze");
+                ids.add(created);max=Math.max(max,created);
+            }
             if(!p.bodyUuids.containsKey(output))throw new IllegalArgumentException("Brak UUID bryły");
         }
         if(p.activeBodyOutput>0&&p.featureOperation.equals("new")){if(ids.contains(p.activeBodyOutput))throw new IllegalArgumentException("Powtórzone UUID operacji aktywnej");max=Math.max(max,p.activeBodyOutput);}

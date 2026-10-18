@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 81
-        versionName = "0.72.0-sketch-solid-links"
+        versionCode = 82
+        versionName = "0.73.0-solid-tools"
     }
 
     externalNativeBuild {
