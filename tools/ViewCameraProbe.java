@@ -22,6 +22,10 @@ public final class ViewCameraProbe {
                 e[0]=Math.min(e[0],sx[i]);e[1]=Math.max(e[1],sx[i]);e[2]=Math.min(e[2],sy[i]);e[3]=Math.max(e[3],sy[i]);count++;}}
         if(count==0)throw new AssertionError("no visible triangles");return e;
     }
+    static double wallArea(CadWorkspaceView view,int face)throws Exception {
+        double area=0;for(Object t:(List<?>)field(view,"projectedTriangles"))if((int)field(t,"faceId")==face){float[] x=(float[])field(t,"sx"),y=(float[])field(t,"sy");area+=Math.abs((x[1]-x[0])*(y[2]-y[0])-(x[2]-x[0])*(y[1]-y[0]))/2;}
+        return area;
+    }
     static void tool(CadWorkspaceView view,String name)throws Exception {call(view,"activateTopTool",new Class<?>[]{String.class},name);}
     static void run(String[] args)throws Exception {
         File root=new File(args[0],"camera-"+UUID.randomUUID());check(root.mkdirs(),"isolated camera fixture");
@@ -47,6 +51,25 @@ public final class ViewCameraProbe {
         CadProject small=new CadProject();small.width=40;small.height=30;small.depth=10;call(view,"activateProject",new Class<?>[]{CadProject.class},small);
         check((double)field(view,"cameraDistance")==420.0,"small parts keep the original camera distance");
         tool(view,"Dopasuj");extents(view,canvas);check((float)field(view,"zoom")>1f,"fit enlarges a small part");
+        // Perspective back-face test: through an off-centre hole the eye sees part of the inner wall.
+        CadProject drilled=new CadProject();drilled.width=40;drilled.height=30;drilled.depth=10;
+        drilled.committedFeatures.add(new double[]{1,1,8,15,11,15,10,0,0,10,1,0,0,0,1,0});drilled.committedProfileIds.add("");
+        call(view,"activateProject",new Class<?>[]{CadProject.class},drilled);
+        List<?> holes=(List<?>)field(view,"holeCylinders");check(holes.size()==1,"fixture has one cylindrical hole");
+        int holeFace=(int)field(holes.get(0),"face");
+        tool(view,"Przód");extents(view,canvas);double perspectiveArea=wallArea(view,holeFace);
+        check(perspectiveArea>1,"perspective front view shows the hole wall facing the eye ("+perspectiveArea+" px²)");
+        tool(view,"Rzut prostokątny");extents(view,canvas);double orthoArea=wallArea(view,holeFace);
+        check(orthoArea<perspectiveArea*0.01,"orthographic front view sees the axis-parallel wall edge-on ("+orthoArea+" px²)");
+        tool(view,"Rzut prostokątny");
+        // Sketch-only document: Dopasuj centres and scales the sketch, not the empty origin.
+        CadProject sketchOnly=CadProject.blank();sketchOnly.sketch.add(new SketchPrimitive("far","Prostokąt",500,500,600,560));
+        call(view,"activateProject",new Class<?>[]{CadProject.class},sketchOnly);call(view,"enterSketchEditor",new Class<?>[0]);view.draw(canvas);
+        tool(view,"Dopasuj");view.draw(canvas);
+        double[] a=(double[])call(view,"projectSketchDepth",new Class<?>[]{double.class,double.class},500.0,500.0),b=(double[])call(view,"projectSketchDepth",new Class<?>[]{double.class,double.class},600.0,560.0);
+        float centreX=(224*dp+(float)call(view,"viewportRight",new Class<?>[0]))/2,centreY=(110*dp+1500-68*dp-(int)field(view,"bottomSystemInset"))/2;
+        check(Math.abs((a[0]+b[0])/2-centreX)<2&&Math.abs((a[1]+b[1])/2-centreY)<2,"sketch-only fit centres the sketch: "+(a[0]+b[0])/2+","+(a[1]+b[1])/2+" vs "+centreX+","+centreY);
+        check(Math.abs(b[0]-a[0])>300,"sketch-only fit enlarges a distant 100 mm sketch: "+Math.abs(b[0]-a[0])+" px");
         // Axis manipulator math uses the same camera distance as the renderer.
         double[] origin={0,0,0},axis={0,0,1},center={0,0,0};
         for(double distance:new double[]{420,5000}){

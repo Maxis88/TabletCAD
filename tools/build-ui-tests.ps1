@@ -14,6 +14,9 @@ $env:JAVA_HOME=$Jdk
 $env:TEMP=Join-Path $Build 'temp';$env:TMP=$env:TEMP
 function Check([string]$Step){if($LASTEXITCODE -ne 0){throw "$Step failed: $LASTEXITCODE"}}
 if(-not(Test-Path $AppClasses)){throw 'Build the application first'}
+# Start from an empty class folder so removed or renamed probes never linger in the test APK.
+if(Test-Path $Classes){Remove-Item $Classes -Recurse -Force}
+if(Test-Path $Dex){Remove-Item $Dex -Recurse -Force}
 New-Item -ItemType Directory -Force $Build,$Classes,$Dex,$env:TEMP | Out-Null
 $Sources=@((Get-ChildItem (Join-Path $Root 'tools\*Probe.java')).FullName)+(Join-Path $Root 'tools\WorkspaceInstrumentation.java')
 & (Join-Path $Jdk 'bin\javac.exe') -encoding UTF-8 -classpath "$AppClasses;$AndroidJar" -d $Classes $Sources

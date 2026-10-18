@@ -31,4 +31,17 @@ w rzucie prostokątnym proporcje widoków przód 2:1, góra 4:1, prawy bok 1:2
 
 - Brak interaktywnego ViewCube; brak widoków Tył/Dół/Lewy w menu (obsługiwane
   przez kod `applyStandardView`, nieudostępnione, aby nie przeładować menu).
-- Odrzucanie ścian tylnych nadal używa przybliżenia ortograficznego normalnej.
+- (Naprawione w 0.61.1) Odrzucanie ścian tylnych używało przybliżenia
+  ortograficznego normalnej.
+
+## 0.61.1 — poprawki widoku
+
+- Odrzucanie ścian tylnych liczone względem rzeczywistego punktu oka
+  perspektywy: wcześniej ściany widoczne pod ostrym kątem (np. ścianka otworu
+  widziana przez otwór, boki brył przy brzegu ekranu) znikały z widoku
+  i z wyboru. ViewCameraProbe: ścianka otworu widoczna w perspektywie
+  (≈730 px²), krawędziowo w rzucie prostokątnym (<1 px²).
+- Dopasuj w dokumencie bez bryły skaluje i centruje sam szkic (wcześniej
+  liczony od początku układu — odległy szkic zostawał mały i poza środkiem).
+  W trybie szkicu z bryłą uwzględnia obie geometrie.
+- build-ui-tests.ps1 czyści katalogi klas/DEX przed kompilacją testów.

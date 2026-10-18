@@ -2165,9 +2165,13 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             triangle.nx = displayedMesh[offset + 9];
             triangle.ny = displayedMesh[offset + 10];
             triangle.nz = displayedMesh[offset + 11];
+            double normalRx = triangle.nx * cyaw + triangle.nz * syaw;
             double normalRz = -triangle.nx * syaw + triangle.nz * cyaw;
+            double normalRy = triangle.ny * cpitch - normalRz * spitch;
             double cameraNormalZ = triangle.ny * spitch + normalRz * cpitch;
-            if (cameraNormalZ <= 1.0e-7) continue;
+            // Perspective back-face test against the actual eye point (0,0,distance) in camera
+            // space; the former orthographic test dropped visible faces seen at a grazing angle.
+            double facing = Double.NaN;
             for (int vertex = 0; vertex < 3; vertex++) {
                 double x = displayedMesh[offset + vertex * 3] - meshCenterX;
                 double y = displayedMesh[offset + vertex * 3 + 1] - meshCenterY;
@@ -2184,7 +2188,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 triangle.sx[vertex] = cx + (float)(rx * scale * perspective);
                 triangle.sy[vertex] = cy - (float)(ry * scale * perspective);
                 triangle.depth += (float)finalZ / 3f;
+                if (vertex == 0) facing = -normalRx * rx - normalRy * ry + cameraNormalZ * (distance - finalZ);
             }
+            if (!(facing > 1.0e-9 * distance)) continue;
             projectedTriangles.add(triangle);
             triangle.surface=new HiddenLineVisibility.Triangle(
                 new double[]{triangle.sx[0],triangle.sx[1],triangle.sx[2]},
@@ -3702,12 +3708,65 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     /** Zoom and pan so that the whole model (or sketch) fits the free viewport. */
     private void fitView() {
         panX = panY = 0;
+        List<double[]> sketchPoints = fitSketchPoints();
         double radius = modelRadius;
+        // With a solid, the view pivots on the mesh centre; a sketch-only document is panned to
+        // its own centre below, so its size is measured from the centre of its extents.
+        double ox = meshCenterX, oy = meshCenterY, oz = meshCenterZ;
+        if (modelRadius <= 1e-6 && !sketchPoints.isEmpty()) {
+            double[] lo = {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY}, hi = {-lo[0], -lo[0], -lo[0]};
+            for (double[] p : sketchPoints) { double[] w = sketchToWorld(p[0], p[1]); for (int k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], w[k]); hi[k] = Math.max(hi[k], w[k]); } }
+            ox = (lo[0] + hi[0]) / 2; oy = (lo[1] + hi[1]) / 2; oz = (lo[2] + hi[2]) / 2;
+        }
+        for (double[] p : sketchPoints) {
+            double[] w = sketchToWorld(p[0], p[1]);
+            radius = Math.max(radius, Math.sqrt((w[0]-ox)*(w[0]-ox)+(w[1]-oy)*(w[1]-oy)+(w[2]-oz)*(w[2]-oz)));
+        }
         if (!(radius > 1e-6)) { zoom = 1; return; }
         float width = viewportRight() - dp(224), height = getHeight() - dp(110) - dp(68) - bottomSystemInset;
         float available = Math.max(dp(80), Math.min(width, height)) * 0.42f;
         double perspective = orthographicView ? 1 : viewDistance() / Math.max(1e-6, viewDistance() - radius);
         zoom = (float)Math.max(0.02, Math.min(200, available / (radius * perspective * dp(3.2f))));
+        if (modelRadius <= 1e-6 && !sketchPoints.isEmpty()) {
+            // Sketch-only document: centre the sketch extents in the free viewport.
+            double minX = Double.POSITIVE_INFINITY, minY = minX, maxX = -minX, maxY = -minX;
+            for (double[] p : sketchPoints) {
+                double[] screen = projectSketchDepth(p[0], p[1]);
+                minX = Math.min(minX, screen[0]); maxX = Math.max(maxX, screen[0]);
+                minY = Math.min(minY, screen[1]); maxY = Math.max(maxY, screen[1]);
+            }
+            panX = (float)(workCenterX - (minX + maxX) / 2);
+            panY = (float)(workCenterY - (minY + maxY) / 2);
+        }
+    }
+
+    private double[] sketchToWorld(double u, double v) {
+        return new double[]{project.sketchOriginX + u * project.sketchUx + v * project.sketchVx,
+            project.sketchOriginY + u * project.sketchUy + v * project.sketchVy,
+            project.sketchOriginZ + u * project.sketchUz + v * project.sketchVz};
+    }
+
+    /** Extent points of the active sketch when it is what the user works on (sketch mode or no solid). */
+    private List<double[]> fitSketchPoints() {
+        List<double[]> points = new ArrayList<>();
+        if (project.sketch.isEmpty() || (!inSketch() && project.hasSolid())) return points;
+        for (SketchPrimitive p : project.sketch) {
+            if (p.type.equals("Okrąg")) {
+                double r = Math.hypot(p.x2 - p.x1, p.y2 - p.y1);
+                points.add(new double[]{p.x1 - r, p.y1 - r}); points.add(new double[]{p.x1 + r, p.y1 + r});
+                points.add(new double[]{p.x1 - r, p.y1 + r}); points.add(new double[]{p.x1 + r, p.y1 - r});
+            } else if (p.curves != null) {
+                double[] b = SketchCurves.bounds(p.curves);
+                points.add(new double[]{b[0], b[1]}); points.add(new double[]{b[2], b[3]});
+                points.add(new double[]{b[0], b[3]}); points.add(new double[]{b[2], b[1]});
+            } else if (p.vertices != null) {
+                for (int i = 0; i + 1 < p.vertices.length; i += 2) points.add(new double[]{p.vertices[i], p.vertices[i + 1]});
+            } else {
+                points.add(new double[]{p.x1, p.y1}); points.add(new double[]{p.x2, p.y2});
+                if (p.type.equals("Prostokąt")) { points.add(new double[]{p.x1, p.y2}); points.add(new double[]{p.x2, p.y1}); }
+            }
+        }
+        return points;
     }
 
     private void updateMeshCenter() {
