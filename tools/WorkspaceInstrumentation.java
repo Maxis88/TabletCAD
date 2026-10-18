@@ -17,17 +17,17 @@ public final class WorkspaceInstrumentation extends Instrumentation {
                 try {Class.forName(name).getMethod("main",String[].class).invoke(null,(Object)new String[]{scratch.getAbsolutePath()});}
                 finally {scratch.delete();}
             }
-            for(String name:new String[]{"WorkspaceUiProbe","InteractionFixProbe","ViewCameraProbe","SketchOffsetUiProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe","TabletFlowProbe","CadScenarioProbe"}) {
+            for(String name:new String[]{"WorkspaceUiProbe","InteractionFixProbe","ViewCameraProbe","SketchOffsetUiProbe","LibraryAuditProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe","TabletFlowProbe","CadScenarioProbe"}) {
                 Runnable execute=()-> {
                     try {
                         Class<?> probe=Class.forName(name);
                         probe.getField("applicationContext").set(null,getTargetContext());
-                        if(!name.equals("WorkspaceUiProbe")&&!name.equals("InteractionFixProbe")&&!name.equals("ViewCameraProbe")&&!name.equals("SketchOffsetUiProbe"))probe.getField("instrumentation").set(null,this);
+                        if(!name.equals("WorkspaceUiProbe")&&!name.equals("InteractionFixProbe")&&!name.equals("ViewCameraProbe")&&!name.equals("SketchOffsetUiProbe")&&!name.equals("LibraryAuditProbe"))probe.getField("instrumentation").set(null,this);
                         Method run=probe.getDeclaredMethod("run",String[].class);run.setAccessible(true);
                         run.invoke(null,(Object)new String[]{getTargetContext().getCacheDir().getAbsolutePath()});
                     }catch(Throwable error){failure[0]=error instanceof InvocationTargetException?error.getCause():error;}
                 };
-                if(name.equals("WorkspaceUiProbe")||name.equals("InteractionFixProbe")||name.equals("ViewCameraProbe")||name.equals("SketchOffsetUiProbe"))runOnMainSync(execute);else execute.run();
+                if(name.equals("WorkspaceUiProbe")||name.equals("InteractionFixProbe")||name.equals("ViewCameraProbe")||name.equals("SketchOffsetUiProbe")||name.equals("LibraryAuditProbe"))runOnMainSync(execute);else execute.run();
                 if(failure[0]!=null)break;
             }
         }catch(Throwable error){failure[0]=error;}
