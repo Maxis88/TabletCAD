@@ -41,7 +41,7 @@ if [ ! -f "$OUT/occt/lin64/gcc/lib/libTKDESTEP.so" ]; then
   # shellcheck disable=SC2086
   cmake --build "$OUT/occt" --parallel "$JOBS" --target $LIBS
 fi
-OCCT_LIB="$(dirname "$(find "$OUT/occt" -name libTKernel.so -print -quit)")"
+OCCT_LIB="$(dirname "$(find -L "$OUT/occt" -name libTKernel.so -print -quit)")"
 OCCT_INC="$OUT/occt/include/opencascade"
 JAVA_HOME="${JAVA_HOME:-$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")}"
 mkdir -p "$OUT/native" "$OUT/classes" "$OUT/probes" "$OUT/results"

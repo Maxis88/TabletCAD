@@ -74,7 +74,25 @@ bez tabletu; kod jądra sprawdzono na komputerze (OCCT 8.0.1 dla Linux x86-64).
 
 ## Weryfikacja
 
-Wyniki w sekcji „Wyniki testów” poniżej.
+Bez tabletu, na komputerze (Linux x86-64, OCCT 8.0.1 z tej samej rewizji co APK,
+te same funkcje JNI; `tools/host-kernel-tests.sh`):
+
+- Kompilacja Java (android.jar 36) i C++ (`-Wall -Wextra -Werror`) — OK.
+- Testy hosta: SolidPatternHostTest 115, UnitsHostTest 39, SketchDesignHostTest 131,
+  ProjectLibraryFilesHostTest 48, BodyMassHostTest 50, LibraryWorkspaceHostTest 53 — PASS.
+- SolidPatternKernelProbe 68 kontroli PASS: objętości analityczne szyków, luster,
+  otworów (wylot, głębokość, stożek 118°, pogłębienia, ściana boczna, gwint w otworze),
+  powłok (do wewnątrz, na zewnątrz z łukami, zamknięta, po zmianie grubości płyty),
+  pochylenia ±5°, operacji na bryłach, podziału, przekształceń i przekroju; diagnostyka
+  błędów wskazuje właściwą operację historii.
+- KernelDiagnosticsProbe 10 PASS; SketchDesignKernelProbe 7 PASS (pierwsze uruchomienie
+  próby z 0.72) oraz 33 dalsze próby jądra/szkicu bez regresji.
+- Znalezione i poprawione: gwint nie wcinał się w otwór zbudowany z przekształconej
+  kopii walca (Boolean bez efektu) — narzędzie otworu powstaje teraz bezpośrednio
+  w układzie modelu jako pryzmat okręgu, jak zwykłe wycięcie.
+- Niezależne od 0.73 (identyczny wynik na 0.72): ToolbarProbe miał nieaktualną listę
+  poleceń (zaktualizowano), SketchEditingProbe, ThreadProbe (tolerancja STEP na x86-64),
+  BodyPropertiesProbe i EdgeChamferProbe (nie kompilują się z obecnym API) — do przeglądu.
 
 ## Ograniczenia
 

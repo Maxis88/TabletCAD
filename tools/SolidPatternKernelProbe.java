@@ -120,7 +120,10 @@ public final class SolidPatternKernelProbe {
         CadProject hm=plate(20);add(hm,bore);add(hm,FeaturePattern.create(FeaturePattern.MIRROR,new int[]{0},new double[]{30,0,0},new double[]{1,0,0},0,0));
         close("mirrored counterbored hole",volume(hm),plate-2*HoleFeature.toolVolume(bore,20),1e-6);
         CadProject ht=plate(20);add(ht,HoleFeature.create(new double[]{25,30,20},up,-1,5,true,0,0,0,0,0));
-        add(ht,HoleThread.create(new HoleThread.Cylinder(new double[]{1,1,2.5,25,30,0,0,0,1,0,20},0),HoleThread.nearest(5).get(0),20,true,false));
+        CadModelResult drilled5=new CadModelResult(NativeCadEngine.evaluateModelChecked(100,60,20,0,ht.featureBase,packed(ht),null));
+        check(drilled5.holes.size()==1&&Math.abs(drilled5.holes.get(0).radius-2.5)<1e-9,"kernel reports the Hole bore as a threadable cylinder");
+        HoleThread.Cylinder bore5=drilled5.holes.get(0);System.out.println("bore axis "+java.util.Arrays.toString(bore5.axis)+" origin "+java.util.Arrays.toString(bore5.origin)+" "+bore5.min+".."+bore5.max);
+        add(ht,HoleThread.create(bore5,HoleThread.nearest(5).get(0),bore5.max-bore5.min,true,false));
         double threaded=volume(ht);check(threaded<plate-Math.PI*6.25*20&&threaded>plate-Math.PI*9*20,"thread cut into a Hole feature bore");
         CadProject hl=plate(20);add(hl,HoleFeature.create(new double[]{25,30,20},up,9,10,true,0,0,0,0,0));fails("hole on a face with unknown creator",hl,0,"Nie odnaleziono ściany otworu");
         CadProject ho=plate(20);add(ho,HoleFeature.create(new double[]{150,30,20},up,-1,10,true,0,0,0,0,0));fails("hole centre outside the face",ho,0,"poza");

@@ -897,21 +897,24 @@ TopoDS_Shape holeFeature(const TopoDS_Shape& shape,const double* f,const FaceOri
     Bnd_Box box;BRepBndLib::Add(shape,box);double xmin,ymin,zmin,xmax,ymax,zmax;box.Get(xmin,ymin,zmin,xmax,ymax,zmax);
     const double span=std::sqrt((xmax-xmin)*(xmax-xmin)+(ymax-ymin)*(ymax-ymin)+(zmax-zmin)*(zmax-zmin))+10;
     const double r=f[9]/2,margin=1e-3;const bool through=f[1]==1;const double depth=through?span*2:f[10];
-    const gp_Ax2 frame(gp_Pnt(0,0,-margin),gp_Dir(0,0,1));
-    TopoDS_Shape tool=BRepPrimAPI_MakeCylinder(frame,r,depth+margin).Shape();
+    // Tool built directly in model space along the drilling axis (no transformed copy), with the
+    // bore as the prism of a circular face like profile cuts, so threads cut into it reliably.
+    const gp_Dir axis=normal.Reversed();const gp_Dir side=std::abs(axis.Z())<.9?gp_Dir(0,0,1).Crossed(axis):gp_Dir(1,0,0).Crossed(axis);
+    auto at=[&](double t){return point.Translated(gp_Vec(axis)*t);};
+    auto frameAt=[&](double t){return gp_Ax2(at(t),axis,side);};
+    const TopoDS_Face disc=BRepBuilderAPI_MakeFace(BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(frameAt(-margin),r))));
+    TopoDS_Shape tool=BRepPrimAPI_MakePrism(disc,gp_Vec(axis)*(depth+margin)).Shape();
     auto fuse=[&](const TopoDS_Shape& part)->bool{BRepAlgoAPI_Fuse join(tool,part);join.Build();if(!join.IsDone())return false;tool=join.Shape();return true;};
     if(!through&&f[14]>0) {
         const double h=r/std::tan(f[14]*M_PI/360);
-        if(!fuse(BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0,0,depth),gp_Dir(0,0,1)),r,0,h).Shape())){kernelReason("Nie można utworzyć stożkowego dna otworu");return {};}
+        if(!fuse(BRepPrimAPI_MakeCone(frameAt(depth),r,0,h).Shape())){kernelReason("Nie można utworzyć stożkowego dna otworu");return {};}
     }
     if(f[11]==1) {
-        if(!fuse(BRepPrimAPI_MakeCylinder(frame,f[12]/2,f[13]+margin).Shape())){kernelReason("Nie można utworzyć pogłębienia walcowego");return {};}
+        if(!fuse(BRepPrimAPI_MakeCylinder(frameAt(-margin),f[12]/2,f[13]+margin).Shape())){kernelReason("Nie można utworzyć pogłębienia walcowego");return {};}
     } else if(f[11]==2) {
         const double R=f[12]/2,h=(R-r)/std::tan(f[13]*M_PI/360);
-        if(!fuse(BRepPrimAPI_MakeCone(gp_Ax2(gp_Pnt(0,0,-margin),gp_Dir(0,0,1)),R+margin*(R-r)/h,r,h+margin).Shape())){kernelReason("Nie można utworzyć pogłębienia stożkowego");return {};}
+        if(!fuse(BRepPrimAPI_MakeCone(frameAt(-margin),R+margin*(R-r)/h,r,h+margin).Shape())){kernelReason("Nie można utworzyć pogłębienia stożkowego");return {};}
     }
-    gp_Trsf placement;placement.SetDisplacement(gp_Ax3(),gp_Ax3(point,normal.Reversed()));
-    tool=BRepBuilderAPI_Transform(tool,placement,true).Shape();
     if(tool.IsNull()||!BRepCheck_Analyzer(tool).IsValid()){kernelReason("Narzędzie otworu ma niepoprawną topologię");return {};}
     TopoDS_Shape result=applyProfileFeature(shape,tool,true);
     if(result.IsNull())return {};
