@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.70.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.71.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,13 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.71.0: wspólna biblioteka start/menu, wyszukiwarka danych dokumentu,
+sortowanie dat/nazw, filtry typów, odczyt list i miniatur w tle, odrzucanie
+spóźnionych wyników. Wykrywanie .bak bez głównego pliku i wspólna blokada
+archiwizacji/odczytu/zapisu; rollback archiwizacji bez nadpisywania nowych danych.
+52 nowe kontrole JVM + 97 wcześniejszych, kompilacja APK i prób Androida.
+Bez weryfikacji nowego UI runtime na polecenie użytkownika. Audyt: docs/AUDIT-0.71.md.
 
 0.70.0: masa całego modelu z objętości OCCT i zapisanej, jednorodnej gęstości
 w kg/m³. Schemat .tcad 35 z odczytem starszych projektów. 49 kontroli JVM

@@ -22,6 +22,11 @@ public final class ProjectLibraryFiles {
         public final String token,id,name;public final long deletedAt;public final boolean backup;
         TrashEntry(String token,Info info,long time,boolean backup){this.token=token;id=info.id;name=info.name;deletedAt=time;this.backup=backup;}
     }
+    public static final class DocumentEntry {
+        public final byte[] data;public final long modifiedAt;public final boolean backup;
+        DocumentEntry(byte[] data,long time,boolean backup){this.data=data;modifiedAt=time;this.backup=backup;}
+    }
+    public interface DocumentVisitor {void accept(DocumentEntry entry)throws IOException;}
     private interface Action<T>{T run()throws IOException;}
     private static final Pattern ARCHIVE=Pattern.compile("([0-9]{1,19})-document-([A-Za-z0-9_-]{1,100})\\.tcad");
     private final File folder;private final Codec codec;private final Checkpoint checkpoint;
@@ -55,13 +60,72 @@ public final class ProjectLibraryFiles {
     private byte[] snapshot(File main,String id)throws IOException {
         try{return read(main,id);}catch(IOException error){try{return read(child(main.getParentFile(),main.getName()+".bak"),id);}catch(IOException backup){error.addSuppressed(backup);throw error;}}
     }
+    /** Includes backup-only documents; validates filename identity without changing any bytes. */
+    public List<DocumentEntry> listDocuments()throws IOException {
+        List<DocumentEntry> result=new ArrayList<>();visitDocuments(result::add);
+        result.sort((a,b)->Long.compare(b.modifiedAt,a.modifiedAt));return result;
+    }
+    /** Streams one serialized document at a time instead of retaining the whole library twice. */
+    public void visitDocuments(DocumentVisitor visitor)throws IOException {
+        locked(()->{
+            File[] files=folder.listFiles();if(files==null)throw new IOException("Nie można odczytać katalogu projektów");
+            Set<String> ids=new TreeSet<>();
+            Pattern pattern=Pattern.compile("document-([A-Za-z0-9_-]{1,100})\\.tcad(?:\\.bak)?");
+            for(File file:files){Matcher match=pattern.matcher(file.getName());if(match.matches())ids.add(match.group(1));}
+            for(String id:ids) {
+                DocumentEntry entry;
+                try {
+                    File main=document(id);byte[] data;boolean backup=false;
+                    try{data=read(main,id);}catch(IOException error){data=read(child(folder,main.getName()+".bak"),id);backup=true;}
+                    File selected=backup?child(folder,main.getName()+".bak"):main;
+                    entry=new DocumentEntry(data,selected.lastModified(),backup);
+                }catch(IOException ignored){continue;/* Unreadable files remain untouched. */}
+                visitor.accept(entry);
+            }
+            return null;
+        });
+    }
+    /** Moves originals only; rollback never replaces a file created by another writer. */
+    public String trash(String id,String openId)throws IOException {
+        return locked(()->{
+            if(id!=null&&id.equals(openId))throw new IOException("Nie można usunąć otwartego projektu — najpierw otwórz inny");
+            File main=document(id),backup=child(folder,main.getName()+".bak");
+            if(!main.isFile()&&!backup.isFile())throw new IOException("Projekt nie istnieje");
+            File trash=directory("trash"),thumbnails=child(folder,"thumbnails");
+            List<File> sources=new ArrayList<>();
+            // Main goes last: while archiving companions the original stays discoverable.
+            if(backup.isFile())sources.add(backup);
+            File thumbnail=child(thumbnails,id+".png");if(thumbnail.isFile())sources.add(thumbnail);
+            if(main.isFile())sources.add(main);
+            long stamp=System.currentTimeMillis();String prefix;
+            while(true) {
+                prefix=stamp+"-";
+                boolean collision=child(trash,prefix+main.getName()+".restored").exists();
+                for(String suffix:new String[]{main.getName(),main.getName()+".bak",id+".png"})if(child(trash,prefix+suffix).exists())collision=true;
+                if(!collision)break;stamp++;
+            }
+            List<File[]> moved=new ArrayList<>();
+            try {
+                for(File source:sources) {
+                    File target=child(trash,prefix+source.getName());checkpoint.beforePublish();
+                    Files.move(source.toPath(),target.toPath());moved.add(new File[]{source,target});
+                }
+            }catch(IOException error) {
+                Collections.reverse(moved);
+                for(File[] pair:moved)try{Files.move(pair[1].toPath(),pair[0].toPath());}catch(IOException rollback){error.addSuppressed(rollback);}
+                throw error;
+            }
+            return prefix+main.getName();
+        });
+    }
     public List<TrashEntry> listTrash()throws IOException {
         return locked(()->{
             File trash=directory("trash");File[] files=trash.listFiles();List<TrashEntry> result=new ArrayList<>();Set<String> seen=new HashSet<>();
             if(files!=null)for(File file:files) {
                 String token=file.getName().endsWith(".bak")?file.getName().substring(0,file.getName().length()-4):file.getName();Matcher m=ARCHIVE.matcher(token);
-                if(!m.matches()||!seen.add(token)||child(trash,token+".restored").isFile())continue;
+                if(!m.matches()||!seen.add(token))continue;
                 try {
+                    if(child(trash,token+".restored").isFile())continue;
                     long time=Long.parseLong(m.group(1));String id=m.group(2);File main=child(trash,token);byte[] data=snapshot(main,id);boolean backup;
                     try{read(main,id);backup=false;}catch(IOException error){backup=true;}
                     result.add(new TrashEntry(token,codec.inspect(data),time,backup));

@@ -1,11 +1,20 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.70.0-body-mass**, versionCode **79**.
+Wersja źródeł: **0.71.0-library-workspace**, versionCode **80**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
+
+Wersja 0.71: wspólna biblioteka przy starcie i w menu Moje projekty,
+wyszukiwanie po nazwie i danych rysunkowych (także bez polskich znaków),
+sortowanie po dacie/nazwie i filtry typów. Listy biblioteki oraz kosza czytane
+w tle, miniatury dekodowane poza UI z ograniczoną kolejką i pamięcią podręczną.
+Wykrywanie projektów zawierających tylko .bak, oznaczenie kopii odzyskiwania
+oraz bezpieczniejsze przenoszenie do kosza z cofaniem po błędzie.
+149 kontroli JVM i kompilacja APK przeszły; UI bez uruchomienia na Androidzie.
+[Audyt pakietu 0.71](docs/AUDIT-0.71.md).
 
 Wersja 0.70: Sprawdź → Właściwości bryły → Gęstość materiału: obliczanie masy
 całego modelu na podstawie objętości OCCT i własnej gęstości w kg/m³.

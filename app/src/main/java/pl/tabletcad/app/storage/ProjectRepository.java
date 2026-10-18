@@ -94,23 +94,22 @@ public final class ProjectRepository {
      */
     public synchronized void deleteProject(String id,String openProjectId)throws IOException {
         if(recoveryFailure!=null)throw new IOException("Biblioteka jest tylko do odczytu");
-        if(id.equals(openProjectId))throw new IOException("Nie można usunąć otwartego projektu — najpierw otwórz inny");
-        File file=projectFile(id);if(!file.isFile())throw new IOException("Projekt nie istnieje");
-        File trash=new File(folder,"trash");if(!trash.isDirectory()&&!trash.mkdirs())throw new IOException("Nie można utworzyć kosza");
-        String stamp=String.valueOf(System.currentTimeMillis());
-        for(File source:new File[]{file,new File(file.getPath()+".bak"),thumbnailFile(id)})
-            if(source.isFile())Files.move(source.toPath(),new File(trash,stamp+"-"+source.getName()).toPath(),StandardCopyOption.REPLACE_EXISTING);
+        new ProjectLibraryFiles(folder,new ProjectDocumentCodec()).trash(id,openProjectId);
     }
 
     public synchronized List<CadProject> listProjects() {
-        File[] files=folder.listFiles((dir,name)->name.startsWith("document-")&&name.endsWith(".tcad"));
-        List<CadProject> result=new ArrayList<>();if(files==null)return result;
-        Arrays.sort(files,(a,b)->{int order=Long.compare(b.lastModified(),a.lastModified());return order!=0?order:a.getName().compareTo(b.getName());});
-        for(File file:files) {
-            String id=file.getName().substring(9,file.getName().length()-5);
-            try{result.add(loadProject(id));}catch(IOException|IllegalArgumentException ignored){}
-        }
+        List<CadProject> result=new ArrayList<>();
+        try{for(ProjectLibraryItem item:listProjectItems())result.add(item.project);}catch(IOException ignored){}
         return result;
+    }
+
+    public synchronized List<ProjectLibraryItem> listProjectItems()throws IOException {
+        List<ProjectLibraryItem> result=new ArrayList<>();
+        new ProjectLibraryFiles(folder,new ProjectDocumentCodec()).visitDocuments(entry->{
+            try{result.add(new ProjectLibraryItem(CadProject.fromJson(new JSONObject(new String(entry.data,StandardCharsets.UTF_8))),entry.modifiedAt,entry.backup));}
+            catch(org.json.JSONException error){throw new IOException("Nie można odczytać zweryfikowanego dokumentu",error);}
+        });
+        return ProjectLibraryItem.select(result,"",ProjectLibraryItem.Kind.ALL,ProjectLibraryItem.Sort.RECENT);
     }
 
     public synchronized List<ProjectLibraryFiles.TrashEntry> listDeletedProjects()throws IOException {
