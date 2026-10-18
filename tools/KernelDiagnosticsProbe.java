@@ -22,6 +22,7 @@ public final class KernelDiagnosticsProbe {
         if (p[5] != 1) throw new AssertionError("Expected one solid, got " + p[5]);
         return p[0];
     }
+    private static void check(boolean ok,String text){if(!ok)throw new AssertionError(text);System.out.println("PASS "+text);}
     private static void close(String what, double actual, double expected, double tolerance) {
         if (Math.abs(actual - expected) > tolerance) throw new AssertionError(what + ": " + actual + " != " + expected);
     }
@@ -67,6 +68,31 @@ public final class KernelDiagnosticsProbe {
         // A failure must not leak into the next successful evaluation.
         if (NativeCadEngine.evaluateModelChecked(100, 60, 20, 0, BASE, part, null).length == 0)
             throw new AssertionError("Valid model rejected after failure");
+        // Timing reference for synchronous rebuilds on the UI thread: plate with a 6x4 hole grid and R3.
+        java.util.List<double[]> grid=new java.util.ArrayList<>();
+        for(int i=0;i<6;i++)for(int j=0;j<4;j++)grid.add(new double[]{1,1,12+i*15,10+j*13,15+i*15,10+j*13,20,0,0,20,1,0,0,0,1,0});
+        grid.add(FILLET);double[] heavy=concat(grid.toArray(new double[0][]));
+        long start=System.nanoTime();double[] packed=NativeCadEngine.evaluateModelChecked(100,60,20,0,BASE,heavy,null);long ms=(System.nanoTime()-start)/1000000;
+        System.out.println("TIMING rebuild 24 holes + R3: "+ms+" ms, packed="+packed.length);
+        // History cache: unchanged prefix is resumed, so appending one operation is much cheaper,
+        // and the result must be identical to a cold evaluation.
+        double[] plusOne=concat(heavy,new double[]{1,1,50,30,51,30,20,0,0,20,1,0,0,0,1,0});
+        start=System.nanoTime();double[] warm=NativeCadEngine.bodyProperties(100,60,20,0,BASE,plusOne,null);long appendMs=(System.nanoTime()-start)/1000000;
+        System.out.println("TIMING append one hole to cached history: "+appendMs+" ms");
+        NativeCadEngine.bodyProperties(1,1,1,0,new double[]{0,0,0,5,5,0,5},new double[0],null);// evict cache
+        start=System.nanoTime();double[] cold=NativeCadEngine.bodyProperties(100,60,20,0,BASE,plusOne,null);long coldMs=(System.nanoTime()-start)/1000000;
+        System.out.println("TIMING same model without cache: "+coldMs+" ms");
+        check(warm.length==7&&cold.length==7,"cached and cold evaluations succeed");
+        close("cached volume equals cold volume",warm[0],cold[0],1e-9);close("cached face count",warm[6],cold[6],0);
+        check(appendMs*2<coldMs,"appending one operation reuses the cached history ("+appendMs+" vs "+coldMs+" ms)");
+        // Editing an early operation invalidates the suffix: result must follow the edit.
+        double[] edited=plusOne.clone();edited[4]=14;// first hole radius 3 -> 2
+        double[] e=NativeCadEngine.bodyProperties(100,60,20,0,BASE,edited,null);
+        double[] eCold;NativeCadEngine.bodyProperties(1,1,1,0,new double[]{0,0,0,5,5,0,5},new double[0],null);eCold=NativeCadEngine.bodyProperties(100,60,20,0,BASE,edited,null);
+        close("early edit through cache equals cold",e[0],eCold[0],1e-9);check(e[0]>warm[0],"smaller first hole increases volume");
+        // Changing the base invalidates everything.
+        double[] widerBase={0,0,0,120,60,0,20};double[] wb=NativeCadEngine.bodyProperties(120,60,20,0,widerBase,plusOne,null);
+        close("base change through cache",wb[0]-warm[0],20*60*20,1e-6);
         System.out.println("PASS kernel diagnostics");
     }
 }

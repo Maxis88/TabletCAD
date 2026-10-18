@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.61.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.62.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,11 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.62.0: pamięć podręczna stanów historii w jądrze (bryła bazowa, w tym odczyt
+STEP, i stan po każdej operacji najwyższego poziomu); wznawianie od najdłuższego
+niezmienionego prefiksu, serializacja wszystkich obliczeń OCCT. Wyniki
+identyczne z obliczeniem od zera. Audyt: docs/AUDIT-0.62.md.
 
 0.61.0: Szyk liniowy (siatka kolumny×wiersze) i kołowy (liczba, kąt, środek)
 elementów szkicu jako dokładne przekształcenia sztywne; obrócony prostokąt

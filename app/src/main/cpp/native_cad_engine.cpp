@@ -5,6 +5,9 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <mutex>
+#include <algorithm>
+#include <sys/stat.h>
 
 #include <BRepBndLib.hxx>
 #include <BRepCheck_Analyzer.hxx>
@@ -768,6 +771,20 @@ TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
 }
 using FaceOrigins=std::vector<std::pair<TopoDS_Shape,int>>;
 using BodyShapes=std::map<int,TopoDS_Shape>;
+
+// Evaluation state at a top-level history record boundary ("before record at offset").
+struct EvalState { int offset; int featureNumber; TopoDS_Shape shape; BodyShapes bodies; bool indexed; FaceOrigins origins; };
+// Single-entry cache of the last evaluated history. B-Rep shapes are immutable inputs to the
+// boolean/fillet algorithms, so a state whose record prefix is unchanged can be resumed from.
+// All evaluations are serialised by g_evalMutex (preview, commit and UI threads).
+struct EvalCache {
+    bool valid=false;double width=0,height=0,depth=0,radius=0;std::vector<double> base;bool hasBase=false;
+    std::string source;long long sourceSize=-1,sourceTime=-1;
+    TopoDS_Shape root,initial;std::vector<double> rootBase;
+    std::vector<double> values;std::vector<EvalState> states;
+};
+std::mutex g_evalMutex;
+EvalCache g_evalCache;
 void updateOrigins(const TopoDS_Shape& before,const TopoDS_Shape& after,int tag,FaceOrigins& origins) {
     static_cast<void>(before);FaceOrigins next;
     for(TopExp_Explorer e(after,TopAbs_FACE);e.More();e.Next()) {
@@ -776,10 +793,23 @@ void updateOrigins(const TopoDS_Shape& before,const TopoDS_Shape& after,int tag,
     }
     origins=std::move(next);
 }
-TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& values,const std::vector<double>& rootBase,const TopoDS_Shape& rootShape,bool imported,BodyShapes* finalBodies,FaceOrigins* finalOrigins) {
+TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& values,const std::vector<double>& rootBase,const TopoDS_Shape& rootShape,bool imported,BodyShapes* finalBodies,FaceOrigins* finalOrigins,EvalCache* cache=nullptr) {
     const int count=static_cast<int>(values.size());int featureNumber=0;BodyShapes bodies;bool indexed=false;FaceOrigins origins;
     if(!rootShape.IsNull())updateOrigins({},rootShape,-1,origins);if(!shape.IsNull()&&!shape.IsSame(rootShape))updateOrigins(rootShape,shape,-2,origins);
-        for (jsize i = 0; i < count;) {
+        jsize i=0;
+        if(cache) {
+            // Resume from the deepest cached boundary whose record prefix is unchanged.
+            size_t common=0;const size_t limit=std::min(values.size(),cache->values.size());
+            while(common<limit&&values[common]==cache->values[common])common++;
+            const EvalState* resume=nullptr;
+            for(const auto& state:cache->states)if(static_cast<size_t>(state.offset)<=common&&(!resume||state.offset>resume->offset))resume=&state;
+            if(resume&&resume->offset>0){i=resume->offset;featureNumber=resume->featureNumber;shape=resume->shape;bodies=resume->bodies;indexed=resume->indexed;origins=resume->origins;}
+            const int kept=i;std::vector<EvalState> retained;
+            for(auto& state:cache->states)if(state.offset<kept)retained.push_back(std::move(state));
+            cache->states=std::move(retained);cache->values=values;
+        }
+        for (; i < count;) {
+            if(cache)cache->states.push_back(EvalState{static_cast<int>(i),featureNumber,shape,bodies,indexed,origins});
             if(count-i<16){kernelFailAt(featureNumber,"Niekompletny zapis operacji w historii");return {};}
             const double* f = values.data() + i;
             const TopoDS_Shape prior=shape;const int tag=featureNumber++;
@@ -887,6 +917,7 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
             updateOrigins(prior,shape,tag,origins);i+=stride;
         }
 
+    if(cache)cache->states.push_back(EvalState{count,featureNumber,shape,bodies,indexed,origins});
     if(finalBodies){if(!indexed)bodies[1]=shape;*finalBodies=std::move(bodies);}
     if(finalOrigins)*finalOrigins=std::move(origins);
     return shape;
@@ -916,8 +947,24 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         env->ReleaseStringUTFChars(javaExportPath, chars);
     }
     try {
-        TopoDS_Shape shape = BRepPrimAPI_MakeBox(width, height, depth).Shape();
-        std::vector<double> rootBase={0,0,0,width,height,0,depth};
+        std::unique_lock<std::mutex> evalLock(g_evalMutex);
+        std::vector<double> keyBase;bool keyHasBase=false;std::string keySource;long long keySize=-1,keyTime=-1;
+        if(javaSourceStep!=nullptr) {
+            const char* chars=env->GetStringUTFChars(javaSourceStep,nullptr);if(chars==nullptr)return env->NewDoubleArray(0);
+            keySource=chars;env->ReleaseStringUTFChars(javaSourceStep,chars);
+            struct stat info{};if(stat(keySource.c_str(),&info)==0){keySize=static_cast<long long>(info.st_size);keyTime=static_cast<long long>(info.st_mtime);}
+        }else if(javaBase!=nullptr) {
+            keyHasBase=true;keyBase.resize(env->GetArrayLength(javaBase));env->GetDoubleArrayRegion(javaBase,0,static_cast<jsize>(keyBase.size()),keyBase.data());
+        }
+        EvalCache& cache=g_evalCache;
+        const bool hit=cache.valid&&cache.width==width&&cache.height==height&&cache.depth==depth&&cache.radius==radius
+            &&cache.hasBase==keyHasBase&&cache.base==keyBase&&cache.source==keySource&&cache.sourceSize==keySize&&cache.sourceTime==keyTime;
+        TopoDS_Shape shape,rootShape;std::vector<double> rootBase;
+        if(hit){shape=cache.initial;rootShape=cache.root;rootBase=cache.rootBase;}
+        else {
+        cache=EvalCache();
+        shape = BRepPrimAPI_MakeBox(width, height, depth).Shape();
+        rootBase={0,0,0,width,height,0,depth};
         if (javaSourceStep != nullptr) {
             const char* chars = env->GetStringUTFChars(javaSourceStep, nullptr);
             if (chars == nullptr) return env->NewDoubleArray(0);
@@ -966,10 +1013,13 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         }
             }
         if(shape.IsNull()) { kernelFailAt(-1,"Pierwsza bryła (bazowa) nie może zostać utworzona z tego profilu"); return env->NewDoubleArray(0); }
-        const TopoDS_Shape rootShape=shape;
+        rootShape=shape;
         if (radius > 0) { shape = filletAllEdges(shape, radius); if(shape.IsNull()) { kernelFailAt(-1,"Zaokrąglenie wszystkich krawędzi bryły bazowej nie powiodło się"); return env->NewDoubleArray(0); } }
+        cache.valid=true;cache.width=width;cache.height=height;cache.depth=depth;cache.radius=radius;cache.hasBase=keyHasBase;cache.base=keyBase;
+        cache.source=keySource;cache.sourceSize=keySize;cache.sourceTime=keyTime;cache.root=rootShape;cache.initial=shape;cache.rootBase=rootBase;
+        }
         BodyShapes bodies;FaceOrigins origins;
-        shape=evaluateRecords(shape,values,rootBase,rootShape,javaSourceStep!=nullptr,&bodies,&origins);
+        shape=evaluateRecords(shape,values,rootBase,rootShape,javaSourceStep!=nullptr,&bodies,&origins,&cache);
         if(shape.IsNull()){kernelReason("Przebudowa modelu nie powiodła się");return env->NewDoubleArray(0);}
         if (!exportPath.empty()) {
             STEPControl_Writer writer;
