@@ -28,3 +28,16 @@ powstaje na tej ścianie; krok 17 — po obróceniu modelu jedno dotknięcie
 krawędzi szkicu bazowego otwiera go z zaznaczonym prostokątem, po czym edycja
 100 → 120 przebudowuje bryłę dokładnie. Zaktualizowano TabletFlowProbe
 i WorkspaceUiProbe do nowego zachowania.
+
+## 0.66 — korekta po uwadze użytkownika i wygląd
+
+- Dotknięcie ściany otwierało edycję wyciągnięcia, co było niepożądane.
+  Teraz dotknięcie tylko zaznacza ścianę (i podświetla jej operację), a edycję
+  operacji źródłowej otwiera przytrzymanie palca na ścianie (z wibracją).
+  Zamknięcie panelu zachowuje zaznaczoną ścianę dla Szkicu. Scenariusz 16.3
+  sprawdza oba zachowania.
+- Oś czasu: zaokrąglony ciemny dok nad jasnym pasem nawigacji systemowej,
+  mniejsze ikony operacji, wyróżniona ostatnia i wybrana operacja.
+- Komunikaty: pływające powiadomienie wyśrodkowane nad osią czasu, akcent
+  morski albo czerwony dla błędów i odrzuconych operacji.
+- Okna grup narzędzi z zaokrąglonymi rogami.

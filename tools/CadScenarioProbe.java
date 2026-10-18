@@ -101,7 +101,12 @@ public final class CadScenarioProbe {
         ui(()->{TabletFlowProbe.set(view,"cameraYaw",-28f);TabletFlowProbe.set(view,"cameraPitch",22f);call(view,"fitView",new Class<?>[0]);view.invalidate();});instrumentation.waitForIdleSync();
         tool(view,"Wybierz");float[] top=world(view,70,40,20);TabletFlowProbe.tap(top[0],top[1]);Thread.sleep(300);
         ui(()->check((int)field(view,"selectedFace")>=0&&Math.abs((double)field(view,"selectedNormalZ")-1)<1e-6,"8 tap selects the top face (normal +Z): "+describe(view)));
-        ui(()->check(field(view,"propertyEditor")!=null,"8 selecting the face opens the parameters of the extrusion that created it ("+describe(view)+")"));
+        ui(()->check(field(view,"propertyEditor")==null,"8 tapping a face only selects it, no editor opens ("+describe(view)+")"));
+        // Long press on the face edits the operation that created it; Cancel keeps the selection.
+        long down=SystemClock.uptimeMillis();MotionEvent press=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,top[0],top[1],0);instrumentation.sendPointerSync(press);press.recycle();
+        SystemClock.sleep(900);press=MotionEvent.obtain(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,top[0],top[1],0);instrumentation.sendPointerSync(press);press.recycle();instrumentation.waitForIdleSync();Thread.sleep(200);
+        ui(()->{View panel=(View)field(view,"propertyEditor");check(panel!=null,"8 long press on the face opens the parameters of its extrusion ("+describe(view)+")");
+            Button cancel=WorkspaceUiProbe.button(panel,"Anuluj");if(cancel!=null)cancel.performClick();check((int)field(view,"selectedFace")>=0,"8 face stays selected after closing the editor");});
         tool(view,"Szkic");
         ui(()->{CadProject p=(CadProject)field(view,"project");check(Math.abs(p.sketchOriginZ-20)<1e-9&&Math.abs(p.sketchOriginX)<1e-9&&Math.abs(p.sketchOriginY)<1e-9&&Math.abs(p.sketchUx-1)<1e-9&&Math.abs(p.sketchVy-1)<1e-9,
             "8 face sketch frame: origin is the model origin projected on the face ("+p.sketchOriginX+","+p.sketchOriginY+","+p.sketchOriginZ+")");});

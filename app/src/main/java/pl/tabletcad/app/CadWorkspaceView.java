@@ -475,11 +475,23 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                         if (mode.equals("Szkic") && !sketchPlaneChosen) {
                             if (isFacePlanar(face)) chooseSketchPlane("Ściana " + (face + 1));
                             else operationMessage = "Wybierz płaską ścianę — powierzchnia jest zakrzywiona";
-                        } else if (mode.equals("Wybierz")) editFaceOrigin(face);
+                        } else if (mode.equals("Wybierz")) {
+                            Integer origin=faceFeatures.get(face);highlightFeature=origin==null?Integer.MIN_VALUE:origin;highlightBody=0;highlightSketch=false;
+                            operationMessage="Zaznaczono ścianę — Szkic utworzy na niej szkic. Przytrzymaj ścianę, aby edytować operację, która ją utworzyła.";
+                        }
                         invalidate();
                     }
                 }
                 return true;
+            }
+
+            @Override public void onLongPress(MotionEvent e) {
+                // Long press on a face edits the operation that created it; a tap only selects.
+                if(!mode.equals("Wybierz")||!isInsideViewport(e.getX(),e.getY())||scaleGestures.isInProgress())return;
+                int face=findFaceAt(e.getX(),e.getY());if(face<0)return;
+                selectedFace=face;project.selectedBody=faceBodies.getOrDefault(face,1);
+                performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                editFaceOrigin(face);invalidate();
             }
 
             @Override public boolean onScroll(MotionEvent e1, MotionEvent e2, float dx, float dy) {
@@ -836,7 +848,10 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }
         int width=(int)dp(Math.min(columns,commands.length)*88+16);
         toolbarPopup=new android.widget.PopupWindow(body,width,android.view.ViewGroup.LayoutParams.WRAP_CONTENT,true);
-        toolbarPopup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(CHROME));
+        android.graphics.drawable.GradientDrawable popupBackground=new android.graphics.drawable.GradientDrawable();
+        popupBackground.setColor(CHROME);popupBackground.setCornerRadius(dp(14));
+        body.setBackground(popupBackground);body.setClipToOutline(true);
+        toolbarPopup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
         toolbarPopup.setOutsideTouchable(true);toolbarPopup.setElevation(dp(10));
         int x=(int)Math.max(toolbarX(),Math.min(anchorX,getWidth()-dp(252)-width));
         int[] origin=new int[2];getLocationOnScreen(origin);
@@ -912,8 +927,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }).show();
     }
     /**
-     * Selecting a face means editing the operation that created it; the face stays selected so the
-     * Sketch tool can still start a sketch on it.
+     * Long press on a face edits the operation that created it; the face stays selected so the
+     * Sketch tool can still start a sketch on it. A plain tap only selects the face.
      */
     private void editFaceOrigin(int face) {
         if(project.importedMeshSource!=null||SketchTransactions.active(project))return;
@@ -1063,14 +1078,20 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
     private void drawViewportMessage(Canvas canvas,float left,float right,float bottom) {
         android.text.TextPaint messagePaint=new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
-        messagePaint.setTextSize(dp(12));messagePaint.setColor(INK);
-        int width=(int)Math.max(dp(40),Math.min(dp(600),right-left-dp(48)));
+        // Floating status toast: dark pill centred above the timeline, red accent for failures.
+        messagePaint.setTextSize(dp(12.5f));messagePaint.setColor(Color.WHITE);
+        int maxWidth=(int)Math.max(dp(40),Math.min(dp(620),right-left-dp(64)));
+        float natural=messagePaint.measureText(operationMessage);int width=(int)Math.min(maxWidth,natural+dp(2));
         android.text.StaticLayout layout=android.text.StaticLayout.Builder.obtain(operationMessage,0,
-            operationMessage.length(),messagePaint,width).setMaxLines(2)
+            operationMessage.length(),messagePaint,Math.max(1,width)).setMaxLines(2)
             .setEllipsize(android.text.TextUtils.TruncateAt.END).build();
-        float x=left+dp(16),y=bottom-layout.getHeight()-dp(24);
-        paint.setColor(PANEL);canvas.drawRoundRect(new RectF(x,y-dp(8),x+width+dp(24),bottom-dp(8)),dp(8),dp(8),paint);
-        canvas.save();canvas.translate(x+dp(12),y);layout.draw(canvas);canvas.restore();
+        float boxWidth=layout.getWidth()+dp(40),x=(left+right)/2-boxWidth/2,y=bottom-layout.getHeight()-dp(30);
+        RectF box=new RectF(x,y-dp(10),x+boxWidth,bottom-dp(10));
+        paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(235,20,26,33));canvas.drawRoundRect(box,dp(14),dp(14),paint);
+        String lower=operationMessage.toLowerCase(java.util.Locale.ROOT);
+        boolean failure=lower.startsWith("nie ")||lower.contains("nie zatwierdzono")||lower.contains("nie powiod")||lower.contains("błąd")||lower.contains("sprzeczne");
+        paint.setColor(failure?Color.rgb(226,92,80):ACCENT);canvas.drawRoundRect(new RectF(box.left+dp(10),box.top+dp(10),box.left+dp(14),box.bottom-dp(10)),dp(2),dp(2),paint);
+        canvas.save();canvas.translate(x+dp(26),y);layout.draw(canvas);canvas.restore();
     }
 
     private void drawGrid(Canvas canvas, float left, float top, float right, float bottom) {
@@ -4367,29 +4388,35 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         float left = leftWidth();
         float right = viewportRight();
         canvas.save();canvas.clipRect(left,top,right,getHeight());
-        paint.setColor(CHROME);
+        // Light strip under the dock keeps the system navigation area visually quiet.
+        paint.setStyle(Paint.Style.FILL);paint.setColor(BG);
         canvas.drawRect(left, top, right, getHeight(), paint);
-        text(canvas, "↶", left + dp(30), top + dp(37), 23, undoStack.isEmpty() ? MUTED : Color.WHITE, true, Paint.Align.CENTER);
-        text(canvas, "↷", left + dp(76), top + dp(37), 23, redoStack.isEmpty() ? MUTED : Color.WHITE, true, Paint.Align.CENTER);
+        paint.setColor(CHROME);
+        canvas.drawRoundRect(new RectF(left + dp(8), top + dp(3), right - dp(8), top + dp(59)), dp(14), dp(14), paint);
+        text(canvas, "↶", left + dp(30), top + dp(36), 22, undoStack.isEmpty() ? Color.rgb(84, 98, 110) : Color.WHITE, true, Paint.Align.CENTER);
+        text(canvas, "↷", left + dp(76), top + dp(36), 22, redoStack.isEmpty() ? Color.rgb(84, 98, 110) : Color.WHITE, true, Paint.Align.CENTER);
+        paint.setColor(CHROME_RAISED);canvas.drawRect(left + dp(104), top + dp(14), left + dp(105), top + dp(48), paint);
         List<CadTimeline.Item> features=CadTimeline.entries(project);
         float startX = left + dp(116);
         float gap = dp(64);
         timelineScroll=Math.max(0,Math.min(maxTimelineScroll(),timelineScroll));
-        canvas.save();canvas.clipRect(startX-dp(8),top+dp(6),right,getHeight());
+        canvas.save();canvas.clipRect(startX-dp(8),top+dp(3),right-dp(10),top+dp(59));
         canvas.translate(-timelineScroll,0);
         paint.setStrokeWidth(dp(2));
-        paint.setColor(Color.rgb(70, 86, 98));
+        paint.setColor(CHROME_RAISED);
         if (features.size() > 1) {
-            canvas.drawLine(startX + dp(19), top + dp(29),
-                startX + (features.size() - 1) * gap + dp(19), top + dp(29), paint);
+            canvas.drawLine(startX + dp(19), top + dp(24),
+                startX + (features.size() - 1) * gap + dp(19), top + dp(24), paint);
         }
         for (int i = 0; i < features.size(); i++) {
             float x = startX + i * gap;
-            paint.setColor(i == selectedTimelineIndex ? Color.rgb(225,120,10) : i == features.size() - 1 ? ACCENT : Color.rgb(55, 72, 85));
-            canvas.drawRoundRect(new RectF(x, top + dp(10), x + dp(38), top + dp(48)), dp(7), dp(7), paint);
-            drawFeatureIcon(canvas, features.get(i).title, x + dp(19), top + dp(29), Color.WHITE);
-            text(canvas, features.get(i).title, x + dp(19), top + dp(59), 8,
-                Color.rgb(205, 214, 221), false, Paint.Align.CENTER);
+            boolean selected = i == selectedTimelineIndex, last = i == features.size() - 1;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(selected ? Color.rgb(225,120,10) : last ? ACCENT : CHROME_RAISED);
+            canvas.drawRoundRect(new RectF(x + dp(2), top + dp(8), x + dp(36), top + dp(40)), dp(9), dp(9), paint);
+            drawFeatureIcon(canvas, features.get(i).title, x + dp(19), top + dp(24), Color.WHITE);
+            text(canvas, features.get(i).title, x + dp(19), top + dp(53), 8,
+                selected || last ? Color.WHITE : CHROME_TEXT, selected, Paint.Align.CENTER);
         }
         canvas.restore();canvas.restore();
     }
