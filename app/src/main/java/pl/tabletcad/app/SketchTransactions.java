@@ -71,11 +71,7 @@ public final class SketchTransactions {
         throw new IllegalArgumentException("Wybierz zamknięty profil");
     }
     private static double[] profile(double[] old,SketchPrimitive shape,int prefix,int offset) {
-        if(ExtrusionPlan.placedBase(old))return ExtrusionPlan.withProfile(old,shape);
-        if(Revolve.is(old))return Revolve.withProfile(old,shape);
-        double[] values=Arrays.copyOf(old,prefix);values[0]=shape.featureType();
-        double[] coordinates={shape.x1,shape.y1,shape.x2,shape.y2};System.arraycopy(coordinates,0,values,offset,4);
-        return shape.appendVertices(values);
+        return ProfileDependencies.replace(old,shape,prefix==7);
     }
     public static CadProject candidate(CadProject draft) {
         if(!draft.threePointDraft.isEmpty())throw new IllegalArgumentException("Najpierw zakończ konstrukcję trzypunktową");

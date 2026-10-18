@@ -14,8 +14,8 @@ public final class ToolbarCatalog {
         return sketch?new Group[]{
             new Group("Edytuj","Edytuj","Edytuj"),
             new Group("Wyci\u0105gnij","Wyci\u0105gnij","Wyci\u0105gnij"),
-            new Group("Rysuj","Polilinia","Linia","Polilinia","Prostokąt","Kwadrat","Prostokąt od środka","Wielokąt","Okrąg","Łuk","Splajn"),
-            new Group("Geometria","Geometria","Geometria","Połącz kontur","Odsunięcie","Lustro","Szyk liniowy","Szyk kołowy","Zaokrąglij szkic"),
+            new Group("Rysuj","Polilinia","Linia","Polilinia","Prostokąt","Kwadrat","Prostokąt od środka","Wielokąt","Okrąg","Okrąg 3 pkt","Szczelina","Łuk","Splajn"),
+            new Group("Geometria","Geometria","Geometria","Przesuń szkic","Obróć szkic","Skaluj szkic","Powiązania profilu","Połącz kontur","Odsunięcie","Lustro","Szyk liniowy","Szyk kołowy","Zaokrąglij szkic"),
             new Group("Przytnij","Przytnij","Przytnij","Przedłuż"),
             new Group("Więzy","Więzy","Więzy","Wymiar"),
             new Group("Usuń","Usuń","Usuń","Wyczyść szkic"),
@@ -25,7 +25,7 @@ public final class ToolbarCatalog {
         }:new Group[]{
             new Group("Wybierz","Wybierz","Wybierz"),
             new Group("Szkice","Szkic","Szkic","Edytuj"),
-            new Group("Modeluj","Wyciągnij","Wyciągnij","Obrót profilu","Gwint"),
+            new Group("Modeluj","Wyciągnij","Wyciągnij","Obrót profilu","Gwint","Edytuj profil źródłowy","Powiązania profilu"),
             new Group("Zmień","Zaokrąglij","Głębokość","Zaokrąglij","Fazuj","Usuń cechę"),
             new Group("Sprawdź","Zmierz","Zmierz","Właściwości bryły","Rysunek"),
             new Group("Widok","Dopasuj","Dopasuj","Izometryczny","Przód","Góra","Prawy bok","Rzut prostokątny","Wyczyść widok")

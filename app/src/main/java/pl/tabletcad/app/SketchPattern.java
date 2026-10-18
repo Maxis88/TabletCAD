@@ -22,7 +22,7 @@ public final class SketchPattern {
         SketchPrimitive result;
         if(s.curves!=null) {
             double[] r=s.curves.clone();
-            for(int i=0;i<r.length;i+=7)for(int j:new int[]{1,3,5}){double[] p=map.apply(r[i+j],r[i+j+1]);r[i+j]=p[0];r[i+j+1]=p[1];}
+            for(int i=0;i<r.length;i+=7)for(int j:new int[]{1,3,5}){if(j==3&&r[i]==0)continue;double[] p=map.apply(r[i+j],r[i+j+1]);r[i+j]=p[0];r[i+j+1]=p[1];}
             result=new SketchPrimitive(id,r,s.closedGeometry());
         }else if(s.vertices!=null||(s.type.equals("Prostokąt")&&Math.abs(Math.sin(angle))>1e-12&&Math.abs(Math.cos(angle))>1e-12)) {
             double[] v=s.vertices!=null?s.vertices.clone():new double[]{s.x1,s.y1,s.x2,s.y1,s.x2,s.y2,s.x1,s.y2};

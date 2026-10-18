@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.71.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.72.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,15 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.72.0: rysowanie okręgu 3 pkt i szczeliny z zapisem rozpoczętej konstrukcji,
+przesunięcie/obrót/skala zaznaczonego elementu szkicu, nawigacja do źródła
+operacji i bezpośrednie powiązania. Wspólny kod zmiany profilu zachowuje
+głębokości, kierunki, ramy i osie oraz prawidłowo zmienia rodzaj/tail geometrii.
+Sprzeczne wersje wspólnego profilu blokują odtworzenie szkicu zamiast zgadywania.
+130 nowych kontroli JVM + 149 regresji PASS. Nowy test objętości B-Rep
+skompilowany, nieuruchomiony na polecenie pracy bez tabletu.
+Audyt: docs/AUDIT-0.72.md. Nie jest to pełne nazewnictwo topologiczne.
 
 0.71.0: wspólna biblioteka start/menu, wyszukiwarka danych dokumentu,
 sortowanie dat/nazw, filtry typów, odczyt list i miniatur w tle, odrzucanie
@@ -153,9 +162,11 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
 
 ## Najważniejsze pozostałe luki
 
-1. Szkice: pozostałe prymitywy (elipsa, splajn, slot itd.), rzutowanie
+1. Szkice: elipsa i dalsze prymitywy, rzutowanie
    krawędzi modelu, parametryczne (powiązane) szyki i pełne więzy parametryczne,
-   w tym styczność oraz trwała zależność symetrii. Lustro obecnie kopiuje.
+   w tym styczność oraz trwała zależność symetrii. Lustro i szyki obecnie kopiują.
+   Splajn istnieje; okrąg 3 pkt i szczelina podłączone w 0.72, z runtime
+   gestów i nowych ścieżek OCCT nadal do potwierdzenia.
 2. Podstawowe bryły: Shell i narzędzie parametrycznych otworów.
    Otwór można obecnie wykonać przez wycięcie okręgu, bez dedykowanego Hole.
 3. Referencje topologiczne: od 0.44 powiązania obsługiwanych krawędzi bazowych

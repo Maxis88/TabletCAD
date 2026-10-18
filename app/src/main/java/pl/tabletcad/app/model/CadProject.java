@@ -356,16 +356,8 @@ public final class CadProject {
         JSONArray entities = snapshot.getJSONArray("entities");
         for (int i = 0; i < entities.length(); i++) {
             SketchPrimitive p = SketchPrimitive.fromJson(entities.getJSONObject(i));
-            if (p.id.equals(featureBaseProfileId) && featureBase != null) {
-                p = p.restoreFeature(featureBase,1,7);
-            }
-            // A feature edited from the timeline is authoritative for its linked profile.
-            for (int j = 0; j < committedProfileIds.size(); j++) {
-                if (p.id.equals(committedProfileIds.get(j))) {
-                    double[] f = committedFeatures.get(j);
-                    p = p.restoreFeature(f,2,16);
-                }
-            }
+            try {p=pl.tabletcad.app.ProfileDependencies.restore(this,p);}
+            catch(IllegalArgumentException error){throw new JSONException(error.getMessage());}
             restored.add(p);
         }
         List<pl.tabletcad.app.SketchConstraints.Link> restoredLinks=pl.tabletcad.app.SketchConstraints.fromJson(snapshot.optJSONArray("coincidences"),restored);
