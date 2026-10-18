@@ -42,7 +42,7 @@ public final class MainActivity extends Activity {
         android.widget.FrameLayout root = new android.widget.FrameLayout(this);
         root.addView(workspace);
         setContentView(root);
-        if(savedInstanceState==null)workspace.post(workspace::showStartupProjects);
+        if(savedInstanceState==null)workspace.post(()->{if(workspace.isAttachedToWindow())workspace.showStartupProjects();});
         WindowInsetsController insetsController =
             getWindow().getDecorView().getWindowInsetsController();
         if (insetsController != null) {

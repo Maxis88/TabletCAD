@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.54.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.56.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,12 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.56.0: edycja etykiet wymiarów/kątów, pomocniczość figur, rozszerzone więzy,
+przyciąganie rzeczywistej geometrii, drzewo brył i części szkiców, wieloprofilowe
+wyciąganie z dwoma zakresami oraz rzeczywiste gwinty otworów. Nowy dokument
+jest pusty, zoom ma zakres 0.02–200. Dokładny zakres i ograniczenia, w tym
+stare nierozdzielone compoundy i profil V gwintu: docs/AUDIT-0.56.md.
 
 0.54.0: eksport triangulowanego OBJ przez systemowy wybór pliku, współdzielone
 wierzchołki, normalne zgodne z orientacją trójkątów, grupy ścian, wartości

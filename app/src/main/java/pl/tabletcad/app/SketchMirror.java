@@ -13,6 +13,9 @@ public final class SketchMirror {
         return new double[]{px,py};
     }
     public static SketchPrimitive copy(SketchPrimitive source,String id,double ax,double ay,double bx,double by) {
+        return copyGeometry(source,id,ax,ay,bx,by).withConstruction(source.construction);
+    }
+    private static SketchPrimitive copyGeometry(SketchPrimitive source,String id,double ax,double ay,double bx,double by) {
         if(source==null||id==null||id.isEmpty()||id.equals(source.id))throw new IllegalArgumentException("Kopia wymaga nowej tożsamości");
         double length=Math.hypot(bx-ax,by-ay);
         if(!Double.isFinite(ax)||!Double.isFinite(ay)||!Double.isFinite(bx)||!Double.isFinite(by)||!Double.isFinite(length)||length<.01)
@@ -24,7 +27,7 @@ public final class SketchMirror {
                 if(j==3&&curves[i]==0)continue;
                 double[] p=point(curves[i+j],curves[i+j+1],ax,ay,ux,uy);curves[i+j]=p[0];curves[i+j+1]=p[1];
             }
-            return new SketchPrimitive(id,curves,source.closedProfile());
+            return new SketchPrimitive(id,curves,source.closedGeometry());
         }
         double[] vertices=source.vertices;
         if(source.type.equals("Prostokąt"))vertices=new double[]{source.x1,source.y1,source.x2,source.y1,source.x2,source.y2,source.x1,source.y2};

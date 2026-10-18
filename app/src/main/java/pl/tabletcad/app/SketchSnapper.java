@@ -6,6 +6,24 @@ import pl.tabletcad.app.model.SketchPrimitive;
 /** Geometric snapping in the active sketch's local millimetre coordinates. */
 public final class SketchSnapper {
     private SketchSnapper() {}
+    public static double[] anchors(SketchPrimitive p) {
+        if(p.curves!=null)return SketchCurves.samples(p.curves,16);
+        if(p.vertices!=null)return p.vertices.clone();
+        if(p.type.equals("Prostokąt"))return new double[]{p.x1,p.y1,p.x2,p.y1,p.x2,p.y2,p.x1,p.y2,(p.x1+p.x2)/2,p.y1,p.x2,(p.y1+p.y2)/2,(p.x1+p.x2)/2,p.y2,p.x1,(p.y1+p.y2)/2};
+        if(p.type.equals("Okrąg")){double r=Math.hypot(p.x2-p.x1,p.y2-p.y1);return new double[]{p.x1,p.y1,p.x1+r,p.y1,p.x1-r,p.y1,p.x1,p.y1+r,p.x1,p.y1-r};}
+        return new double[]{p.x1,p.y1,p.x2,p.y2,(p.x1+p.x2)/2,(p.y1+p.y2)/2};
+    }
+    /** Snap actual moving geometry, independent of where the finger grabbed it. */
+    public static double[] translation(SketchPrimitive source,double dx,double dy,List<SketchPrimitive> geometry,double tolerance) {
+        double[] anchors=anchors(source);double best=tolerance;double sx=0,sy=0;
+        for(int i=0;i<anchors.length;i+=2) {
+            double x=anchors[i]+dx,y=anchors[i+1]+dy;
+            double[] hit=snap(x,y,geometry,source.id,tolerance,null,null);
+            double distance=Math.hypot(hit[0]-x,hit[1]-y);
+            if(distance>1e-10&&distance<best){best=distance;sx=hit[0]-x;sy=hit[1]-y;}
+        }
+        return new double[]{dx+sx,dy+sy};
+    }
     public static double[] snap(double x,double y,List<SketchPrimitive> geometry,
                                 String excluded,double tolerance,Double startX,Double startY) {
         double best=tolerance;double[] result={x,y};

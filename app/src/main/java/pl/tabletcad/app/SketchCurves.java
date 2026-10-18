@@ -32,6 +32,17 @@ public final class SketchCurves {
     }
     static double positive(double a){a%=Math.PI*2;return a<0?a+Math.PI*2:a;}
     public static Arc arc(double[] s,int o){return new Arc(s,o);}
+    public static SketchPrimitive withRadius(SketchPrimitive source,int segment,double radius) {
+        int o=segment*7;double[] s=source.curves.clone();Arc old=arc(s,o);
+        double ax=s[o+1],ay=s[o+2],bx=s[o+5],by=s[o+6],chord=Math.hypot(bx-ax,by-ay);
+        if(!Double.isFinite(radius)||radius<chord/2||radius>5000)throw new IllegalArgumentException("Promień musi być co najmniej połową cięciwy i nie większy niż 5000 mm");
+        double nx=-(by-ay)/chord,ny=(bx-ax)/chord,mx=(ax+bx)/2,my=(ay+by)/2;
+        double side=Math.copySign(1,(old.x-mx)*nx+(old.y-my)*ny),height=Math.sqrt(Math.max(0,radius*radius-chord*chord/4));
+        double cx=mx+nx*side*height,cy=my+ny*side*height,start=Math.atan2(ay-cy,ax-cx),sweep=positive(Math.atan2(by-cy,bx-cx)-start);
+        if(old.sweep<0)sweep-=Math.PI*2;
+        s[o+3]=cx+radius*Math.cos(start+sweep/2);s[o+4]=cy+radius*Math.sin(start+sweep/2);
+        return new SketchPrimitive(source.id,s,source.closedGeometry()).withConstruction(source.construction);
+    }
     public static double[] arc(double ax,double ay,double mx,double my,double bx,double by){double[] s={1,ax,ay,mx,my,bx,by};validate(s,false);return s;}
     public static void writeDxf(java.io.Writer writer,double[] curves) throws java.io.IOException {
         for(int i=0;i<curves.length;i+=7) {
@@ -98,12 +109,12 @@ public final class SketchCurves {
         double[] pair=Arrays.copyOf(a,14);System.arraycopy(b,0,pair,7,7);return intersections(pair,0,7);
     }
     public static SketchPrimitive drag(SketchPrimitive p,int handle,double dx,double dy) {
-        double[] s=p.curves.clone();boolean closed=p.closedProfile();
+        double[] s=p.curves.clone();boolean closed=p.closedGeometry();
         if(handle==0)for(int i=0;i<s.length;i+=7)for(int j=1;j<7;j+=2){s[i+j]+=dx;s[i+j+1]+=dy;}
         else if(!closed) {int index=handle==1?1:handle==2?5:3;s[index]+=dx;s[index+1]+=dy;}
         else if(handle>=1000){int i=(handle-1000)*7;s[i+3]+=dx;s[i+4]+=dy;}
         else {int i=(handle-1)*7,previous=(i-7+s.length)%s.length;s[i+1]+=dx;s[i+2]+=dy;s[previous+5]=s[i+1];s[previous+6]=s[i+2];}
-        return new SketchPrimitive(p.id,s,closed);
+        return new SketchPrimitive(p.id,s,closed).withConstruction(p.construction);
     }
     private static boolean onLine(double[] s,int i,double x,double y) {
         double dx=s[i+5]-s[i+1],dy=s[i+6]-s[i+2],t=((x-s[i+1])*dx+(y-s[i+2])*dy)/(dx*dx+dy*dy);
@@ -135,7 +146,7 @@ public final class SketchCurves {
     }
     public static SketchContours.Result join(List<SketchPrimitive> geometry,String selected) {
         List<SketchPrimitive> edges=new ArrayList<>();boolean curved=false;
-        for(SketchPrimitive p:geometry)if(p.type.equals("Linia")||p.type.equals("Łuk")){edges.add(p);curved|=p.curves!=null;}
+        for(SketchPrimitive p:geometry)if(!p.construction&&(p.type.equals("Linia")||p.type.equals("Łuk"))){edges.add(p);curved|=p.curves!=null;}
         if(!curved)return null;
         SketchPrimitive first=edges.get(0);for(SketchPrimitive p:edges)if(p.id.equals(selected))first=p;
         List<double[]> chain=new ArrayList<>();Set<String> consumed=new HashSet<>();

@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /** Versioned, geometry-independent source of truth for a TabletCAD document. */
 public final class CadProject {
-    public static final int CURRENT_SCHEMA = 31;
+    public static final int CURRENT_SCHEMA = 34;
     public String sketchEditBaseline;
     public final java.util.Map<String,String> sketchLineage=new java.util.LinkedHashMap<>();
     public final java.util.Map<String,String> sketchBindings=new java.util.LinkedHashMap<>();
@@ -21,6 +21,13 @@ public final class CadProject {
     public String threePointTool="";
     public int polygonSides=6;
     public boolean splineDraft;
+    public boolean drawingConstruction;
+    public int bodyGraphStart=-1,nextBodyIndex=2,selectedBody=1,activeBodyTarget,activeBodyOutput;
+    public final List<Integer> featureBodyTargets=new ArrayList<>(),featureBodyOutputs=new ArrayList<>();
+    public final java.util.Map<Integer,String> bodyUuids=new java.util.LinkedHashMap<>(),bodyNames=new java.util.LinkedHashMap<>();
+    public final java.util.Set<Integer> hiddenBodies=new java.util.LinkedHashSet<>();
+    public final java.util.Map<Integer,double[]> extrusionExtents=new java.util.LinkedHashMap<>();
+    public final java.util.Set<String> hiddenSketchParts=new java.util.LinkedHashSet<>();
     public String sketchName="Szkic";
     public String drawingNumber = "", drawingAuthor = "", drawingMaterial = "", drawingRevision = "A";
     public double drawingSectionFraction = .5;
@@ -69,6 +76,7 @@ public final class CadProject {
     private CadProject(String id, String name, String units, double width, double height,
                        double depth, String sketchPlane) {
         this.id = id;
+        bodyUuids.put(1,UUID.nameUUIDFromBytes((id+":body:1").getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString());
         this.name = name;
         this.units = units;
         this.width = width;
@@ -104,6 +112,12 @@ public final class CadProject {
         root.put("id", id);
         root.put("name", name);
         root.put("splineDraft",splineDraft);
+        root.put("drawingConstruction",drawingConstruction);
+        root.put("bodyGraphStart",bodyGraphStart).put("nextBodyIndex",nextBodyIndex).put("selectedBody",selectedBody).put("activeBodyTarget",activeBodyTarget).put("activeBodyOutput",activeBodyOutput);
+        root.put("featureBodyTargets",new JSONArray(featureBodyTargets)).put("featureBodyOutputs",new JSONArray(featureBodyOutputs));
+        JSONObject bodyIds=new JSONObject(),names=new JSONObject();for(Integer key:bodyUuids.keySet())bodyIds.put(key.toString(),bodyUuids.get(key));for(Integer key:bodyNames.keySet())names.put(key.toString(),bodyNames.get(key));root.put("bodyUuids",bodyIds).put("bodyNames",names);
+        JSONObject extents=new JSONObject();for(java.util.Map.Entry<Integer,double[]> e:extrusionExtents.entrySet())extents.put(e.getKey().toString(),new JSONArray(e.getValue()));root.put("extrusionExtents",extents);
+        root.put("hiddenBodies",new JSONArray(hiddenBodies)).put("hiddenSketchParts",new JSONArray(hiddenSketchParts));
         root.put("sketchName",sketchName);
         root.put("units", units);
         root.put("sketchPlane", sketchPlane);
@@ -223,6 +237,7 @@ public final class CadProject {
         project.featureOperation = schema >= 6 ? root.optString("featureOperation", "none") : "none";
         project.featureDepth = schema >= 6 ? root.optDouble("featureDepth", 10.0) : 10.0;
         project.splineDraft=root.optBoolean("splineDraft",false);
+        project.drawingConstruction=root.optBoolean("drawingConstruction",false);
         project.sketchName=root.optString("sketchName","Szkic");
         project.featureSymmetric=root.optBoolean("featureSymmetric",false);
         JSONArray history = root.optJSONArray("committedFeatures");
@@ -267,6 +282,12 @@ public final class CadProject {
             java.util.Map<String,String> map=field.equals("sketchLineage")?project.sketchLineage:project.sketchBindings;
             java.util.Iterator<String> keys=data.keys();while(keys.hasNext()){String key=keys.next();map.put(key,data.getString(key));}
         }
+        project.bodyGraphStart=root.optInt("bodyGraphStart",-1);project.nextBodyIndex=root.optInt("nextBodyIndex",2);project.selectedBody=root.optInt("selectedBody",1);project.activeBodyTarget=root.optInt("activeBodyTarget",0);project.activeBodyOutput=root.optInt("activeBodyOutput",0);
+        for(String field:new String[]{"featureBodyTargets","featureBodyOutputs"}){JSONArray values=root.optJSONArray(field);if(values!=null)for(int i=0;i<values.length();i++)(field.equals("featureBodyTargets")?project.featureBodyTargets:project.featureBodyOutputs).add(values.getInt(i));}
+        for(String field:new String[]{"bodyUuids","bodyNames"}){JSONObject values=root.optJSONObject(field);if(values!=null){java.util.Iterator<String> keys=values.keys();while(keys.hasNext()){String key=keys.next();try{(field.equals("bodyUuids")?project.bodyUuids:project.bodyNames).put(Integer.parseInt(key),values.getString(key));}catch(NumberFormatException e){throw new JSONException("Niepoprawne ID bryły");}}}}
+        JSONArray hidden=root.optJSONArray("hiddenBodies");if(hidden!=null)for(int i=0;i<hidden.length();i++)project.hiddenBodies.add(hidden.getInt(i));hidden=root.optJSONArray("hiddenSketchParts");if(hidden!=null)for(int i=0;i<hidden.length();i++)project.hiddenSketchParts.add(hidden.getString(i));
+        JSONObject ranges=root.optJSONObject("extrusionExtents");if(ranges!=null){java.util.Iterator<String> keys=ranges.keys();while(keys.hasNext()){String key=keys.next();try {int index=Integer.parseInt(key);JSONArray range=ranges.getJSONArray(key);if(range.length()!=3||index<-1||index>=project.committedFeatures.size())throw new JSONException("Niepoprawny zakres wyciągania");double[] value={range.getDouble(0),range.getDouble(1),range.getDouble(2)};if(!Double.isFinite(value[0])||Math.abs(value[0])<.1||!Double.isFinite(value[1])||value[1]<0||value[1]>5000||(value[2]!=0&&value[2]!=1))throw new JSONException("Niepoprawny zakres wyciągania");project.extrusionExtents.put(index,value);}catch(NumberFormatException e){throw new JSONException("Niepoprawny indeks wyciągania");}}}
+        try{pl.tabletcad.app.BodyGraph.validate(project);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
         pl.tabletcad.app.SketchTransactions.validateLoaded(project);
         return project;
     }
@@ -346,6 +367,8 @@ public final class CadProject {
 
     private static void validateFeatureArray(JSONArray data,int prefix) throws JSONException {
         if(data.length()<prefix) throw new JSONException("Invalid feature length");
+        if(prefix==7&&data.getDouble(0)==-10){double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);try{pl.tabletcad.app.ExtrusionPlan.validateBase(f);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}return;}
+        if(prefix==16&&data.getDouble(0)==-8){double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);try{pl.tabletcad.app.HoleThread.validate(f);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}return;}
         if(data.getDouble(0)==-3) {
             double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);
             try{pl.tabletcad.app.Revolve.validate(f);if(prefix==7&&f[1]!=0)throw new IllegalArgumentException("Bryła bazowa nie może być wycięciem");}
@@ -398,6 +421,6 @@ public final class CadProject {
     }
     public void pruneCoincidences() {
         java.util.Set<String> ids=new java.util.HashSet<>();for(SketchPrimitive p:sketch)ids.add(p.id);
-        coincidences.removeIf(link->!ids.contains(link.a)||!ids.contains(link.b));
+        coincidences.removeIf(link->!ids.contains(link.a)||!ids.contains(link.b)||(!link.axis.isEmpty()&&!link.axis.startsWith("@")&&!ids.contains(link.axis)));
     }
 }

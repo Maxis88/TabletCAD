@@ -43,14 +43,14 @@ public final class SketchDimensions {
         }
         for(double value:new double[]{original.x1,original.y1,x2,y2})if(!Double.isFinite(value)||Math.abs(value)>5000)
             throw new IllegalArgumentException("Wymiar wyprowadza geometrię poza ±5000 mm");
-        return new SketchPrimitive(original.id,original.type,original.x1,original.y1,x2,y2,lock?driving:null);
+        return new SketchPrimitive(original.id,original.type,original.x1,original.y1,x2,y2,lock?driving:null).withConstruction(original.construction);
     }
-    public static SketchPrimitive unlocked(SketchPrimitive p) {return p.vertices!=null||p.curves!=null?p:new SketchPrimitive(p.id,p.type,p.x1,p.y1,p.x2,p.y2);}
+    public static SketchPrimitive unlocked(SketchPrimitive p) {return p.vertices!=null||p.curves!=null?p:new SketchPrimitive(p.id,p.type,p.x1,p.y1,p.x2,p.y2).withConstruction(p.construction);}
     public static SketchPrimitive constrainDrag(SketchPrimitive original,SketchPrimitive candidate,int handle) {
         if(original.driving==null)return candidate;
         if(handle!=0 && !(original.type.equals("Okrąg")&&handle==1))return original;
         double dx=candidate.x1-original.x1,dy=candidate.y1-original.y1;
         return new SketchPrimitive(original.id,original.type,original.x1+dx,original.y1+dy,
-            original.x2+dx,original.y2+dy,original.driving);
+            original.x2+dx,original.y2+dy,original.driving).withConstruction(original.construction);
     }
 }

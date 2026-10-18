@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 62
-        versionName = "0.55.0-sketch-workflow"
+        versionCode = 63
+        versionName = "0.56.0-cad-interaction"
     }
 
     externalNativeBuild {

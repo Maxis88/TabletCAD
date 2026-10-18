@@ -1,16 +1,17 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.55.0-sketch-workflow**, versionCode **62**.
+Wersja źródeł: **0.56.0-cad-interaction**, versionCode **63**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
 
-Wersja 0.55 częściowo wdraża nowy sposób pracy ze szkicem: splajn przez punkty,
-zaokrąglanie narożników konturu, pomiary w edycji, bibliotekę na starcie,
-wybór rodzaju wyciągania i zmiany paneli. Pełna lista użytkownika pozostaje
-otwarta; szczegóły i ograniczenia są w audycie 0.55.
+Wersja 0.56 dodaje edycję wymiarów przez dwukrotne dotknięcie, pomocniczość
+figur, rozszerzone więzy, drzewo brył i źródłowych szkiców, wybór wielu profili
+na rysunku, niezależne kierunki wyciągania oraz rzeczywiste gwinty otworów.
+Nowy projekt otwiera pusty dokument. Zakres weryfikacji na tablecie i granice
+implementacji opisuje [audyt 0.56](docs/AUDIT-0.56.md).
 
 ## Architektura i funkcje
 
@@ -27,7 +28,7 @@ otwarta; szczegóły i ograniczenia są w audycie 0.55.
 
 To wersja rozwojowa. Solver szkicu i odniesienia topologiczne mają ograniczony
 zakres, część obliczeń blokuje UI. Pełne komponenty i dokumentacja techniczna
-pozostają nieukończone. Bieżące ograniczenia: [audyt 0.55](docs/AUDIT-0.55.md)
+pozostają nieukończone. Bieżące ograniczenia: [audyt 0.56](docs/AUDIT-0.56.md)
 i [mapa wymagań](STATUS_WYMAGAN_CAD.md). Starszy opis architektury zawiera cele,
 nie gwarancje aktualnego zachowania. Zachowano [historię rozwoju](docs/DEVELOPMENT_HISTORY.md).
 

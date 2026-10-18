@@ -15,7 +15,7 @@ public final class SketchContours {
     public static Result join(List<SketchPrimitive> geometry,String selected) {
         Result curved=SketchCurves.join(geometry,selected);if(curved!=null)return curved;
         List<SketchPrimitive> lines=new ArrayList<>();
-        for(SketchPrimitive p:geometry) if(p.type.equals("Linia")) lines.add(p);
+        for(SketchPrimitive p:geometry) if(!p.construction&&p.type.equals("Linia")) lines.add(p);
         if(lines.size()<3) throw new IllegalArgumentException("Narysuj co najmniej 3 linie zamkniętego konturu");
         SketchPrimitive first=lines.get(0);
         for(SketchPrimitive p:lines) if(p.id.equals(selected)) first=p;

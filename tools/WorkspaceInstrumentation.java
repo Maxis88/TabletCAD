@@ -12,22 +12,22 @@ public final class WorkspaceInstrumentation extends Instrumentation {
         ByteArrayOutputStream bytes=new ByteArrayOutputStream();PrintStream capture=new PrintStream(bytes);
         PrintStream previous=System.out;final Throwable[] failure={null};System.setOut(capture);
         try {
-            for(String name:new String[]{"BooleanModeProbe","SplineProbe","SketchFilletProbe","DirectionProbe","SymmetricProbe","SketchWorkflowProbe","SketchTransactionProbe","TimelineProbe","ToolbarProbe"}) {
+            for(String name:new String[]{"ExtrusionPlanProbe","ThreadProbe","BodyGraphProbe","RelationProbe","ConstructionAndSnapProbe","BooleanModeProbe","SplineProbe","SketchFilletProbe","DirectionProbe","SymmetricProbe","SketchWorkflowProbe","SketchTransactionProbe","TimelineProbe","ToolbarProbe"}) {
                 File scratch=new File(getTargetContext().getCacheDir(),"workflow-"+java.util.UUID.randomUUID()+".step");
                 try {Class.forName(name).getMethod("main",String[].class).invoke(null,(Object)new String[]{scratch.getAbsolutePath()});}
                 finally {scratch.delete();}
             }
-            for(String name:new String[]{"WorkspaceUiProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe"}) {
+            for(String name:new String[]{"WorkspaceUiProbe","InteractionFixProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe","TabletFlowProbe"}) {
                 Runnable execute=()-> {
                     try {
                         Class<?> probe=Class.forName(name);
                         probe.getField("applicationContext").set(null,getTargetContext());
-                        if(!name.equals("WorkspaceUiProbe"))probe.getField("instrumentation").set(null,this);
+                        if(!name.equals("WorkspaceUiProbe")&&!name.equals("InteractionFixProbe"))probe.getField("instrumentation").set(null,this);
                         Method run=probe.getDeclaredMethod("run",String[].class);run.setAccessible(true);
                         run.invoke(null,(Object)new String[]{getTargetContext().getCacheDir().getAbsolutePath()});
                     }catch(Throwable error){failure[0]=error instanceof InvocationTargetException?error.getCause():error;}
                 };
-                if(name.equals("WorkspaceUiProbe"))runOnMainSync(execute);else execute.run();
+                if(name.equals("WorkspaceUiProbe")||name.equals("InteractionFixProbe"))runOnMainSync(execute);else execute.run();
                 if(failure[0]!=null)break;
             }
         }catch(Throwable error){failure[0]=error;}

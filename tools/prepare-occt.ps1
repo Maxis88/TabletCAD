@@ -44,7 +44,7 @@ $Options = @(
 & $Cmake @Options
 Check 'OCCT configure'
 $Targets = @('TKDESTEP','TKDE','TKXCAF','TKXSBase','TKVCAF','TKCAF','TKLCAF',
-    'TKCDF','TKFillet','TKBool','TKBO','TKPrim','TKV3d','TKService','TKMesh',
+    'TKCDF','TKOffset','TKFillet','TKBool','TKBO','TKPrim','TKV3d','TKService','TKMesh',
     'TKShHealing','TKHLR','TKTopAlgo','TKGeomAlgo','TKBRep','TKGeomBase',
     'TKG3d','TKG2d','TKMath','TKernel')
 & $Cmake --build $Build --parallel $Jobs --target @Targets

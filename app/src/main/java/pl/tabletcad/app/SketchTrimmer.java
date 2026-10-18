@@ -47,6 +47,9 @@ public final class SketchTrimmer {
         cut(cuts,(-b-Math.sqrt(discriminant))/(2*a));cut(cuts,(-b+Math.sqrt(discriminant))/(2*a));
     }
     public static List<SketchPrimitive> trim(List<SketchPrimitive> geometry,SketchPrimitive target,double x,double y) {
+        List<SketchPrimitive> result=new ArrayList<>();for(SketchPrimitive p:trimGeometry(geometry,target,x,y))result.add(p.withConstruction(target.construction));return result;
+    }
+    private static List<SketchPrimitive> trimGeometry(List<SketchPrimitive> geometry,SketchPrimitive target,double x,double y) {
         if(target.driving!=null)throw new IllegalArgumentException("Odblokuj wymiary przed przycinaniem elementu");
         if(target.curves!=null||target.type.equals("Okrąg")) return CurveTrimmer.trim(geometry,target,x,y);
         List<double[]> outline=edges(target);int selected=-1;double nearest=Double.POSITIVE_INFINITY,at=0;

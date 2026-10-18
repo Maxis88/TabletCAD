@@ -95,6 +95,13 @@ public final class NativeCadEngine {
         return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,3):new double[0];
     }
 
+    public static double[] evaluateModel(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep) {
+        return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,8):new double[0];
+    }
+    public static double[] faceOrigins(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep) {
+        return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,6):new double[0];
+    }
+
     private static native double[] nativeEvaluateFeatures(double width, double height,
         double depth, double radius, double[] base, double[] features, String exportPath,
         String sourceStep, int queryMode);

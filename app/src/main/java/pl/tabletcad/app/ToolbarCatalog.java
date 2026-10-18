@@ -14,8 +14,7 @@ public final class ToolbarCatalog {
         return sketch?new Group[]{
             new Group("Edytuj","Edytuj","Edytuj"),
             new Group("Wyci\u0105gnij","Wyci\u0105gnij","Wyci\u0105gnij"),
-            new Group("Rysuj","Polilinia","Linia","Polilinia","Prostokąt","Prostokąt od środka","Wielokąt","Okrąg","Łuk","Splajn"),
-            new Group("Pomocnicza","Pomocnicza","Pomocnicza"),
+            new Group("Rysuj","Polilinia","Linia","Polilinia","Prostokąt","Kwadrat","Prostokąt od środka","Wielokąt","Okrąg","Łuk","Splajn"),
             new Group("Geometria","Geometria","Geometria","Połącz kontur","Lustro","Zaokrąglij szkic"),
             new Group("Przytnij","Przytnij","Przytnij"),
             new Group("Więzy","Więzy","Więzy","Wymiar"),
@@ -26,7 +25,7 @@ public final class ToolbarCatalog {
         }:new Group[]{
             new Group("Wybierz","Wybierz","Wybierz"),
             new Group("Szkice","Szkic","Szkic","Edytuj"),
-            new Group("Modeluj","Wyciągnij","Wyciągnij","Obrót profilu"),
+            new Group("Modeluj","Wyciągnij","Wyciągnij","Obrót profilu","Gwint"),
             new Group("Zmień","Zaokrąglij","Głębokość","Zaokrąglij","Fazuj","Usuń cechę"),
             new Group("Sprawdź","Zmierz","Zmierz","Właściwości bryły","Rysunek"),
             new Group("Widok","Dopasuj","Dopasuj","Wyczyść widok")

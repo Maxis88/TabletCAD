@@ -12,6 +12,7 @@ public final class SketchPrimitive {
     public final double[] curves;
     /** Locked primitive dimensions: L/angle, width/height, or radius. */
     public final double[] driving;
+    public final boolean construction;
 
     public SketchPrimitive(String id, String type, double x1, double y1, double x2, double y2) {
         this(id,type,x1,y1,x2,y2,null);
@@ -21,6 +22,7 @@ public final class SketchPrimitive {
         if(type.equals("Łuk")||type.equals("Kontur krzywy"))throw new IllegalArgumentException("Krzywa wymaga danych analitycznych");
         this.id = id;
         this.type = type;
+        this.construction=type.equals("Pomocnicza");
         this.x1 = x1; this.y1 = y1; this.x2 = x2; this.y2 = y2;
         this.vertices = null;
         this.curves=null;
@@ -32,6 +34,7 @@ public final class SketchPrimitive {
         if(!kind.equals("Splajn"))throw new IllegalArgumentException("Niepoprawny rodzaj krzywej");
         pl.tabletcad.app.SketchSpline.spans(points);
         this.id=id;this.type=kind;this.vertices=points.clone();this.curves=null;this.driving=null;
+        this.construction=false;
         x1=points[0];y1=points[1];x2=points[points.length-2];y2=points[points.length-1];
     }
 
@@ -39,6 +42,7 @@ public final class SketchPrimitive {
         if(points==null||points.length<6||points.length>512||points.length%2!=0)
             throw new IllegalArgumentException("Kontur wymaga 3–256 wierzchołków");
         this.id=id;this.type="Kontur";this.vertices=points.clone();this.driving=null;this.curves=null;
+        this.construction=false;
         double xmin=Double.POSITIVE_INFINITY,ymin=xmin,xmax=-xmin,ymax=-xmin;
         for(int i=0;i<points.length;i+=2) {
             if(!Double.isFinite(points[i])||!Double.isFinite(points[i+1])
@@ -52,14 +56,23 @@ public final class SketchPrimitive {
     public SketchPrimitive(String id,double[] segments,boolean closed) {
         pl.tabletcad.app.SketchCurves.validate(segments,closed);
         this.id=id;this.type=closed?"Kontur krzywy":"Łuk";this.curves=segments.clone();this.vertices=null;this.driving=null;
+        this.construction=false;
         if(!closed&&segments[0]!=1)throw new IllegalArgumentException("Łuk wymaga trzech punktów");
         if(!closed){x1=segments[1];y1=segments[2];x2=segments[5];y2=segments[6];}
         else {
             double[] bounds=pl.tabletcad.app.SketchCurves.bounds(segments);x1=bounds[0];y1=bounds[1];x2=bounds[2];y2=bounds[3];
         }
     }
-    public boolean closedProfile() {return (vertices!=null&&!type.equals("Splajn"))||type.equals("Kontur krzywy")||type.equals("Prostokąt")||type.equals("Okrąg");}
-    public double featureType() {if(type.equals("Splajn"))throw new IllegalArgumentException("Otwarty splajn nie jest zamkniętym profilem wyciągania");return curves!=null?1000+curves.length/7:vertices==null?(type.equals("Okrąg")?1:0):2+vertices.length/2;}
+    private SketchPrimitive(SketchPrimitive source,boolean auxiliary) {
+        id=source.id;type=source.type.equals("Pomocnicza")?"Linia":source.type;
+        x1=source.x1;y1=source.y1;x2=source.x2;y2=source.y2;
+        vertices=source.vertices==null?null:source.vertices.clone();curves=source.curves==null?null:source.curves.clone();
+        driving=source.driving==null?null:source.driving.clone();construction=auxiliary;
+    }
+    public SketchPrimitive withConstruction(boolean value){return construction==value?this:new SketchPrimitive(this,value);}
+    public boolean closedGeometry() {return (vertices!=null&&!type.equals("Splajn"))||type.equals("Kontur krzywy")||type.equals("Prostokąt")||type.equals("Okrąg");}
+    public boolean closedProfile(){return !construction&&closedGeometry();}
+    public double featureType() {if(construction||type.equals("Splajn"))throw new IllegalArgumentException("Wyciąganie wymaga zamkniętej geometrii zwykłej");return curves!=null?1000+curves.length/7:vertices==null?(type.equals("Okrąg")?1:0):2+vertices.length/2;}
     public double[] appendVertices(double[] prefix) {
         double[] tail=curves!=null?curves:vertices;
         double[] result=java.util.Arrays.copyOf(prefix,prefix.length+(tail==null?0:tail.length));
@@ -67,6 +80,7 @@ public final class SketchPrimitive {
         return result;
     }
     public static SketchPrimitive fromFeature(String id,String type,double[] data,int offset,int prefixLength) {
+        if(pl.tabletcad.app.ExtrusionPlan.placedBase(data))return pl.tabletcad.app.ExtrusionPlan.baseProfile(id,data);
         if(pl.tabletcad.app.Revolve.is(data))return pl.tabletcad.app.Revolve.profile(id,data);
         return data[0]>=1001 ? new SketchPrimitive(id,java.util.Arrays.copyOfRange(data,prefixLength,data.length),true):data[0]>=5 ? new SketchPrimitive(id,java.util.Arrays.copyOfRange(data,prefixLength,data.length))
             : new SketchPrimitive(id,type,data[offset],data[offset+1],data[offset+2],data[offset+3]);
@@ -79,6 +93,7 @@ public final class SketchPrimitive {
     public JSONObject toJson() throws JSONException {
         JSONObject result=new JSONObject().put("id", id).put("type", type)
             .put("x1", x1).put("y1", y1).put("x2", x2).put("y2", y2);
+        result.put("construction",construction);
         if(vertices!=null) {org.json.JSONArray points=new org.json.JSONArray();for(double v:vertices) points.put(v);result.put("vertices",points);}
         if(curves!=null){org.json.JSONArray segments=new org.json.JSONArray();for(double v:curves)segments.put(v);result.put("curves",segments);}
         if(driving!=null) {org.json.JSONArray values=new org.json.JSONArray();for(double v:driving)values.put(v);result.put("driving",values);}
@@ -86,6 +101,9 @@ public final class SketchPrimitive {
     }
 
     public static SketchPrimitive fromJson(JSONObject json) throws JSONException {
+        return readGeometry(json).withConstruction(json.optBoolean("construction",json.optString("type").equals("Pomocnicza")));
+    }
+    private static SketchPrimitive readGeometry(JSONObject json) throws JSONException {
         if(json.has("curves")) {
             if(json.has("vertices")||json.has("driving"))throw new JSONException("Niejednoznaczne dane krzywej");
             String type=json.getString("type");if(!type.equals("Łuk")&&!type.equals("Kontur krzywy"))throw new JSONException("Niepoprawny typ krzywej");

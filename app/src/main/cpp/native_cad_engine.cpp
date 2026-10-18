@@ -3,6 +3,7 @@
 #include <cmath>
 #include <sstream>
 #include <vector>
+#include <map>
 
 #include <BRepBndLib.hxx>
 #include <BRepCheck_Analyzer.hxx>
@@ -57,6 +58,17 @@
 #include <HLRBRep_HLRToShape.hxx>
 #include <HLRAlgo_Projector.hxx>
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <BRepTools.hxx>
+#include <BRepClass3d_SolidClassifier.hxx>
+#include <Geom_CylindricalSurface.hxx>
+#include <Geom2d_Line.hxx>
+#include <BRepOffsetAPI_MakePipeShell.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
+#include <gp_Ax3.hxx>
+#include <gp_Trsf.hxx>
+#include <gp_Pnt2d.hxx>
+#include <gp_Dir2d.hxx>
 #include <BRepLib.hxx>
 #include <BRepAlgoAPI_Section.hxx>
 #include <gp_Pln.hxx>
@@ -710,12 +722,166 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeApplyFaceFeature(
     }
 }
 
+
+namespace {
+TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
+    if(shape.IsNull()||(f[1]!=1&&f[1]!=-1)||f[8]<=0||f[9]<=f[8]||f[10]<.05||f[11]<.1||f[11]/f[10]>200)return {};
+    if(f[12]!=0&&f[12]<f[11])return {};for(int i=13;i<16;i++)if(f[i]!=0)return {};
+    gp_Vec axis(f[5],f[6],f[7]);if(std::abs(axis.Magnitude()-1)>1e-6)return {};
+    const double pitch=f[10],depth=f[11],inner=f[8]-std::min(.05,pitch*.02),outer=f[9],height=outer-inner;
+    if(inner<=0||height>pitch*.82)return {};
+    const double halfWidth=height/std::sqrt(3.0),reference=(inner+outer)/2,start=-pitch,run=depth+2*pitch;
+    Handle(Geom_CylindricalSurface) cylinder=new Geom_CylindricalSurface(gp_Ax3(),reference);
+    Handle(Geom2d_Line) helix=new Geom2d_Line(gp_Pnt2d(0,start),gp_Dir2d(f[1]*2*M_PI,pitch));
+    const double last=run/pitch*std::sqrt(4*M_PI*M_PI+pitch*pitch);
+    BRepBuilderAPI_MakeEdge edge(helix,cylinder,0,last);if(!edge.IsDone())return {};
+    TopoDS_Edge spine=edge.Edge();if(!BRepLib::BuildCurves3d(spine))return {};
+    BRepBuilderAPI_MakeWire wire(spine);if(!wire.IsDone())return {};
+    BRepBuilderAPI_MakePolygon profile;profile.Add(gp_Pnt(inner,0,start-halfWidth));profile.Add(gp_Pnt(outer,0,start));profile.Add(gp_Pnt(inner,0,start+halfWidth));profile.Close();
+    if(!profile.IsDone())return {};
+    BRepOffsetAPI_MakePipeShell pipe(wire.Wire());pipe.SetMode(true);pipe.Add(profile.Wire(),false,false);pipe.Build();
+    if(!pipe.IsDone()||!pipe.MakeSolid())return {};
+    BRepAlgoAPI_Common clipped(pipe.Shape(),BRepPrimAPI_MakeCylinder(outer+.1,depth).Shape());clipped.Build();if(!clipped.IsDone())return {};
+    gp_Trsf placement;placement.SetDisplacement(gp_Ax3(),gp_Ax3(gp_Pnt(f[2],f[3],f[4]),gp_Dir(axis)));
+    TopoDS_Shape tool=BRepBuilderAPI_Transform(clipped.Shape(),placement,true).Shape();
+    if(tool.IsNull()||!BRepCheck_Analyzer(tool).IsValid())return {};
+    TopoDS_Shape result=applyProfileFeature(shape,tool,true);
+    if(result.IsNull()||countShapes(result,TopAbs_SOLID)!=countShapes(shape,TopAbs_SOLID))return {};
+    return result;
+}
+using FaceOrigins=std::vector<std::pair<TopoDS_Shape,int>>;
+using BodyShapes=std::map<int,TopoDS_Shape>;
+void updateOrigins(const TopoDS_Shape& before,const TopoDS_Shape& after,int tag,FaceOrigins& origins) {
+    static_cast<void>(before);FaceOrigins next;
+    for(TopExp_Explorer e(after,TopAbs_FACE);e.More();e.Next()) {
+        int origin=tag;for(const auto& known:origins)if(e.Current().IsSame(known.first)){origin=known.second;break;}
+        next.emplace_back(e.Current(),origin);
+    }
+    origins=std::move(next);
+}
+TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& values,const std::vector<double>& rootBase,const TopoDS_Shape& rootShape,bool imported,BodyShapes* finalBodies,FaceOrigins* finalOrigins) {
+    const int count=static_cast<int>(values.size());int featureNumber=0;BodyShapes bodies;bool indexed=false;FaceOrigins origins;
+    if(!rootShape.IsNull())updateOrigins({},rootShape,-1,origins);if(!shape.IsNull()&&!shape.IsSame(rootShape))updateOrigins(rootShape,shape,-2,origins);
+        for (jsize i = 0; i < count;) {
+            if(count-i<16) return {};
+            const double* f = values.data() + i;
+            const TopoDS_Shape prior=shape;const int tag=featureNumber++;
+            if(f[0]==-9) {
+                if(f[1]<0||f[1]!=std::floor(f[1])||f[2]<1||f[2]!=std::floor(f[2])||f[3]<16||f[3]!=std::floor(f[3])||f[3]>count-i-16)return {};
+                for(int k=4;k<16;k++)if(f[k]!=0)return {};
+                if(!indexed){bodies[1]=shape;indexed=true;}
+                int target=static_cast<int>(f[1]),output=static_cast<int>(f[2]),length=static_cast<int>(f[3]);
+                if(target==0&&bodies.contains(output))return {};
+                if(target!=0&&(!bodies.contains(target)||output!=target))return {};
+                std::vector<double> record(f+16,f+16+length);TopoDS_Shape input=target==0?TopoDS_Shape():bodies[target];
+                TopoDS_Shape result=evaluateRecords(input,record,rootBase,rootShape,imported,nullptr,nullptr);
+                if(result.IsNull())return {};bodies[output]=result;
+                BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
+                updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
+            }
+            if(indexed)return {};
+            if(f[0]==-8){shape=threadedHole(shape,f);if(shape.IsNull())return {};updateOrigins(prior,shape,tag,origins);i+=16;continue;}
+            if(f[0]==-6||f[0]==-7) {
+                if(f[1]!=std::floor(f[1])||f[1]<1||f[1]>256||f[11]<.1||f[11]>1000)return {};
+                for(int k=2;k<16;k++)if(k!=11&&f[k]!=0)return {};
+                const bool chamfer=f[0]==-7;int stride=16;
+                std::vector<TopoDS_Edge> selected;
+                for(int k=0;k<static_cast<int>(f[1]);k++) {
+                    if(count-i-stride<1)return {};
+                    double size=f[stride++];if(size!=16&&size!=24&&size!=39)return {};
+                    int length=static_cast<int>(size);if(count-i-stride<length)return {};
+                    const double* member=f+stride;stride+=length;
+                    if(member[0]!=(chamfer?-2:-1)&&member[0]!=(chamfer?-5:-4))return {};
+                    if(member[1]!=0||member[11]!=f[11]||member[12]!=0||member[13]!=0||member[14]!=0||member[15]!=0)return {};
+                    std::array<double,9> mapped;const double* signature=member+2;TopoDS_Edge expected;
+                    if(member[0]==-4||member[0]==-5) {
+                        if(imported||length<24||(member[16]!=7&&member[16]!=22)||length!=17+member[16])return {};
+                        int baseSize=static_cast<int>(member[16]);TopoDS_Shape before=referenceRoot(member+17,baseSize);
+                        if(before.IsNull()||edgeForSignature(before,member+2).IsNull())return {};
+                        if(!mapRootEdge(member+17,baseSize,rootBase.data(),static_cast<int>(rootBase.size()),member+2,mapped))return {};
+                        expected=edgeForSignature(rootShape,mapped.data());if(expected.IsNull())return {};
+                        signature=mapped.data();
+                    } else if(length!=16)return {};
+                    TopoDS_Edge edge=edgeForSignature(shape,signature);
+                    if(edge.IsNull()||(!expected.IsNull()&&!sameEdgeGeometry(edge,expected)))return {};
+                    for(const auto& previous:selected)if(edge.IsSame(previous))return {};
+                    selected.push_back(edge);
+                }
+                if(chamfer) {
+                    BRepFilletAPI_MakeChamfer maker(shape);
+                    for(const auto& edge:selected)if(maker.Contour(edge)==0)maker.Add(f[11],edge);
+                    maker.Build();if(!maker.IsDone())return {};shape=maker.Shape();
+                } else {
+                    BRepFilletAPI_MakeFillet maker(shape);
+                    for(const auto& edge:selected)if(maker.Contour(edge)==0)maker.Add(f[11],edge);
+                    maker.Build();if(!maker.IsDone())return {};shape=maker.Shape();
+                }
+                if(shape.IsNull()||countShapes(shape,TopAbs_SOLID)==0||!BRepCheck_Analyzer(shape).IsValid())return {};
+                updateOrigins(prior,shape,tag,origins);i+=stride;continue;
+            }
+            if(f[0]==-3) {
+                int stride=revolveStride(f,count-i);if(!stride)return {};
+                shape=applyProfileFeature(shape,revolvedProfile(f,stride),f[1]==1);
+                if(shape.IsNull())return {};updateOrigins(prior,shape,tag,origins);i+=stride;continue;
+            }
+            if(f[0]==-1||f[0]==-2||f[0]==-4||f[0]==-5) {
+                if(f[1]!=0||f[12]!=0||f[13]!=0||f[14]!=0||f[15]!=0)return {};
+                int stride=16;std::array<double,9> mapped;const double* signature=f+2;TopoDS_Edge expected;
+                if(f[0]==-4||f[0]==-5) {
+                    if(imported||count-i<24||(f[16]!=7&&f[16]!=22))return {};
+                    int size=static_cast<int>(f[16]);stride=17+size;if(count-i<stride)return {};
+                    TopoDS_Shape before=referenceRoot(f+17,size);if(before.IsNull()||edgeForSignature(before,f+2).IsNull())return {};
+                    if(!mapRootEdge(f+17,size,rootBase.data(),static_cast<int>(rootBase.size()),f+2,mapped))return {};
+                    expected=edgeForSignature(rootShape,mapped.data());if(expected.IsNull())return {};
+                    signature=mapped.data();
+                }
+                shape=filletSelectedEdge(shape,signature,f[11],f[0]==-2||f[0]==-5,expected.IsNull()?nullptr:&expected);
+                if(shape.IsNull())return {};
+                updateOrigins(prior,shape,tag,origins);i+=stride;continue;
+            }
+            int vertices=0,curves=0;
+            if(f[0]>=1002&&f[0]<=1128&&f[0]==std::floor(f[0]))curves=static_cast<int>(f[0])-1000;
+            else if(f[0]>=5&&f[0]<=258&&f[0]==std::floor(f[0])) vertices=static_cast<int>(f[0])-2;
+            else if(f[0]!=0&&f[0]!=1) return {};
+            int stride=16+vertices*2+curves*7;if(count-i<stride) return {};
+            const gp_Vec u(f[10], f[11], f[12]), v(f[13], f[14], f[15]);
+            if (u.SquareMagnitude() < 1.0e-20 || v.SquareMagnitude() < 1.0e-20) {
+                return {};
+            }
+            if(f[1]!=std::floor(f[1])||!(f[1]==0||f[1]==1||f[1]==2||f[1]==3||f[1]==4||f[1]==6||f[1]==8||f[1]==10))return {};
+            const bool cut=(static_cast<int>(f[1])&1)!=0,symmetric=(static_cast<int>(f[1])&2)!=0;
+            const TopoDS_Shape tool = curves>0?curvedPrism(f+16,curves,f[6],gp_Pnt(f[7],f[8],f[9]),u,v,u.Crossed(v),true,cut,symmetric):vertices>0 ? polygonPrism(f+16,vertices,f[6],gp_Pnt(f[7],f[8],f[9]),
+                u,v,u.Crossed(v),true,cut,symmetric) : profileFeature(f[0] == 1.0 ? "Okrąg" : "Prostokąt",
+                f[2], f[3], f[4], f[5], f[6], gp_Pnt(f[7], f[8], f[9]),
+                gp_Dir(u), gp_Dir(v), cut,symmetric);
+            if(tool.IsNull())return {};
+            if((static_cast<int>(f[1])&4)!=0) {
+                BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);
+                if(shape.IsNull())shape=tool;else {builder.Add(compound,shape);builder.Add(compound,tool);shape=compound;}
+                if(!BRepCheck_Analyzer(shape).IsValid())return {};
+            } else if((static_cast<int>(f[1])&8)!=0) {
+                BRepAlgoAPI_Common operation(shape,tool);operation.Build();
+                if(!operation.IsDone())return {};
+                TopoDS_Shape result=operation.Shape();
+                if(result.IsNull()||!BRepCheck_Analyzer(result).IsValid()||countShapes(result,TopAbs_SOLID)==0)return {};
+                shape=result;
+            } else shape = applyProfileFeature(shape, tool, cut);
+            if (shape.IsNull()) return {};
+            updateOrigins(prior,shape,tag,origins);i+=stride;
+        }
+
+    if(finalBodies){if(!indexed)bodies[1]=shape;*finalBodies=std::move(bodies);}
+    if(finalOrigins)*finalOrigins=std::move(origins);
+    return shape;
+}
+}
+
 extern "C" JNIEXPORT jdoubleArray JNICALL
 Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         JNIEnv* env, jclass, jdouble width, jdouble height, jdouble depth,
         jdouble radius, jdoubleArray javaBase, jdoubleArray javaFeatures, jstring javaExportPath,
         jstring javaSourceStep, jint queryMode) {
-    if(queryMode<0||queryMode>3)return env->NewDoubleArray(0);
+    if((queryMode<0||queryMode>3)&&queryMode!=6&&queryMode!=8)return env->NewDoubleArray(0);
     if (javaFeatures == nullptr || width <= 0 || height <= 0 || depth <= 0) {
         return env->NewDoubleArray(0);
     }
@@ -750,7 +916,11 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
             std::vector<double> b(size);env->GetDoubleArrayRegion(javaBase,0,size,b.data());
             for(double value:b) if(!std::isfinite(value)) return env->NewDoubleArray(0);
             rootBase=b;
-            if(b[0]==-3) {
+            if(b[0]==-10) {
+                if(size<23||std::abs(b[1])<.1||b[2]<0||b[2]>5000||std::abs(std::abs(b[6])-std::abs(b[1])-b[2])>1e-6)return env->NewDoubleArray(0);
+                std::vector<double> tool(b.begin()+7,b.end());if(tool[1]!=4&&tool[1]!=6)return env->NewDoubleArray(0);
+                shape=evaluateRecords({},tool,b,{},false,nullptr,nullptr);
+            }else if(b[0]==-3) {
                 if(revolveStride(b.data(),size)!=size||b[1]!=0)return env->NewDoubleArray(0);
                 shape=revolvedProfile(b.data(),size);
             }else {
@@ -779,97 +949,9 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         if(shape.IsNull()) return env->NewDoubleArray(0);
         const TopoDS_Shape rootShape=shape;
         if (radius > 0) shape = filletAllEdges(shape, radius);
-        for (jsize i = 0; i < count;) {
-            if(count-i<16) return env->NewDoubleArray(0);
-            const double* f = values.data() + i;
-            if(f[0]==-6||f[0]==-7) {
-                if(f[1]!=std::floor(f[1])||f[1]<1||f[1]>256||f[11]<.1||f[11]>1000)return env->NewDoubleArray(0);
-                for(int k=2;k<16;k++)if(k!=11&&f[k]!=0)return env->NewDoubleArray(0);
-                const bool chamfer=f[0]==-7;int stride=16;
-                std::vector<TopoDS_Edge> selected;
-                for(int k=0;k<static_cast<int>(f[1]);k++) {
-                    if(count-i-stride<1)return env->NewDoubleArray(0);
-                    double size=f[stride++];if(size!=16&&size!=24&&size!=39)return env->NewDoubleArray(0);
-                    int length=static_cast<int>(size);if(count-i-stride<length)return env->NewDoubleArray(0);
-                    const double* member=f+stride;stride+=length;
-                    if(member[0]!=(chamfer?-2:-1)&&member[0]!=(chamfer?-5:-4))return env->NewDoubleArray(0);
-                    if(member[1]!=0||member[11]!=f[11]||member[12]!=0||member[13]!=0||member[14]!=0||member[15]!=0)return env->NewDoubleArray(0);
-                    std::array<double,9> mapped;const double* signature=member+2;TopoDS_Edge expected;
-                    if(member[0]==-4||member[0]==-5) {
-                        if(javaSourceStep!=nullptr||length<24||(member[16]!=7&&member[16]!=22)||length!=17+member[16])return env->NewDoubleArray(0);
-                        int baseSize=static_cast<int>(member[16]);TopoDS_Shape before=referenceRoot(member+17,baseSize);
-                        if(before.IsNull()||edgeForSignature(before,member+2).IsNull())return env->NewDoubleArray(0);
-                        if(!mapRootEdge(member+17,baseSize,rootBase.data(),static_cast<int>(rootBase.size()),member+2,mapped))return env->NewDoubleArray(0);
-                        expected=edgeForSignature(rootShape,mapped.data());if(expected.IsNull())return env->NewDoubleArray(0);
-                        signature=mapped.data();
-                    } else if(length!=16)return env->NewDoubleArray(0);
-                    TopoDS_Edge edge=edgeForSignature(shape,signature);
-                    if(edge.IsNull()||(!expected.IsNull()&&!sameEdgeGeometry(edge,expected)))return env->NewDoubleArray(0);
-                    for(const auto& previous:selected)if(edge.IsSame(previous))return env->NewDoubleArray(0);
-                    selected.push_back(edge);
-                }
-                if(chamfer) {
-                    BRepFilletAPI_MakeChamfer maker(shape);
-                    for(const auto& edge:selected)if(maker.Contour(edge)==0)maker.Add(f[11],edge);
-                    maker.Build();if(!maker.IsDone())return env->NewDoubleArray(0);shape=maker.Shape();
-                } else {
-                    BRepFilletAPI_MakeFillet maker(shape);
-                    for(const auto& edge:selected)if(maker.Contour(edge)==0)maker.Add(f[11],edge);
-                    maker.Build();if(!maker.IsDone())return env->NewDoubleArray(0);shape=maker.Shape();
-                }
-                if(shape.IsNull()||countShapes(shape,TopAbs_SOLID)==0||!BRepCheck_Analyzer(shape).IsValid())return env->NewDoubleArray(0);
-                i+=stride;continue;
-            }
-            if(f[0]==-3) {
-                int stride=revolveStride(f,count-i);if(!stride)return env->NewDoubleArray(0);
-                shape=applyProfileFeature(shape,revolvedProfile(f,stride),f[1]==1);
-                if(shape.IsNull())return env->NewDoubleArray(0);i+=stride;continue;
-            }
-            if(f[0]==-1||f[0]==-2||f[0]==-4||f[0]==-5) {
-                if(f[1]!=0||f[12]!=0||f[13]!=0||f[14]!=0||f[15]!=0)return env->NewDoubleArray(0);
-                int stride=16;std::array<double,9> mapped;const double* signature=f+2;TopoDS_Edge expected;
-                if(f[0]==-4||f[0]==-5) {
-                    if(javaSourceStep!=nullptr||count-i<24||(f[16]!=7&&f[16]!=22))return env->NewDoubleArray(0);
-                    int size=static_cast<int>(f[16]);stride=17+size;if(count-i<stride)return env->NewDoubleArray(0);
-                    TopoDS_Shape before=referenceRoot(f+17,size);if(before.IsNull()||edgeForSignature(before,f+2).IsNull())return env->NewDoubleArray(0);
-                    if(!mapRootEdge(f+17,size,rootBase.data(),static_cast<int>(rootBase.size()),f+2,mapped))return env->NewDoubleArray(0);
-                    expected=edgeForSignature(rootShape,mapped.data());if(expected.IsNull())return env->NewDoubleArray(0);
-                    signature=mapped.data();
-                }
-                shape=filletSelectedEdge(shape,signature,f[11],f[0]==-2||f[0]==-5,expected.IsNull()?nullptr:&expected);
-                if(shape.IsNull())return env->NewDoubleArray(0);
-                i+=stride;continue;
-            }
-            int vertices=0,curves=0;
-            if(f[0]>=1002&&f[0]<=1128&&f[0]==std::floor(f[0]))curves=static_cast<int>(f[0])-1000;
-            else if(f[0]>=5&&f[0]<=258&&f[0]==std::floor(f[0])) vertices=static_cast<int>(f[0])-2;
-            else if(f[0]!=0&&f[0]!=1) return env->NewDoubleArray(0);
-            int stride=16+vertices*2+curves*7;if(count-i<stride) return env->NewDoubleArray(0);
-            const gp_Vec u(f[10], f[11], f[12]), v(f[13], f[14], f[15]);
-            if (u.SquareMagnitude() < 1.0e-20 || v.SquareMagnitude() < 1.0e-20) {
-                return env->NewDoubleArray(0);
-            }
-            if(f[1]!=std::floor(f[1])||!(f[1]==0||f[1]==1||f[1]==2||f[1]==3||f[1]==4||f[1]==6||f[1]==8||f[1]==10))return env->NewDoubleArray(0);
-            const bool cut=(static_cast<int>(f[1])&1)!=0,symmetric=(static_cast<int>(f[1])&2)!=0;
-            const TopoDS_Shape tool = curves>0?curvedPrism(f+16,curves,f[6],gp_Pnt(f[7],f[8],f[9]),u,v,u.Crossed(v),true,cut,symmetric):vertices>0 ? polygonPrism(f+16,vertices,f[6],gp_Pnt(f[7],f[8],f[9]),
-                u,v,u.Crossed(v),true,cut,symmetric) : profileFeature(f[0] == 1.0 ? "Okrąg" : "Prostokąt",
-                f[2], f[3], f[4], f[5], f[6], gp_Pnt(f[7], f[8], f[9]),
-                gp_Dir(u), gp_Dir(v), cut,symmetric);
-            if(tool.IsNull())return env->NewDoubleArray(0);
-            if((static_cast<int>(f[1])&4)!=0) {
-                BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);
-                builder.Add(compound,shape);builder.Add(compound,tool);shape=compound;
-                if(!BRepCheck_Analyzer(shape).IsValid())return env->NewDoubleArray(0);
-            } else if((static_cast<int>(f[1])&8)!=0) {
-                BRepAlgoAPI_Common operation(shape,tool);operation.Build();
-                if(!operation.IsDone())return env->NewDoubleArray(0);
-                TopoDS_Shape result=operation.Shape();
-                if(result.IsNull()||!BRepCheck_Analyzer(result).IsValid()||countShapes(result,TopAbs_SOLID)==0)return env->NewDoubleArray(0);
-                shape=result;
-            } else shape = applyProfileFeature(shape, tool, cut);
-            if (shape.IsNull()) return env->NewDoubleArray(0);
-            i+=stride;
-        }
+        BodyShapes bodies;FaceOrigins origins;
+        shape=evaluateRecords(shape,values,rootBase,rootShape,javaSourceStep!=nullptr,&bodies,&origins);
+        if(shape.IsNull())return env->NewDoubleArray(0);
         if (!exportPath.empty()) {
             STEPControl_Writer writer;
             if (writer.Transfer(shape, STEPControl_AsIs) != IFSelect_RetDone
@@ -882,6 +964,30 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
                     || !BRepCheck_Analyzer(verifier.OneShape()).IsValid()) {
                 return env->NewDoubleArray(0);
             }
+        }
+        if(queryMode==6||queryMode==8) {
+            std::vector<double> info,cylinders;int face=0;
+            for(TopExp_Explorer e(shape,TopAbs_FACE);e.More();e.Next()) {
+                int bodyId=0,origin=-1;face++;
+                for(const auto& body:bodies){for(TopExp_Explorer f(body.second,TopAbs_FACE);f.More();f.Next())if(e.Current().IsSame(f.Current())){bodyId=body.first;break;}if(bodyId)break;}
+                for(const auto& known:origins)if(e.Current().IsSame(known.first)){origin=known.second;break;}
+                info.push_back(face);info.push_back(bodyId);info.push_back(origin);
+                BRepAdaptor_Surface surface(TopoDS::Face(e.Current()),true);
+                if(surface.GetType()==GeomAbs_Cylinder) {
+                    double umin,umax,vmin,vmax;BRepTools::UVBounds(TopoDS::Face(e.Current()),umin,umax,vmin,vmax);
+                    if(std::isfinite(vmin)&&std::isfinite(vmax)&&vmax-vmin>.1&&umax-umin>=2*M_PI-1e-5) {
+                        const gp_Cylinder cylinder=surface.Cylinder();const gp_Pnt p=cylinder.Location();const gp_Dir axis=cylinder.Axis().Direction();
+                        const double v=(vmin+vmax)/2,epsilon=std::max(1e-5,std::min(.001,cylinder.Radius()*.001));
+                        gp_Pnt center=p.Translated(gp_Vec(axis)*v);gp_Vec radial(center,surface.Value((umin+umax)/2,v));if(radial.SquareMagnitude()<1e-12)continue;radial.Normalize();
+                        BRepClass3d_SolidClassifier inner(bodies.at(bodyId),center.Translated(radial*(cylinder.Radius()-epsilon)),1e-7),outer(bodies.at(bodyId),center.Translated(radial*(cylinder.Radius()+epsilon)),1e-7);
+                        if(inner.State()!=TopAbs_OUT||outer.State()!=TopAbs_IN)continue;
+                        for(double value:{static_cast<double>(face),static_cast<double>(bodyId),cylinder.Radius(),p.X(),p.Y(),p.Z(),axis.X(),axis.Y(),axis.Z(),vmin,vmax,umin,umax,1.0,0.0})cylinders.push_back(value);
+                    }
+                }
+            }
+            if(queryMode==8&&!cylinders.empty()){info.push_back(-8);info.push_back(static_cast<double>(cylinders.size()/15));info.push_back(0);info.insert(info.end(),cylinders.begin(),cylinders.end());}
+            if(queryMode==8){std::vector<double> mesh=tessellatedTriangles(shape);if(mesh.empty())return env->NewDoubleArray(0);std::vector<double> combined;combined.reserve(1+mesh.size()+info.size());combined.push_back(static_cast<double>(mesh.size()));combined.insert(combined.end(),mesh.begin(),mesh.end());combined.insert(combined.end(),info.begin(),info.end());info=std::move(combined);}
+            jdoubleArray result=env->NewDoubleArray(static_cast<jsize>(info.size()));if(result&&!info.empty())env->SetDoubleArrayRegion(result,0,static_cast<jsize>(info.size()),info.data());return result;
         }
         if(queryMode==3) {
             GProp_GProps volume,surface;BRepGProp::VolumeProperties(shape,volume);BRepGProp::SurfaceProperties(shape,surface);

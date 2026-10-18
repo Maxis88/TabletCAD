@@ -8,16 +8,17 @@ public final class SketchEditing {
     private SketchEditing() {}
 
     public static SketchPrimitive toggleConstruction(SketchPrimitive source) {
-        if(!source.type.equals("Linia")&&!source.type.equals("Pomocnicza"))
-            throw new IllegalArgumentException("Wybierz linię lub najpierw rozbij figurę na odcinki");
-        return new SketchPrimitive(source.id,source.type.equals("Linia")?"Pomocnicza":"Linia",
-            source.x1,source.y1,source.x2,source.y2,source.driving);
+        return source.withConstruction(!source.construction);
     }
 
     public static List<SketchPrimitive> explode(SketchPrimitive source) {
+        List<SketchPrimitive> parts=explodeGeometry(source);List<SketchPrimitive> result=new ArrayList<>();
+        for(SketchPrimitive p:parts)result.add(p.withConstruction(source.construction));return result;
+    }
+    private static List<SketchPrimitive> explodeGeometry(SketchPrimitive source) {
         if(SketchSpline.is(source))throw new IllegalArgumentException("Splajn zachowuje krzywiznę; edytuj jego punkty");
         if(source.curves!=null) {
-            if(!source.closedProfile())throw new IllegalArgumentException("Łuk jest już pojedynczym elementem");
+            if(!source.closedGeometry())throw new IllegalArgumentException("Łuk jest już pojedynczym elementem");
             List<SketchPrimitive> result=new ArrayList<>();
             for(int i=0;i<source.curves.length;i+=7) {
                 double[] s=Arrays.copyOfRange(source.curves,i,i+7);String id=i==0?source.id:UUID.randomUUID().toString();
