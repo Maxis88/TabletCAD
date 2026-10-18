@@ -125,6 +125,44 @@ public final class CadScenarioProbe {
         double drilled=120000-Math.PI*25*20;v=volume(view);System.out.println("CUT "+v+" "+state(view));
         check(Math.abs(v-drilled)<1e-6,"11 through hole: volume 120000 − 500π = "+drilled+" ("+v+")");
         TabletFlowProbe.screenshot(activity,"scenario-04-hole");
-        ui(activity::finish);System.out.println("SCENARIO STAGE 2 PASSED");
+        // 12. Fillet R3 on the vertical edge at (100,60): real tap on the edge.
+        tool(view,"Wybierz");ui(()->{TabletFlowProbe.set(view,"cameraYaw",-28f);TabletFlowProbe.set(view,"cameraPitch",22f);call(view,"fitView",new Class<?>[0]);view.invalidate();});instrumentation.waitForIdleSync();
+        tool(view,"Zaokrąglij");Thread.sleep(300);float[] edge=world(view,100,60,10);TabletFlowProbe.tap(edge[0],edge[1]);Thread.sleep(500);
+        ui(()->{View panel=(View)field(view,"propertyEditor");check(panel!=null,"12 fillet panel open ("+describe(view)+")");InteractionFixProbe.input(panel).setText("3");apply[0]=WorkspaceUiProbe.button(panel,"Zastosuj");});
+        TabletFlowProbe.click(apply[0]);instrumentation.waitForIdleSync();Thread.sleep(300);
+        double filleted=drilled-(9-Math.PI*9/4)*20;v=volume(view);System.out.println("FILLET "+v+" "+state(view));
+        check(Math.abs(v-filleted)<1e-6,"12 R3 on the tapped vertical edge: exact volume "+filleted+" ("+v+")");
+        TabletFlowProbe.screenshot(activity,"scenario-05-fillet");
+        // 13-16. Save, close the workspace, open it again from storage.
+        String[] projectId={null};ui(()->{CadProject p=(CadProject)field(view,"project");projectId[0]=p.id;((ProjectRepository)field(view,"projectRepository")).save(p);});
+        CadWorkspaceView[] reopened={null};
+        ui(()->{Context context=new ContextWrapper(activity){@Override public File getFilesDir(){return root;}};
+            CadWorkspaceView next=new CadWorkspaceView(context,null);FrameLayout host=new FrameLayout(activity);host.addView(next,new FrameLayout.LayoutParams(-1,-1));activity.setContentView(host);
+            AlertDialog chooser=(AlertDialog)field(next,"projectChooser");if(chooser!=null)chooser.dismiss();
+            call(next,"activateProject",new Class<?>[]{CadProject.class},new ProjectRepository(root).loadProject(projectId[0]));reopened[0]=next;});
+        instrumentation.waitForIdleSync();CadWorkspaceView again=reopened[0];
+        ui(()->{CadProject p=(CadProject)field(again,"project");check(p.name.equals("Scenariusz-16-3")&&p.committedFeatures.size()==2,"15 reopened project keeps history ("+describe(again)+")");});
+        v=volume(again);check(Math.abs(v-filleted)<1e-6,"16 reopened geometry is exact ("+v+")");
+        // 17-19. Edit the first sketch width 100 → 120 from the model tree; hole and fillet follow.
+        float[] row=new float[2];ui(()->{List<?> rows=(List<?>)field(again,"modelTreeRows");int index=-1;for(int i=0;i<rows.size();i++){ModelTree.Row r=(ModelTree.Row)rows.get(i);if(r.sketch()&&r.entities.contains(rect[0].id))index=i;}
+            check(index>=0,"17 model tree lists the base sketch");float density=(float)field(again,"density");int[] o=new int[2];again.getLocationOnScreen(o);row[0]=80*density+o[0];row[1]=(184+index*36+18)*density+o[1];});
+        TabletFlowProbe.tap(row[0],row[1]);Thread.sleep(120);TabletFlowProbe.tap(row[0],row[1]);Thread.sleep(400);
+        ui(()->check(field(again,"mode").equals("Edytuj szkic"),"17 double tap on the tree enters the base sketch ("+describe(again)+")"));
+        editDimension(again,rect[0].id,"width","120");
+        tool(again,"Zakończ");Thread.sleep(300);
+        double edited=filleted+20*60*20;v=volume(again);System.out.println("EDITED "+v+" "+state(again));
+        check(Math.abs(v-edited)<1e-6,"18-19 base edit rebuilds plate, hole and R3 exactly ("+v+" vs "+edited+")");
+        TabletFlowProbe.screenshot(activity,"scenario-06-edited");
+        // 20-21. STEP export and re-import keep the exact B-Rep.
+        File step=new File(root,"scenario.step");boolean[] exported={false};ui(()->exported[0]=again.exportStep(step.getAbsolutePath()));
+        check(exported[0]&&step.length()>0,"20 STEP export written ("+step.length()+" B)");
+        double[] stepProps=NativeCadEngine.bodyProperties(1,1,1,0,null,new double[0],step.getAbsolutePath());
+        check(stepProps.length==7&&Math.abs(stepProps[0]-edited)<1e-4,"20 exported STEP volume equals the model ("+(stepProps.length==7?stepProps[0]:-1)+")");
+        ui(()->again.importStep(step));instrumentation.waitForIdleSync();
+        String[] source={null};ui(()->{CadProject p=(CadProject)field(again,"project");check(p.importedStep,"21 STEP re-imported as B-Rep ("+describe(again)+")");source[0]=((File)call(again,"importedSourceFile",new Class<?>[0])).getAbsolutePath();});
+        double[] imported=NativeCadEngine.bodyProperties(1,1,1,0,null,new double[0],source[0]);
+        check(imported.length==7&&Math.abs(imported[0]-edited)<1e-4&&imported[5]==1,"21 re-imported solid volume and solid count verified ("+(imported.length==7?imported[0]:-1)+")");
+        TabletFlowProbe.screenshot(activity,"scenario-07-reimported");
+        ui(activity::finish);System.out.println("SCENARIO 16.3 COMPLETE");
     }
 }

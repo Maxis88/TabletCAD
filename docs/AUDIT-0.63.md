@@ -1,4 +1,4 @@
-# TabletCAD 0.63 — wymiary położenia i scenariusz 16.3 (kroki 1–11)
+# TabletCAD 0.63 — wymiary położenia i pełny scenariusz 16.3
 
 0.63.0-position-dimensions, versionCode 72. Format: nowe rodzaje więzów `dimX`
 i `dimY` w istniejącej liście `coincidences` (starsze dokumenty bez zmian;
@@ -32,7 +32,12 @@ starsze wersje aplikacji nie odczytają dokumentu zawierającego te więzy).
 wymiary 100 × 60 wpisane w etykiety → wymiary położenia narożnika 0/0 →
 wyciągnięcie 20 mm (120000 mm³) → dotknięcie górnej ściany → szkic na ścianie
 z początkiem (0,0,20) → okrąg rysowany palcem → Ø10 → położenie środka 25/30 →
-wycięcie na wylot: 120000 − 500π mm³ (dokładnie). Cała `WorkspaceInstrumentation`
+wycięcie na wylot: 120000 − 500π mm³ (dokładnie) → dotknięcie pionowej
+krawędzi i R3: −(9 − 9π/4)·20 mm³ → zapis, nowy obszar roboczy, ponowne
+otwarcie z repozytorium (geometria i historia bez zmian) → podwójne dotknięcie
+szkicu bazowego w drzewie, szerokość 100 → 120, Zakończ: +24000 mm³, otwór
+i R3 przebudowane → eksport STEP (objętość zgodna) → ponowny import STEP jako
+B-Rep (objętość i liczba brył zgodne). Cała `WorkspaceInstrumentation`
 `result=PASS`.
 
 ## Granice

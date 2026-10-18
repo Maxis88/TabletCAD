@@ -18,7 +18,7 @@ lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT
 0.63.0: wymiary położenia X/Y (dimX/dimY) jako więzy sterujące w obu solverach,
 z liniami wymiarowymi na szkicu i edycją dwukrotnym dotknięciem; okrąg
 wymiarowany średnicą Ø; początek szkicu na ścianie = rzut początku modelu.
-Scenariusz 16.3 kroki 1–11 przechodzi dotykiem w widocznym oknie (CadScenarioProbe).
+Scenariusz 16.3 (kroki 1–21) przechodzi dotykiem w widocznym oknie (CadScenarioProbe).
 
 0.62.0: pamięć podręczna stanów historii w jądrze (bryła bazowa, w tym odczyt
 STEP, i stan po każdej operacji najwyższego poziomu); wznawianie od najdłuższego
@@ -145,6 +145,13 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
 13. Gwinty, biblioteki techniczne, blachy i rozwinięcia: późniejszy zakres.
 
 ## Testy akceptacyjne pełnego promptu
+
+- Scenariusz obowiązkowy 16.3 (kroki 1–21) — PASS na HONOR YLE-W09
+  (CadScenarioProbe, widoczne okno, rzeczywiste zdarzenia dotyku): szkic
+  100 × 60 z wymiarami i położeniem, wyciągnięcie 20 mm, szkic na ścianie,
+  otwór Ø10 w 25/30 mm na wylot, R3 na wskazanej krawędzi, zapis, ponowne
+  otwarcie, edycja szerokości 100 → 120 z przebudową otworu i R3, eksport STEP
+  i ponowny import; objętości B-Rep sprawdzane analitycznie na każdym etapie.
 
 - A — NIEPOTWIERDZONY w całości. Częściowe testy wyciągnięć, wycięć,
   zaokrągleń, zapisu i STEP istnieją; pełna sekwencja czterech otworów,
