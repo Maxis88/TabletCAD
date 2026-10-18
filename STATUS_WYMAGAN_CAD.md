@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.69.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.70.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,11 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.70.0: masa całego modelu z objętości OCCT i zapisanej, jednorodnej gęstości
+w kg/m³. Schemat .tcad 35 z odczytem starszych projektów. 49 kontroli JVM
+nowego zakresu oraz 48 regresji biblioteki, kompilacja APK i testów Androida.
+UI bez weryfikacji runtime na polecenie użytkownika. Audyt: docs/AUDIT-0.70.md.
 
 0.69.0: kopia projektu z nowym UUID dokumentu i osobnymi źródłami importu,
 przywracanie z kosza (także z .bak), kopia przy kolizji istniejącego UUID,
@@ -157,8 +162,9 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
 6. Sweep, Loft, szyki brył, lustro brył, podziały, pochylenia i narzędzia
    powierzchniowe; pozostałe operacje modelowania z promptu.
 7. Zespoły: komponenty, instancje, wiązania montażowe i kolizje.
-8. Analizy OCCT: materiały, masa, bezwładność i odległość minimalna.
-   Powierzchnia, objętość i środek objętości są dostępne od 0.43.
+8. Analizy OCCT: katalog materiałów, różne gęstości poszczególnych brył,
+   bezwładność i odległość minimalna. Masa z własnej jednorodnej gęstości
+   jest od 0.70; powierzchnia, objętość i środek objętości są od 0.43.
 9. Dokumentacja: dowolne wymiary cech, tolerancje, szczegóły i oznaczenia,
    wszystkie wymagane formaty arkusza oraz szersza edycja rzutów i opisów.
 10. IGES/3MF/SVG, import OBJ, pełne ustawienia dokładności i zakresu eksportu,

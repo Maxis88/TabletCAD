@@ -3305,10 +3305,47 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             evaluationBase(),kernelFeatures(),project.importedStep?importedSourceFile().getAbsolutePath():null);
         if(properties.length!=7){operationMessage="Nie można obliczyć właściwości aktualnej bryły";invalidate();return;}
         android.widget.TextView values=new android.widget.TextView(getContext());values.setTextSize(16);
-        values.setText(String.format(java.util.Locale.US,
-            "Objętość: %.6f mm³\n\nPole powierzchni: %.6f mm²\n\nŚrodek objętości [mm]\nX: %.6f\nY: %.6f\nZ: %.6f\n\nBryły: %.0f\nŚciany: %.0f\n\nWynik z geometrii B-Rep OCCT, nie z siatki podglądu. Środek objętości odpowiada środkowi masy przy jednorodnej gęstości.",
+        String mass="Masa: przypisz gęstość materiału";
+        if(project.materialDensityKgM3>0) {
+            try { mass=String.format(java.util.Locale.US,"Masa: %.9g kg\nGęstość: %.9g kg/m³",
+                MaterialDensity.massKg(properties[0],project.materialDensityKgM3),project.materialDensityKgM3); }
+            catch(IllegalArgumentException error){mass="Masa: "+error.getMessage();}
+        }
+        values.setText(mass+"\n\n"+String.format(java.util.Locale.US,
+            "Objętość: %.6f mm³\n\nPole powierzchni: %.6f mm²\n\nŚrodek objętości [mm]\nX: %.6f\nY: %.6f\nZ: %.6f\n\nBryły: %.0f\nŚciany: %.0f\n\nWynik dla całego modelu B-Rep OCCT. Masa zakłada jednakową gęstość wszystkich brył. Środek objętości odpowiada wtedy środkowi masy. Wartości z chwili otwarcia panelu.",
             properties[0],properties[1],properties[2],properties[3],properties[4],properties[5],properties[6]));
-        new PropertyBuilder().setTitle("Właściwości bryły · OCCT").setView(values).setNegativeButton("Zamknij",null).show();
+        new PropertyBuilder().setTitle("Właściwości bryły · OCCT").setView(values)
+            .setNeutralButton("Gęstość materiału",(d,w)->showMaterialDensityEditor()).setNegativeButton("Zamknij",null).show();
+    }
+
+    private void showMaterialDensityEditor() {
+        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
+        if(SketchTransactions.active(project)){operationMessage="Najpierw zakończ lub anuluj aktywną edycję szkicu";invalidate();return;}
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding((int)dp(20),(int)dp(8),(int)dp(20),0);
+        android.widget.TextView hint=new android.widget.TextView(getContext());
+        hint.setText("Jednakowa gęstość wszystkich brył [kg/m³]. Wpisz wartość dla używanego materiału. Puste pole usuwa przypisanie.");form.addView(hint);
+        EditText density=new EditText(getContext());density.setSingleLine(true);density.setSelectAllOnFocus(true);
+        density.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        density.setKeyListener(android.text.method.DigitsKeyListener.getInstance("0123456789.,"));
+        density.setHint("Gęstość [kg/m³]");
+        density.setText(project.materialDensityKgM3==0?"":java.math.BigDecimal.valueOf(project.materialDensityKgM3).stripTrailingZeros().toPlainString());form.addView(density);
+        android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(getContext()).setTitle("Gęstość materiału")
+            .setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zapisz",null).create();
+        dialog.setOnShowListener(d->dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            try {
+                double value=MaterialDensity.parse(density.getText().toString());
+                if(value!=project.materialDensityKgM3) {
+                    String baseline=project.toJson().toString();
+                    CadProject candidate=CadProject.fromJson(new org.json.JSONObject(baseline));candidate.materialDensityKgM3=value;
+                    projectRepository.save(candidate);
+                    project=candidate;undoStack.push(baseline);while(undoStack.size()>50)undoStack.removeLast();redoStack.clear();
+                }
+                dialog.dismiss();showBodyProperties();invalidate();
+            }catch(IllegalArgumentException error){density.setError(error.getMessage());}
+            catch(Exception error){android.widget.Toast.makeText(getContext(),"Nie zapisano gęstości; poprzedni stan zachowano",android.widget.Toast.LENGTH_LONG).show();}
+        }));
+        dialog.show();
     }
 
     private boolean prepareTechnicalSheet() {

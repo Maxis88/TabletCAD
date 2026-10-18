@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /** Versioned, geometry-independent source of truth for a TabletCAD document. */
 public final class CadProject {
-    public static final int CURRENT_SCHEMA = 34;
+    public static final int CURRENT_SCHEMA = 35;
     public String sketchEditBaseline;
     public final java.util.Map<String,String> sketchLineage=new java.util.LinkedHashMap<>();
     public final java.util.Map<String,String> sketchBindings=new java.util.LinkedHashMap<>();
@@ -31,6 +31,8 @@ public final class CadProject {
     public String sketchName="Szkic";
     public String drawingNumber = "", drawingAuthor = "", drawingMaterial = "", drawingRevision = "A";
     public double drawingSectionFraction = .5;
+    /** Uniform density for all solids; 0 means unspecified. */
+    public double materialDensityKgM3;
 
     public final String id;
     public String name;
@@ -86,8 +88,11 @@ public final class CadProject {
     }
 
     public JSONObject toJson() throws JSONException {
+        try { pl.tabletcad.app.MaterialDensity.validate(materialDensityKgM3); }
+        catch (IllegalArgumentException error) { throw new JSONException(error.getMessage()); }
         JSONObject root = new JSONObject();
         root.put("schema", CURRENT_SCHEMA);
+        root.put("materialDensityKgM3", materialDensityKgM3);
         if(sketchEditBaseline!=null) {
             root.put("sketchEditBaseline",sketchEditBaseline);
             root.put("sketchLineage",new JSONObject(sketchLineage));root.put("sketchBindings",new JSONObject(sketchBindings));
@@ -177,6 +182,13 @@ public final class CadProject {
             feature.getDouble("height"), feature.getDouble("depth"),
             root.optString("sketchPlane", "XY"));
         project.emptyDocument=root.optBoolean("emptyDocument",false);
+        if (root.has("materialDensityKgM3")) {
+            Object density = root.get("materialDensityKgM3");
+            if (!(density instanceof Number)) throw new JSONException("Invalid material density");
+            project.materialDensityKgM3 = ((Number)density).doubleValue();
+            try { pl.tabletcad.app.MaterialDensity.validate(project.materialDensityKgM3); }
+            catch (IllegalArgumentException error) { throw new JSONException(error.getMessage()); }
+        }
         JSONArray pending=root.optJSONArray("polylineDraft");
         if(pending!=null)for(int i=0;i<pending.length();i++) {
             JSONArray point=pending.getJSONArray(i);if(point.length()!=2)throw new JSONException("Invalid draft point");

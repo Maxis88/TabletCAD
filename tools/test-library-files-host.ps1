@@ -14,7 +14,9 @@ New-Item -ItemType Directory -Force $Classes,(Split-Path -Parent $Json) | Out-Nu
 if(-not(Test-Path $Json)){Invoke-WebRequest -Uri 'https://repo.maven.apache.org/maven2/org/json/json/20240303/json-20240303.jar' -OutFile $Json}
 if((Get-FileHash $Json -Algorithm SHA256).Hash -ne '3CF6CD6892E32E2B4C1C39E0F52F5248A2F5B37646FDFBB79A66B46B618414ED'){throw 'Host JSON library checksum mismatch.'}
 $Classpath="$Classes;$AppClasses;$Json;$(Join-Path $Sdk 'platforms\android-36\android.jar')"
-& (Join-Path $Jdk 'bin\javac.exe') -encoding UTF-8 -classpath $Classpath -d $Classes (Join-Path $PSScriptRoot 'ProjectLibraryFilesHostTest.java')
+& (Join-Path $Jdk 'bin\javac.exe') -encoding UTF-8 -classpath $Classpath -d $Classes (Join-Path $PSScriptRoot 'ProjectLibraryFilesHostTest.java') (Join-Path $PSScriptRoot 'BodyMassHostTest.java')
 if($LASTEXITCODE -ne 0){throw 'Host test compilation failed.'}
 & (Join-Path $Jdk 'bin\java.exe') -classpath $Classpath ProjectLibraryFilesHostTest $Build | Tee-Object -FilePath (Join-Path $Build 'library-results.txt')
 if($LASTEXITCODE -ne 0){throw 'Host library tests failed.'}
+& (Join-Path $Jdk 'bin\java.exe') -classpath $Classpath BodyMassHostTest $Build | Tee-Object -FilePath (Join-Path $Build 'body-mass-results.txt')
+if($LASTEXITCODE -ne 0){throw 'Host body mass tests failed.'}

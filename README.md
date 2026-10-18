@@ -1,11 +1,19 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.69.0-project-recovery**, versionCode **78**.
+Wersja źródeł: **0.70.0-body-mass**, versionCode **79**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
+
+Wersja 0.70: Sprawdź → Właściwości bryły → Gęstość materiału: obliczanie masy
+całego modelu na podstawie objętości OCCT i własnej gęstości w kg/m³.
+Jedna gęstość obejmuje wszystkie bryły. Zapis .tcad (schemat 35), undo/redo,
+kopiowanie i odzyskiwanie zachowują przypisanie. Starsze projekty można odczytać;
+starsze aplikacje nie otworzą dokumentów zapisanych w schemacie 35.
+Kompilacja APK i 97 kontroli JVM przeszły; UI tego etapu bez testu na Androidzie.
+[Audyt 0.70](docs/AUDIT-0.70.md).
 
 Wersja 0.69: Projekt → Utwórz kopię projektu oraz Kosz → Przywróć / Przywróć
 jako kopię. Kopie mają osobny dokument i niezależne źródła importu STEP/STL.
