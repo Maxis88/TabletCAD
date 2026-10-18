@@ -28,7 +28,7 @@ public final class ToolbarCatalog {
             new Group("Modeluj","Wyciągnij","Wyciągnij","Obrót profilu","Gwint"),
             new Group("Zmień","Zaokrąglij","Głębokość","Zaokrąglij","Fazuj","Usuń cechę"),
             new Group("Sprawdź","Zmierz","Zmierz","Właściwości bryły","Rysunek"),
-            new Group("Widok","Dopasuj","Dopasuj","Wyczyść widok")
+            new Group("Widok","Dopasuj","Dopasuj","Izometryczny","Przód","Góra","Prawy bok","Rzut prostokątny","Wyczyść widok")
         };
     }
     public static boolean allows(boolean sketch,String command) {

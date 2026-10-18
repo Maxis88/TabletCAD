@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.57.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.58.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,11 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.58.0: Widok → Dopasuj (rzeczywiste dopasowanie do granic bryły), Izometryczny,
+Przód, Góra, Prawy bok i Rzut prostokątny z wektorowymi ikonami. Odległość
+kamery perspektywicznej rośnie z rozmiarem modelu (wcześniej stałe 420 mm
+powodowało błędne rzutowanie części > ~400 mm). Audyt: docs/AUDIT-0.58.md.
 
 0.57.0: błędy przebudowy OCCT zwracają indeks operacji i konkretną przyczynę
 (Boolean bez efektu, rozłączne dodanie, zaokrąglenie/faza niewykonalne, utracona
@@ -109,7 +114,7 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
    wszystkie wymagane formaty arkusza oraz szersza edycja rzutów i opisów.
 10. IGES/3MF/SVG, import OBJ, pełne ustawienia dokładności i zakresu eksportu,
     weryfikacja we wskazanych zewnętrznych programach CAD.
-11. UI/renderowanie: pełny ViewCube, ortografia i standardowe orientacje,
+11. UI/renderowanie: pełny ViewCube (ortografia i standardowe orientacje są od 0.58),
     tryby szkieletowy/przezroczysty, motywy i szersza obsługa urządzeń wejścia.
 12. Wydajność: przeniesienie wszystkich kosztownych obliczeń poza wątek UI,
     anulowanie/postęp, testy obciążeniowe i zużycia pamięci/temperatury.

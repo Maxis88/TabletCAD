@@ -1418,10 +1418,11 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         double rz = -x * syaw + z * cyaw;
         double ry = y * cpitch - rz * spitch;
         double finalZ = y * spitch + rz * cpitch;
-        double perspective = 420.0 / (420.0 - finalZ);
+        double distance = viewDistance();
+        double perspective = distance / (distance - finalZ);
         float scale = dp(3.2f) * zoom;
         return new double[]{workCenterX + (float)(rx * scale * perspective),
-            workCenterY - (float)(ry * scale * perspective),1.0/(420.0-finalZ)};
+            workCenterY - (float)(ry * scale * perspective),1.0/(distance-finalZ)};
     }
 
     private void drawSketchPreview(Canvas canvas, String type, float x1, float y1, float x2, float y2) {
@@ -2087,6 +2088,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         double cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
         double cpitch = Math.cos(pitch), spitch = Math.sin(pitch);
         float scale = dp(3.2f) * zoom;
+        final double distance = viewDistance();
         for (int offset = 0; offset + 12 < displayedMesh.length; offset += 13) {
             ProjectedTriangle triangle = new ProjectedTriangle();
             triangle.faceId = (int)Math.round(displayedMesh[offset + 12]) - 1;
@@ -2108,8 +2110,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 double rz = -x * syaw + z * cyaw;
                 double ry = y * cpitch - rz * spitch;
                 double finalZ = y * spitch + rz * cpitch;
-                double perspective = 420.0 / (420.0 - finalZ);
-                triangle.q[vertex]=1.0/(420.0-finalZ);
+                double perspective = distance / (distance - finalZ);
+                triangle.q[vertex]=1.0/(distance-finalZ);
                 triangle.sx[vertex] = cx + (float)(rx * scale * perspective);
                 triangle.sy[vertex] = cy - (float)(ry * scale * perspective);
                 triangle.depth += (float)finalZ / 3f;
@@ -2131,7 +2133,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         double rz = -point.x * syaw + point.z * cyaw;
         double ry = point.y * cpitch - rz * spitch;
         double finalZ = point.y * spitch + rz * cpitch;
-        double perspective = 420.0 / (420.0 - finalZ);
+        double distance = viewDistance();
+        double perspective = distance / (distance - finalZ);
         point.sx = cx + (float)(rx * scale * perspective);
         point.sy = cy - (float)(ry * scale * perspective);
     }
@@ -2578,8 +2581,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         double yaw=Math.toRadians(cameraYaw),pitch=Math.toRadians(cameraPitch);
         x-=meshCenterX;y-=meshCenterY;z-=meshCenterZ;
         double rx=x*Math.cos(yaw)+z*Math.sin(yaw),rz=-x*Math.sin(yaw)+z*Math.cos(yaw);
-        double ry=y*Math.cos(pitch)-rz*Math.sin(pitch),q=1/(420-y*Math.sin(pitch)-rz*Math.cos(pitch));
-        return new double[]{workCenterX+rx*420*q*dp(3.2f)*zoom,workCenterY-ry*420*q*dp(3.2f)*zoom,q};
+        double distance=viewDistance();
+        double ry=y*Math.cos(pitch)-rz*Math.sin(pitch),q=1/(distance-y*Math.sin(pitch)-rz*Math.cos(pitch));
+        return new double[]{workCenterX+rx*distance*q*dp(3.2f)*zoom,workCenterY-ry*distance*q*dp(3.2f)*zoom,q};
     }
 
     private void bindExtrusionManipulator(EditText dimension,android.widget.CheckBox reverse,
@@ -2637,7 +2641,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
     private double extrusionParameter(float x,float y) {
         return AxisDrag.parameter(extrusionOrigin,extrusionAxis,new double[]{meshCenterX,meshCenterY,meshCenterZ},
-            cameraYaw,cameraPitch,dp(3.2f)*zoom,workCenterX,workCenterY,x,y);
+            cameraYaw,cameraPitch,dp(3.2f)*zoom,workCenterX,workCenterY,x,y,viewDistance());
     }
 
     private void setExtrusionDepth(double depth) {
@@ -3601,9 +3605,46 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         bindExtrusionManipulator(input,reverse,symmetric,origin,axis,preview);showExtrusionSketch=true;
     }
 
+    /**
+     * Perspective camera distance in model millimetres. 420 mm keeps the familiar look of small
+     * parts; larger models move the camera back so no vertex can reach or pass the eye point.
+     */
+    private double cameraDistance = 420.0;
+    private boolean orthographicView;
+    private static final double ORTHOGRAPHIC_DISTANCE = 1.0e6;
+    private double modelRadius;
+    private double viewDistance() { return orthographicView ? ORTHOGRAPHIC_DISTANCE : cameraDistance; }
+
+    /** Standard named orientation (model Y is screen-up in the front view). */
+    private void applyStandardView(String view) {
+        switch (view) {
+            case "Przód": cameraYaw = 0f; cameraPitch = 0f; break;
+            case "Tył": cameraYaw = 180f; cameraPitch = 0f; break;
+            case "Góra": cameraYaw = 0f; cameraPitch = 90f; break;
+            case "Dół": cameraYaw = 0f; cameraPitch = -90f; break;
+            case "Prawy bok": cameraYaw = -90f; cameraPitch = 0f; break;
+            case "Lewy bok": cameraYaw = 90f; cameraPitch = 0f; break;
+            default: cameraYaw = -45f; cameraPitch = (float)Math.toDegrees(Math.atan(1 / Math.sqrt(2))); break;
+        }
+        fitView();
+        operationMessage = "Widok: " + view + (orthographicView ? " · rzut prostokątny" : "");
+    }
+
+    /** Zoom and pan so that the whole model (or sketch) fits the free viewport. */
+    private void fitView() {
+        panX = panY = 0;
+        double radius = modelRadius;
+        if (!(radius > 1e-6)) { zoom = 1; return; }
+        float width = viewportRight() - dp(224), height = getHeight() - dp(110) - dp(68) - bottomSystemInset;
+        float available = Math.max(dp(80), Math.min(width, height)) * 0.42f;
+        double perspective = orthographicView ? 1 : viewDistance() / Math.max(1e-6, viewDistance() - radius);
+        zoom = (float)Math.max(0.02, Math.min(200, available / (radius * perspective * dp(3.2f))));
+    }
+
     private void updateMeshCenter() {
         if (nativeMesh.length < 13) {
             meshCenterX = meshCenterY = meshCenterZ = 0.0;
+            modelRadius = 0; cameraDistance = 420.0;
             return;
         }
         double xmin = Double.POSITIVE_INFINITY, ymin = Double.POSITIVE_INFINITY, zmin = Double.POSITIVE_INFINITY;
@@ -3621,6 +3662,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         meshCenterX = (xmin + xmax) / 2.0;
         meshCenterY = (ymin + ymax) / 2.0;
         meshCenterZ = (zmin + zmax) / 2.0;
+        modelRadius = 0.5 * Math.sqrt((xmax - xmin) * (xmax - xmin) + (ymax - ymin) * (ymax - ymin) + (zmax - zmin) * (zmax - zmin));
+        cameraDistance = Math.max(420.0, modelRadius * 4.0);
     }
 
     private void showExportPicker() {
@@ -4145,8 +4188,15 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             finishSketchWork();return;
         }
         if(tool.equals("Anuluj szkic")){cancelSketchWork();return;}
+        if(tool.equals("Izometryczny")||tool.equals("Przód")||tool.equals("Góra")||tool.equals("Prawy bok")) {
+            applyStandardView(tool);invalidate();return;
+        }
+        if(tool.equals("Rzut prostokątny")) {
+            orthographicView=!orthographicView;fitView();
+            operationMessage=orthographicView?"Rzut prostokątny (bez perspektywy)":"Rzut perspektywiczny";invalidate();return;
+        }
         if(tool.equals("Dopasuj") || tool.equals("Wyczyść widok")) {
-            zoom=1;panX=panY=0;selectedFace=-1;selectedSketchId=null;measureA=measureB=null;
+            fitView();selectedFace=-1;selectedSketchId=null;measureA=measureB=null;
             measuredCurve=null;
             measuredEdgeText="";operationMessage="";
             if(tool.equals("Wyczyść widok")) {if(!SketchTransactions.active(project))mode="Wybierz";showSolid=true;}

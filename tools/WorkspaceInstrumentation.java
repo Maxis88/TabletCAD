@@ -17,17 +17,17 @@ public final class WorkspaceInstrumentation extends Instrumentation {
                 try {Class.forName(name).getMethod("main",String[].class).invoke(null,(Object)new String[]{scratch.getAbsolutePath()});}
                 finally {scratch.delete();}
             }
-            for(String name:new String[]{"WorkspaceUiProbe","InteractionFixProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe","TabletFlowProbe"}) {
+            for(String name:new String[]{"WorkspaceUiProbe","InteractionFixProbe","ViewCameraProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe","TabletFlowProbe"}) {
                 Runnable execute=()-> {
                     try {
                         Class<?> probe=Class.forName(name);
                         probe.getField("applicationContext").set(null,getTargetContext());
-                        if(!name.equals("WorkspaceUiProbe")&&!name.equals("InteractionFixProbe"))probe.getField("instrumentation").set(null,this);
+                        if(!name.equals("WorkspaceUiProbe")&&!name.equals("InteractionFixProbe")&&!name.equals("ViewCameraProbe"))probe.getField("instrumentation").set(null,this);
                         Method run=probe.getDeclaredMethod("run",String[].class);run.setAccessible(true);
                         run.invoke(null,(Object)new String[]{getTargetContext().getCacheDir().getAbsolutePath()});
                     }catch(Throwable error){failure[0]=error instanceof InvocationTargetException?error.getCause():error;}
                 };
-                if(name.equals("WorkspaceUiProbe")||name.equals("InteractionFixProbe"))runOnMainSync(execute);else execute.run();
+                if(name.equals("WorkspaceUiProbe")||name.equals("InteractionFixProbe")||name.equals("ViewCameraProbe"))runOnMainSync(execute);else execute.run();
                 if(failure[0]!=null)break;
             }
         }catch(Throwable error){failure[0]=error;}

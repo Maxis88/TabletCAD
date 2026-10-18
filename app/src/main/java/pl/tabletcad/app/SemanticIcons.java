@@ -6,6 +6,7 @@ import android.graphics.*;
 public final class SemanticIcons {
     private SemanticIcons() {}
     public static boolean draw(Canvas canvas,String id,float x,float y,float scale,int color) {
+        if(drawView(canvas,id,x,y,scale,color))return true;
         if(!java.util.Arrays.asList("Splajn","Wielokąt","Kwadrat","Prostokąt od środka","Zaokrąglij szkic","Wymiary","Wyciągnij","Wytnij","Wycięcie","Połączenie","Dodanie","Nowa bryła","Część wspólna","Gwint","Kąt").contains(id))return false;
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.7f);p.setStyle(Paint.Style.STROKE);p.setStrokeJoin(Paint.Join.ROUND);p.setStrokeCap(Paint.Cap.ROUND);
         canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
@@ -37,6 +38,28 @@ public final class SemanticIcons {
             else if(id.equals("Nowa bryła")){canvas.drawRect(6,6,14,14,p);canvas.drawLine(10,2,10,6,p);}
             else if(id.equals("Część wspólna")){p.setStyle(Paint.Style.FILL);canvas.drawRect(-2,1,4,8,p);p.setStyle(Paint.Style.STROKE);canvas.drawRect(-2,1,12,13,p);}
             else {canvas.drawLine(6,9,14,9,p);canvas.drawLine(10,5,10,13,p);}
+        }
+        canvas.restore();return true;
+    }
+    /** Standard-view glyphs: the same cube, with the face seen by the camera filled. */
+    private static boolean drawView(Canvas canvas,String id,float x,float y,float scale,int color) {
+        if(!java.util.Arrays.asList("Izometryczny","Przód","Góra","Prawy bok","Rzut prostokątny").contains(id))return false;
+        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.7f);p.setStyle(Paint.Style.STROKE);p.setStrokeJoin(Paint.Join.ROUND);p.setStrokeCap(Paint.Cap.ROUND);
+        Paint fill=new Paint(Paint.ANTI_ALIAS_FLAG);fill.setColor(color);fill.setAlpha(110);fill.setStyle(Paint.Style.FILL);
+        canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
+        if(id.equals("Rzut prostokątny")) {
+            canvas.drawRect(-11,-8,1,4,p);canvas.drawRect(-5,-2,7,10,p);
+            canvas.drawLine(-11,-8,-5,-2,p);canvas.drawLine(1,-8,7,-2,p);canvas.drawLine(1,4,7,10,p);canvas.drawLine(-11,4,-5,10,p);
+            canvas.drawLine(9,-11,13,-11,p);canvas.drawLine(9,-7,13,-7,p);
+        } else {
+            Path front=new Path();front.moveTo(-10,-3);front.lineTo(4,-3);front.lineTo(4,11);front.lineTo(-10,11);front.close();
+            Path top=new Path();top.moveTo(-10,-3);top.lineTo(-3,-10);top.lineTo(11,-10);top.lineTo(4,-3);top.close();
+            Path side=new Path();side.moveTo(4,-3);side.lineTo(11,-10);side.lineTo(11,4);side.lineTo(4,11);side.close();
+            if(id.equals("Przód"))canvas.drawPath(front,fill);
+            else if(id.equals("Góra"))canvas.drawPath(top,fill);
+            else if(id.equals("Prawy bok"))canvas.drawPath(side,fill);
+            else {fill.setAlpha(60);canvas.drawPath(front,fill);fill.setAlpha(110);canvas.drawPath(top,fill);fill.setAlpha(160);canvas.drawPath(side,fill);}
+            canvas.drawPath(front,p);canvas.drawPath(top,p);canvas.drawPath(side,p);
         }
         canvas.restore();return true;
     }
