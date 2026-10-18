@@ -39,14 +39,15 @@ public final class ViewCameraProbe {
         double radius=(double)field(view,"modelRadius");check(Math.abs(radius-0.5*Math.sqrt(2000*2000+1000*1000+500*500))<1e-6,"model radius from B-Rep mesh bounds");
         check((double)field(view,"cameraDistance")>=4*radius-1e-6,"large model moves the perspective camera back");
         tool(view,"Dopasuj");float[] e=extents(view,canvas);float right=(float)call(view,"viewportRight",new Class<?>[0]);
-        check(e[0]>=224*dp-1&&e[1]<=right+1&&e[2]>=110*dp-1&&e[3]<=1500,"fit keeps a 2 m model inside the free viewport: "+Arrays.toString(e));
+        float left=(float)call(view,"leftWidth",new Class<?>[0]),top=(float)call(view,"viewTop",new Class<?>[0]);
+        check(e[0]>=left-1&&e[1]<=right+1&&e[2]>=top-1&&e[3]<=1500,"fit keeps a 2 m model inside the free viewport: "+Arrays.toString(e));
         tool(view,"Rzut prostokątny");check((boolean)field(view,"orthographicView"),"orthographic projection toggles on");
         tool(view,"Przód");e=extents(view,canvas);check((float)field(view,"cameraYaw")==0f&&(float)field(view,"cameraPitch")==0f,"front view orientation");
         check(Math.abs((e[1]-e[0])/(e[3]-e[2])-2.0)<0.004,"orthographic front shows exact X:Y = 2000:1000");
         tool(view,"Góra");e=extents(view,canvas);check(Math.abs((e[1]-e[0])/(e[3]-e[2])-4.0)<0.008,"orthographic top shows exact X:Z = 2000:500");
         tool(view,"Prawy bok");e=extents(view,canvas);check(Math.abs((e[1]-e[0])/(e[3]-e[2])-0.5)<0.001,"orthographic right side shows exact Z:Y = 500:1000");
         tool(view,"Izometryczny");e=extents(view,canvas);check(Math.abs((float)field(view,"cameraYaw")+45f)<1e-4&&Math.abs((float)field(view,"cameraPitch")-35.26439f)<1e-3,"isometric orientation");
-        check(e[0]>=224*dp-1&&e[1]<=right+1,"isometric view fits the viewport");
+        check(e[0]>=left-1&&e[1]<=right+1,"isometric view fits the viewport");
         tool(view,"Rzut prostokątny");check(!(boolean)field(view,"orthographicView"),"perspective projection restored");
         CadProject small=new CadProject();small.width=40;small.height=30;small.depth=10;call(view,"activateProject",new Class<?>[]{CadProject.class},small);
         check((double)field(view,"cameraDistance")==420.0,"small parts keep the original camera distance");
@@ -67,7 +68,7 @@ public final class ViewCameraProbe {
         call(view,"activateProject",new Class<?>[]{CadProject.class},sketchOnly);call(view,"enterSketchEditor",new Class<?>[0]);view.draw(canvas);
         tool(view,"Dopasuj");view.draw(canvas);
         double[] a=(double[])call(view,"projectSketchDepth",new Class<?>[]{double.class,double.class},500.0,500.0),b=(double[])call(view,"projectSketchDepth",new Class<?>[]{double.class,double.class},600.0,560.0);
-        float centreX=(224*dp+(float)call(view,"viewportRight",new Class<?>[0]))/2,centreY=(110*dp+1500-68*dp-(int)field(view,"bottomSystemInset"))/2;
+        float centreX=((float)call(view,"leftWidth",new Class<?>[0])+(float)call(view,"viewportRight",new Class<?>[0]))/2,centreY=((float)call(view,"viewTop",new Class<?>[0])+1500-68*dp-(int)field(view,"bottomSystemInset"))/2;
         check(Math.abs((a[0]+b[0])/2-centreX)<2&&Math.abs((a[1]+b[1])/2-centreY)<2,"sketch-only fit centres the sketch: "+(a[0]+b[0])/2+","+(a[1]+b[1])/2+" vs "+centreX+","+centreY);
         check(Math.abs(b[0]-a[0])>300,"sketch-only fit enlarges a distant 100 mm sketch: "+Math.abs(b[0]-a[0])+" px");
         // Axis manipulator math uses the same camera distance as the renderer.
@@ -79,6 +80,13 @@ public final class ViewCameraProbe {
             double back=AxisDrag.parameter(origin,axis,center,yaw,pitch,scale,900,600,900+rx*scale*k,600-ry*scale*k,distance);
             check(Math.abs(back-t)<1e-6,"axis drag inverts projection at camera distance "+distance);
         }
+        // Redesigned chrome: single 64 dp top bar, collapsible model tree, version visible.
+        check(Math.abs((float)call(view,"viewTop",new Class<?>[0])-66*dp)<.5f,"single top bar leaves the work area from 66 dp");
+        check(!String.valueOf(call(view,"appVersion",new Class<?>[0])).equals("?"),"installed version is readable for the top bar: v"+call(view,"appVersion",new Class<?>[0]));
+        float expanded=(float)call(view,"leftWidth",new Class<?>[0]);
+        WorkspaceUiProbe.tap(view,expanded-20*dp,(64+30)*dp);check((boolean)field(view,"treeCollapsed")&&(float)call(view,"leftWidth",new Class<?>[0])<expanded,"tree chevron collapses the model panel");
+        check((boolean)call(view,"isInsideViewport",new Class<?>[]{float.class,float.class},100*dp,600f),"collapsed tree frees the area for model gestures");
+        WorkspaceUiProbe.tap(view,20*dp,600f);check(!(boolean)field(view,"treeCollapsed"),"tap on the rail restores the model tree");
         System.out.println("ALL CAMERA VIEW TESTS PASSED");
     }
 }

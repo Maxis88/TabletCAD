@@ -58,6 +58,33 @@ public final class CadWorkspaceView extends View {
     private static final int MUTED = Color.rgb(101, 116, 130);
     private static final int ACCENT = Color.rgb(13, 148, 136);
     private static final int GRID = Color.rgb(220, 227, 232);
+    // Chrome palette: graphite bars around a light work area, teal accent for the active state.
+    private static final int CHROME = Color.rgb(20, 26, 33);
+    private static final int CHROME_RAISED = Color.rgb(33, 42, 52);
+    private static final int CHROME_TEXT = Color.rgb(196, 206, 214);
+    private static final int DIVIDER = Color.rgb(214, 222, 228);
+    /** Layout tokens: one 64 dp top bar (project + tools + files), collapsible model tree. */
+    private static final float TOP_BAR_DP = 64f, TOOLBAR_X_DP = 224f;
+    private boolean treeCollapsed;
+    private float topBar() { return dp(TOP_BAR_DP); }
+    private String appVersion;
+    /** Installed application version, e.g. "0.64.0" (shown in the top bar and project menu). */
+    String appVersion() {
+        if (appVersion == null) {
+            try {
+                String name = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0).versionName;
+                int dash = name == null ? -1 : name.indexOf('-');
+                appVersion = name == null ? "?" : dash > 0 ? name.substring(0, dash) : name;
+            } catch (Exception error) { appVersion = "?"; }
+        }
+        return appVersion;
+    }
+    private float viewTop() { return dp(TOP_BAR_DP + 2); }
+    private float leftWidth() { return dp(treeCollapsed ? 40 : 224); }
+    private float toolbarX() { return dp(TOOLBAR_X_DP); }
+    private float treeTop() { return dp(TOP_BAR_DP + 76); }
+    /** Screen Y of the centre of model-tree row {@code index} (used by touch tests). */
+    float treeRowCenterY(int index) { return treeTop() + index * dp(36) + dp(18) - treeScroll; }
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final GestureDetector gestures;
@@ -195,7 +222,7 @@ public final class CadWorkspaceView extends View {
     private float viewportRight() { return getWidth() - (propertiesVisible() ? dp(252) : 0); }
 
     private float maxTimelineScroll() {
-        return Math.max(0, dp(340) + CadTimeline.entries(project).size() * dp(64) - viewportRight());
+        return Math.max(0, leftWidth() + dp(116) + CadTimeline.entries(project).size() * dp(64) - viewportRight());
     }
     private final List<double[]> arcDraft=new ArrayList<>();
     private double[] arcPreview;
@@ -269,8 +296,8 @@ public final class CadWorkspaceView extends View {
             body.measure(View.MeasureSpec.makeMeasureSpec((int)dp(252),View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
             android.widget.FrameLayout.LayoutParams layout=new android.widget.FrameLayout.LayoutParams(
-                (int)dp(252),Math.min(body.getMeasuredHeight(),Math.max((int)dp(100),getHeight()-(int)dp(110)-bottomSystemInset)));
-            layout.gravity=android.view.Gravity.TOP|android.view.Gravity.RIGHT;layout.topMargin=(int)dp(110);
+                (int)dp(252),Math.min(body.getMeasuredHeight(),Math.max((int)dp(100),getHeight()-(int)viewTop()-bottomSystemInset)));
+            layout.gravity=android.view.Gravity.TOP|android.view.Gravity.RIGHT;layout.topMargin=(int)viewTop();
             ((android.widget.FrameLayout)getParent()).addView(propertyEditor,layout);
         }
     }
@@ -320,43 +347,43 @@ public final class CadWorkspaceView extends View {
 
             @Override public boolean onSingleTapUp(MotionEvent e) {
                 if(projectRepository.readOnly()) {
-                    if(e.getY()<=dp(58)&&e.getX()>=getWidth()-dp(190))showExportPicker();
+                    if(e.getY()<=topBar()&&e.getX()>=getWidth()-dp(190))showExportPicker();
                     else operationMessage=projectRepository.loadNotice();
                     invalidate();return true;
                 }
-                if(SketchTransactions.active(project)&&e.getY()<dp(54)) {
+                if(SketchTransactions.active(project)&&e.getY()<topBar()&&e.getX()<toolbarX()) {
                     showSketchSessionActions();return true;
                 }
-                if(!arcDraft.isEmpty()&&(e.getX()<dp(224)||e.getY()<dp(54))) {showArcDraftActions(null);return true;}
-                if(!project.polylineDraft.isEmpty() && ((e.getX()<dp(224)&&e.getY()>dp(108))
-                        ||(e.getY()<dp(58)&&e.getX()>getWidth()-dp(330)))) {
+                if(!arcDraft.isEmpty()&&(e.getX()<leftWidth()||(e.getY()<topBar()&&e.getX()<toolbarX()))) {showArcDraftActions(null);return true;}
+                if(!project.polylineDraft.isEmpty() && ((e.getX()<leftWidth()&&e.getY()>topBar())
+                        ||(e.getY()<topBar()&&e.getX()>getWidth()-dp(330)))) {
                     showPolylineActions(null);return true;
                 }
                 if(mode.equals("Szkic")&&(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn"))&&sketchPlaneChosen
-                        && e.getX()>getWidth()-dp(234)&&e.getY()>dp(108)) {
-                    float y=e.getY();
+                        && e.getX()>getWidth()-dp(234)&&e.getY()>topBar()) {
+                    float y=e.getY()+propertiesShift();
                     if(y>=dp(374)&&y<=dp(422))finishPolyline(true);
                     else if(y>=dp(432)&&y<=dp(480))finishPolyline(false);
                     else if(y>=dp(490)&&y<=dp(538))removePolylinePoint();
                     else if(y>=dp(548)&&y<=dp(596))cancelPolyline();
                     return true;
                 }
-                if(e.getX()<dp(224) || e.getY()>getHeight()-dp(68)-bottomSystemInset) closePropertyEditor();
+                if(e.getX()<leftWidth() || e.getY()>getHeight()-dp(68)-bottomSystemInset) closePropertyEditor();
                 float historyY = getHeight() - dp(62) - bottomSystemInset;
-                if (e.getX() >= dp(224) && e.getX() <= dp(328) && e.getY() >= historyY) {
+                if (e.getX() >= leftWidth() && e.getX() <= leftWidth()+dp(104) && e.getY() >= historyY) {
                     if(!arcDraft.isEmpty()){
-                        if(e.getX()<dp(276)){arcDraft.remove(arcDraft.size()-1);arcPreview=null;operationMessage="Cofnięto punkt rozpoczętego łuku";}
+                        if(e.getX()<leftWidth()+dp(52)){arcDraft.remove(arcDraft.size()-1);arcPreview=null;operationMessage="Cofnięto punkt rozpoczętego łuku";}
                         else operationMessage="Zakończ lub anuluj rozpoczęty łuk przed Ponów";
                         invalidate();return true;
                     }
-                    if (e.getX() < dp(276)) undo(); else redo();
+                    if (e.getX() < leftWidth()+dp(52)) undo(); else redo();
                     return true;
                 }
-                if (e.getY() >= historyY && e.getX() >= dp(340)
+                if (e.getY() >= historyY && e.getX() >= leftWidth()+dp(116)
                         && e.getX() < viewportRight()) {
                     if(!arcDraft.isEmpty()){showArcDraftActions(null);return true;}
                     if(!project.polylineDraft.isEmpty()){showPolylineActions(null);return true;}
-                    int index = (int)((e.getX() - dp(340) + timelineScroll) / dp(64));
+                    int index = (int)((e.getX() - leftWidth() - dp(116) + timelineScroll) / dp(64));
                     List<CadTimeline.Item> items=CadTimeline.entries(project);
                     if(index>=0&&index<items.size()) {
                         CadTimeline.Item item=items.get(index);
@@ -380,32 +407,36 @@ public final class CadWorkspaceView extends View {
                     }
                     return true;
                 }
-                if (e.getY() <= dp(58) && e.getX() >= getWidth() - dp(190)) {
+                if (e.getY() <= topBar() && e.getX() >= getWidth() - dp(190)) {
                     showExportPicker();
                     return true;
                 }
-                if (e.getY() <= dp(58) && e.getX() >= getWidth() - dp(330)) {
+                if (e.getY() <= topBar() && e.getX() >= getWidth() - dp(330)) {
                     if (fileRequestListener != null) fileRequestListener.requestOpenStep();
                     return true;
                 }
-                if(e.getY()<=dp(50)&&e.getX()>=dp(130)&&e.getX()<getWidth()-dp(340)) {
+                if(e.getY()<=topBar()&&e.getX()<toolbarX()) {
                     showProjectMenu();return true;
                 }
-                if (e.getY() >= dp(54) && e.getY() <= dp(104)
-                        && e.getX() >= dp(224) && e.getX() <= dp(224)+topToolWidth()*ToolbarCatalog.groups(inSketch()).length) {
+                if (e.getY() >= dp(8) && e.getY() <= dp(56)
+                        && e.getX() >= toolbarX() && e.getX() <= toolbarX()+topToolWidth()*ToolbarCatalog.groups(inSketch()).length) {
                     float itemWidth = topToolWidth();
-                    int tool = (int)((e.getX() - dp(224)) / itemWidth);
+                    int tool = (int)((e.getX() - toolbarX()) / itemWidth);
                     ToolbarCatalog.Group[] groups=ToolbarCatalog.groups(inSketch());
-                    if (tool >= 0 && tool < groups.length) openToolGroup(groups[tool],dp(224)+tool*itemWidth);
+                    if (tool >= 0 && tool < groups.length) openToolGroup(groups[tool],toolbarX()+tool*itemWidth);
                     return true;
                 }
-                if(e.getX()<dp(224)&&e.getY()>=dp(184)) {treeTap(e.getX(),e.getY());return true;}
+                if(e.getX()<leftWidth()&&e.getY()>topBar()&&(treeCollapsed||(e.getY()<treeTop()&&e.getX()>leftWidth()-dp(48)))) {
+                    treeCollapsed=!treeCollapsed;dismissToolPopup();invalidate();return true;
+                }
+                if(e.getX()<leftWidth()&&e.getY()>=treeTop()) {treeTap(e.getX(),e.getY());return true;}
 
                 
 if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234)) {
-                    if (e.getY() >= dp(374) && e.getY() <= dp(426)) chooseSketchPlane("XY");
-                    else if (e.getY() >= dp(432) && e.getY() <= dp(484)) chooseSketchPlane("XZ");
-                    else if (e.getY() >= dp(490) && e.getY() <= dp(542)) chooseSketchPlane("YZ");
+                    float py=e.getY()+propertiesShift();
+                    if (py >= dp(374) && py <= dp(426)) chooseSketchPlane("XY");
+                    else if (py >= dp(432) && py <= dp(484)) chooseSketchPlane("XZ");
+                    else if (py >= dp(490) && py <= dp(542)) chooseSketchPlane("YZ");
                 } else if (isInsideViewport(e.getX(), e.getY())) {
                     if(mode.equals("Profile wyciągnięcia")){toggleExtrusionProfile(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Łuk")){arcTap(e.getX(),e.getY());return true;}
@@ -451,7 +482,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             }
 
             @Override public boolean onScroll(MotionEvent e1, MotionEvent e2, float dx, float dy) {
-                if(e1!=null&&e1.getX()<dp(224)&&e1.getY()>dp(184)) {treeScroll=Math.max(0,Math.min(Math.max(0,modelTreeRows.size()*dp(36)-(getHeight()-dp(200)-bottomSystemInset)),treeScroll+dy));invalidate();return true;}
+                if(e1!=null&&!treeCollapsed&&e1.getX()<leftWidth()&&e1.getY()>treeTop()) {treeScroll=Math.max(0,Math.min(Math.max(0,modelTreeRows.size()*dp(36)-(getHeight()-treeTop()-dp(16)-bottomSystemInset)),treeScroll+dy));invalidate();return true;}
                 if (e1 != null && e1.getX() >= dp(328)
                         && e1.getY() >= getHeight()-dp(62)-bottomSystemInset) {
                     timelineScroll=Math.max(0,Math.min(maxTimelineScroll(),timelineScroll+dx));
@@ -485,7 +516,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     private void applyZoom(float factor,float focusX,float focusY) {
         if(!Float.isFinite(factor)||factor<=0)return;
         float next=Math.max(.02f,Math.min(200f,zoom*factor)),ratio=next/zoom;
-        float cx=(dp(224)+viewportRight())/2,cy=(dp(110)+getHeight()-dp(68)-bottomSystemInset)/2;
+        float cx=(leftWidth()+viewportRight())/2,cy=(viewTop()+getHeight()-dp(68)-bottomSystemInset)/2;
         panX=focusX-cx-ratio*(focusX-cx-panX);panY=focusY-cy-ratio*(focusY-cy-panY);zoom=next;
     }
 
@@ -670,9 +701,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         super.onDraw(canvas);
         dimensionHits.clear();
         scheduleToolbarUpdate();
-        float left = dp(224);
+        float left = leftWidth();
         float right = viewportRight();
-        float top = dp(110);
+        float top = viewTop();
         float bottom = getHeight() - dp(68) - bottomSystemInset;
         workCenterX = (left + right) / 2f + panX;
         workCenterY = (top + bottom) / 2f + panY;
@@ -700,20 +731,28 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private void drawTopBar(Canvas canvas) {
-        paint.setColor(Color.rgb(16, 24, 32));
-        canvas.drawRect(0, 0, getWidth(), dp(108), paint);
-        text(canvas, "TabletCAD", dp(22), dp(35), 20, Color.WHITE, true);
-        String projectLabel=project.name.length()>32 ? project.name.substring(0,29)+"..." : project.name;
-        text(canvas, projectLabel+" ▾  •  zapisano lokalnie", dp(145), dp(34), 14, Color.rgb(190, 201, 210), false);
-        pill(canvas, getWidth() - dp(312), dp(10), dp(124), dp(38), "Otwórz plik", Color.rgb(44, 58, 70), Color.WHITE);
-        pill(canvas, getWidth() - dp(172), dp(10), dp(152), dp(38), "Eksportuj", ACCENT, Color.WHITE);
+        paint.setColor(CHROME);
+        canvas.drawRect(0, 0, getWidth(), topBar(), paint);
+        // Project block: product, mode badge and document name (tap opens the project menu).
+        text(canvas, "TabletCAD", dp(18), dp(27), 15, Color.WHITE, true);
+        boolean sketch = inSketch();
+        float badgeX = dp(112);
+        paint.setColor(sketch ? Color.rgb(196, 120, 24) : ACCENT);
+        canvas.drawRoundRect(new RectF(badgeX, dp(12), badgeX + dp(70), dp(32)), dp(10), dp(10), paint);
+        text(canvas, sketch ? "SZKIC 2D" : "BRYŁA 3D", badgeX + dp(35), dp(26), 9.5f, Color.WHITE, true, Paint.Align.CENTER);
+        String projectLabel = project.name.length() > 17 ? project.name.substring(0, 15) + "…" : project.name;
+        text(canvas, projectLabel + "  ▾", dp(18), dp(50), 12, CHROME_TEXT, false);
+        text(canvas, "v" + appVersion(), toolbarX() - dp(12), dp(50), 10, Color.rgb(132, 146, 158), false, Paint.Align.RIGHT);
+        paint.setColor(CHROME_RAISED);
+        canvas.drawRect(toolbarX() - dp(1), dp(12), toolbarX(), topBar() - dp(12), paint);
+        pill(canvas, getWidth() - dp(312), dp(13), dp(124), dp(38), "Otwórz plik", CHROME_RAISED, Color.WHITE);
+        pill(canvas, getWidth() - dp(172), dp(13), dp(152), dp(38), "Eksportuj", ACCENT, Color.WHITE);
         float itemWidth = topToolWidth();
-        ToolbarCatalog.Group[] groups = ToolbarCatalog.groups(inSketch());
-        text(canvas, inSketch() ? "SZKIC 2D" : "BRYŁA 3D", dp(22), dp(84), 13, Color.WHITE, true);
+        ToolbarCatalog.Group[] groups = ToolbarCatalog.groups(sketch);
         for (int i = 0; i < groups.length; i++) {
-            float x = dp(224) + i * itemWidth;
+            float x = toolbarX() + i * itemWidth;
             boolean active = groupActive(groups[i]);
-            drawToolButton(canvas, x + dp(2), dp(54), itemWidth - dp(4), dp(48),
+            drawToolButton(canvas, x + dp(2), dp(8), itemWidth - dp(4), dp(48),
                 groups[i].icon, groups[i].title+(groups[i].direct()?"":" ▾"), active);
         }
     }
@@ -736,7 +775,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             android.widget.FrameLayout root=(android.widget.FrameLayout)getParent();
             if(nativeToolbar!=null)root.removeView(nativeToolbar);
             nativeToolbar=new android.widget.HorizontalScrollView(getContext());nativeToolbar.setHorizontalScrollBarEnabled(false);
-            nativeToolbar.setBackgroundColor(Color.rgb(16,24,32));
+            nativeToolbar.setBackgroundColor(CHROME);
             LinearLayout row=new LinearLayout(getContext());row.setOrientation(LinearLayout.HORIZONTAL);
             for(ToolbarCatalog.Group group:ToolbarCatalog.groups(inSketch())) {
                 View button=toolbarButton(group.title,group.icon,!group.direct(),groupActive(group),false);
@@ -745,8 +784,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 row.addView(button,new LinearLayout.LayoutParams((int)topToolWidth(),(int)dp(48)));
             }
             nativeToolbar.addView(row);
-            android.widget.FrameLayout.LayoutParams layout=new android.widget.FrameLayout.LayoutParams(Math.max(1,getWidth()-(int)dp(224)),(int)dp(50));
-            layout.leftMargin=(int)dp(224);layout.topMargin=(int)dp(54);
+            int toolbarWidth=(int)Math.min(topToolWidth()*ToolbarCatalog.groups(inSketch()).length,getWidth()-toolbarX()-dp(330));
+            android.widget.FrameLayout.LayoutParams layout=new android.widget.FrameLayout.LayoutParams(Math.max(1,toolbarWidth),(int)dp(50));
+            layout.leftMargin=(int)toolbarX();layout.topMargin=(int)dp(7);
             root.addView(nativeToolbar,layout);
         });
     }
@@ -755,14 +795,14 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         View button=new View(getContext()) {
             @Override protected void onDraw(Canvas canvas) {
                 super.onDraw(canvas);
-                paint.setStyle(Paint.Style.FILL);paint.setColor(active?ACCENT:Color.rgb(28,40,51));
+                paint.setStyle(Paint.Style.FILL);paint.setColor(active?ACCENT:CHROME_RAISED);
                 canvas.drawRoundRect(new RectF(dp(2),dp(2),getWidth()-dp(2),getHeight()-dp(2)),dp(6),dp(6),paint);
                 canvas.save();canvas.translate(getWidth()/2f,dp(submenu?20:15));canvas.scale(.8f,.8f);
                 drawToolIcon(canvas,icon,0,0,active?Color.WHITE:Color.rgb(210,220,228));canvas.restore();
                 android.text.TextPaint labelPaint=new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);labelPaint.setTextSize(dp(submenu?9:8.5f));labelPaint.setColor(Color.WHITE);
                 android.text.StaticLayout layout=android.text.StaticLayout.Builder.obtain(label,0,label.length(),labelPaint,Math.max(1,getWidth()-(int)dp(8))).setAlignment(android.text.Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setMaxLines(submenu?2:1).setEllipsize(android.text.TextUtils.TruncateAt.END).build();
                 canvas.save();canvas.translate(dp(4),dp(submenu?37:32));layout.draw(canvas);canvas.restore();
-                if(dropdown)text(canvas,"▾",getWidth()-dp(9),dp(16),10,Color.rgb(190,201,210),false,Paint.Align.CENTER);
+                if(dropdown)text(canvas,"▾",getWidth()-dp(9),dp(16),10,CHROME_TEXT,false,Paint.Align.CENTER);
             }
         };
         button.setFocusable(true);button.setClickable(true);button.setTooltipText(label);
@@ -778,12 +818,12 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         for(String command:commands)if(!ToolbarCatalog.allows(role,command)){invalidate();return;}
         if(group.direct()){activateTopTool(commands[0]);return;}
         LinearLayout body=new LinearLayout(getContext());body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding((int)dp(8),(int)dp(6),(int)dp(8),(int)dp(8));body.setBackgroundColor(Color.rgb(16,24,32));
+        body.setPadding((int)dp(8),(int)dp(6),(int)dp(8),(int)dp(8));body.setBackgroundColor(CHROME);
         android.widget.TextView heading=new android.widget.TextView(getContext());
         heading.setText((role?"Szkic · ":"Bryła · ")+group.title);heading.setTextColor(Color.WHITE);heading.setTextSize(13);
         heading.setPadding((int)dp(6),0,0,(int)dp(5));body.addView(heading);
         LinearLayout row=null;int commandIndex=0;
-        int columns=Math.max(1,Math.min(4,(int)((getWidth()-dp(224)-dp(16))/dp(88))));
+        int columns=Math.max(1,Math.min(4,(int)((getWidth()-toolbarX()-dp(16))/dp(88))));
         for(String command:commands) {
             if(commandIndex++%columns==0){row=new LinearLayout(getContext());row.setOrientation(LinearLayout.HORIZONTAL);body.addView(row);}
             String label=command.equals("Ukryj bryłę")&&!showSolid?"Pokaż bryłę":command;
@@ -795,11 +835,11 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }
         int width=(int)dp(Math.min(columns,commands.length)*88+16);
         toolbarPopup=new android.widget.PopupWindow(body,width,android.view.ViewGroup.LayoutParams.WRAP_CONTENT,true);
-        toolbarPopup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.rgb(16,24,32)));
+        toolbarPopup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(CHROME));
         toolbarPopup.setOutsideTouchable(true);toolbarPopup.setElevation(dp(10));
-        int x=(int)Math.max(dp(224),Math.min(anchorX,getWidth()-dp(252)-width));
+        int x=(int)Math.max(toolbarX(),Math.min(anchorX,getWidth()-dp(252)-width));
         int[] origin=new int[2];getLocationOnScreen(origin);
-        toolbarPopup.showAtLocation(this,android.view.Gravity.TOP|android.view.Gravity.LEFT,x+origin[0],(int)dp(108)+origin[1]);
+        toolbarPopup.showAtLocation(this,android.view.Gravity.TOP|android.view.Gravity.LEFT,x+origin[0],(int)topBar()+origin[1]);
     }
 
     @Override protected void onAttachedToWindow() {
@@ -817,10 +857,19 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private void drawLeftPanel(Canvas canvas,float left,float top,float bottom) {
-        paint.setColor(PANEL);canvas.drawRect(0,dp(108),left,getHeight(),paint);text(canvas,"MODEL",dp(18),dp(137),12,MUTED,true);row(canvas,"Dokument",dp(18),dp(168),true);
-        canvas.save();canvas.clipRect(0,dp(184),left,getHeight()-bottomSystemInset);
+        paint.setColor(PANEL);canvas.drawRect(0,topBar(),left,getHeight(),paint);
+        paint.setColor(DIVIDER);canvas.drawRect(left-dp(1),topBar(),left,getHeight(),paint);
+        if(treeCollapsed) {
+            // Collapsed rail: one tap anywhere on it restores the model tree.
+            text(canvas,"›",left/2,topBar()+dp(32),20,ACCENT,true,Paint.Align.CENTER);
+            canvas.save();canvas.rotate(-90,left/2,topBar()+dp(110));text(canvas,"MODEL",left/2,topBar()+dp(114),11,MUTED,true,Paint.Align.CENTER);canvas.restore();
+            return;
+        }
+        text(canvas,"MODEL",dp(18),topBar()+dp(29),12,MUTED,true);text(canvas,"‹",left-dp(24),topBar()+dp(31),20,ACCENT,true,Paint.Align.CENTER);
+        row(canvas,"Dokument",dp(18),topBar()+dp(60),true);
+        canvas.save();canvas.clipRect(0,treeTop(),left,getHeight()-bottomSystemInset);
         for(int i=0;i<modelTreeRows.size();i++) {
-            ModelTree.Row entry=modelTreeRows.get(i);float y=dp(184)+i*dp(36)-treeScroll;if(y+dp(36)<dp(184)||y>getHeight())continue;
+            ModelTree.Row entry=modelTreeRows.get(i);float y=treeTop()+i*dp(36)-treeScroll;if(y+dp(36)<treeTop()||y>getHeight())continue;
             if(entry.key.equals(selectedTreeKey)){paint.setColor(Color.rgb(226,242,240));canvas.drawRoundRect(new RectF(dp(8),y,dp(220),y+dp(34)),dp(6),dp(6),paint);}
             if(!entry.sketch()) {
                 text(canvas,collapsedBodies.contains(entry.body)?"›":"⌄",dp(12),y+dp(23),15,MUTED,true);
@@ -834,7 +883,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         canvas.restore();
     }
     private void treeTap(float x,float y) {
-        int index=(int)((y-dp(184)+treeScroll)/dp(36));if(index<0||index>=modelTreeRows.size())return;
+        int index=(int)((y-treeTop()+treeScroll)/dp(36));if(index<0||index>=modelTreeRows.size())return;
         ModelTree.Row entry=modelTreeRows.get(index);long now=android.os.SystemClock.uptimeMillis();boolean edit=entry.key.equals(selectedTreeKey)&&now-treeLastTap<android.view.ViewConfiguration.getDoubleTapTimeout();treeLastTap=now;
         if(!entry.sketch()) {
             if(x<dp(26)){if(!collapsedBodies.add(entry.body))collapsedBodies.remove(entry.body);}
@@ -874,7 +923,16 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
     private void drawProperties(Canvas canvas, float right, float top, float bottom) {
         paint.setColor(PANEL);
-        canvas.drawRect(right, dp(108), getWidth(), Math.min(getHeight(),dp(650)), paint);
+        canvas.drawRect(right, topBar(), getWidth(), getHeight(), paint);
+        paint.setColor(DIVIDER);canvas.drawRect(right, topBar(), right+dp(1), getHeight(), paint);
+        canvas.save();canvas.translate(0,-propertiesShift());
+        try { drawPropertiesContent(canvas,right,bottom+propertiesShift()); } finally { canvas.restore(); }
+    }
+
+    /** The properties content keeps its original coordinates and is drawn shifted below the 64 dp bar. */
+    private float propertiesShift() { return dp(108) - topBar(); }
+
+    private void drawPropertiesContent(Canvas canvas, float right, float bottom) {
         text(canvas, "WŁAŚCIWOŚCI", right + dp(18), dp(137), 12, MUTED, true);
         if(!inSketch()&&!project.hasSolid()) {
             text(canvas,"Pusty dokument",right+dp(18),dp(185),18,INK,true);
@@ -1247,7 +1305,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         RectF bounds=new RectF(x-half,y-dp(18),x+half,y+dp(8));
         for(int attempt=0;attempt<12;attempt++) {
             boolean collision=false;for(DimensionHit hit:dimensionHits)if(RectF.intersects(bounds,hit.bounds)){collision=true;break;}
-            if(!collision&&bounds.left>dp(224)&&bounds.right<viewportRight()&&bounds.top>dp(156))break;
+            if(!collision&&bounds.left>leftWidth()&&bounds.right<viewportRight()&&bounds.top>viewTop()+dp(46))break;
             double candidate=angle+(attempt%4+1)*Math.PI/2;float distance=dp(60+attempt/4*24);x=a.x+(float)Math.cos(candidate)*distance;y=a.y+(float)Math.sin(candidate)*distance;bounds.set(x-half,y-dp(18),x+half,y+dp(8));
         }
         text(canvas,label,x,y,10,Color.rgb(117,70,160),true,Paint.Align.CENTER);dimensionHits.add(new DimensionHit(entity.id,"angle",0,bounds));
@@ -3154,8 +3212,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private boolean isInsideViewport(float x, float y) {
-        return x >= dp(224) && x <= viewportRight()
-            && y >= dp(110) && y <= getHeight() - dp(68) - bottomSystemInset;
+        return x >= leftWidth() && x <= viewportRight()
+            && y >= viewTop() && y <= getHeight() - dp(68) - bottomSystemInset;
     }
 
     private boolean updateNativeModel() {
@@ -3808,7 +3866,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             radius = Math.max(radius, Math.sqrt((w[0]-ox)*(w[0]-ox)+(w[1]-oy)*(w[1]-oy)+(w[2]-oz)*(w[2]-oz)));
         }
         if (!(radius > 1e-6)) { zoom = 1; return; }
-        float width = viewportRight() - dp(224), height = getHeight() - dp(110) - dp(68) - bottomSystemInset;
+        float width = viewportRight() - leftWidth(), height = getHeight() - viewTop() - dp(68) - bottomSystemInset;
         float available = Math.max(dp(80), Math.min(width, height)) * 0.42f;
         double perspective = orthographicView ? 1 : viewDistance() / Math.max(1e-6, viewDistance() - radius);
         zoom = (float)Math.max(0.02, Math.min(200, available / (radius * perspective * dp(3.2f))));
@@ -4266,10 +4324,10 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
     private void drawTimeline(Canvas canvas) {
         float top = getHeight() - dp(62) - bottomSystemInset;
-        float left = dp(224);
+        float left = leftWidth();
         float right = viewportRight();
         canvas.save();canvas.clipRect(left,top,right,getHeight());
-        paint.setColor(Color.rgb(16, 24, 32));
+        paint.setColor(CHROME);
         canvas.drawRect(left, top, right, getHeight(), paint);
         text(canvas, "↶", left + dp(30), top + dp(37), 23, undoStack.isEmpty() ? MUTED : Color.WHITE, true, Paint.Align.CENTER);
         text(canvas, "↷", left + dp(76), top + dp(37), 23, redoStack.isEmpty() ? MUTED : Color.WHITE, true, Paint.Align.CENTER);
@@ -4539,7 +4597,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
     private void showProjectMenu() {
         closePropertyEditor();
-        new PropertyBuilder().setTitle("Projekt · "+project.name)
+        new PropertyBuilder().setTitle("Projekt · "+project.name+" · TabletCAD v"+appVersion())
             .setItems(new String[]{"Nowy pusty projekt","Moje projekty","Dane i nazwa dokumentu"},(d,which)-> {
                 if(which==0)showNewProject();else if(which==1)showProjectLibrary();else showDrawingMetadataEditor();
             }).setNegativeButton("Zamknij",null).show();

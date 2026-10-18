@@ -145,7 +145,7 @@ public final class CadScenarioProbe {
         v=volume(again);check(Math.abs(v-filleted)<1e-6,"16 reopened geometry is exact ("+v+")");
         // 17-19. Edit the first sketch width 100 → 120 from the model tree; hole and fillet follow.
         float[] row=new float[2];ui(()->{List<?> rows=(List<?>)field(again,"modelTreeRows");int index=-1;for(int i=0;i<rows.size();i++){ModelTree.Row r=(ModelTree.Row)rows.get(i);if(r.sketch()&&r.entities.contains(rect[0].id))index=i;}
-            check(index>=0,"17 model tree lists the base sketch");float density=(float)field(again,"density");int[] o=new int[2];again.getLocationOnScreen(o);row[0]=80*density+o[0];row[1]=(184+index*36+18)*density+o[1];});
+            check(index>=0,"17 model tree lists the base sketch");float density=(float)field(again,"density");int[] o=new int[2];again.getLocationOnScreen(o);row[0]=80*density+o[0];row[1]=(float)call(again,"treeRowCenterY",new Class<?>[]{int.class},index)+o[1];});
         TabletFlowProbe.tap(row[0],row[1]);Thread.sleep(120);TabletFlowProbe.tap(row[0],row[1]);Thread.sleep(400);
         ui(()->check(field(again,"mode").equals("Edytuj szkic"),"17 double tap on the tree enters the base sketch ("+describe(again)+")"));
         editDimension(again,rect[0].id,"width","120");
