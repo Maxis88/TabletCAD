@@ -19,7 +19,7 @@ if(Test-Path $Classes){Remove-Item $Classes -Recurse -Force}
 if(Test-Path $Dex){Remove-Item $Dex -Recurse -Force}
 New-Item -ItemType Directory -Force $Build,$Classes,$Dex,$env:TEMP | Out-Null
 $Sources=@((Get-ChildItem (Join-Path $Root 'tools\*Probe.java')).FullName)+(Join-Path $Root 'tools\WorkspaceInstrumentation.java')
-& (Join-Path $Jdk 'bin\javac.exe') -encoding UTF-8 -classpath "$AppClasses;$AndroidJar" -d $Classes $Sources
+& (Join-Path $Jdk 'bin\javac.exe') --release 17 -encoding UTF-8 -classpath "$AppClasses;$AndroidJar" -d $Classes $Sources
 Check 'Compile probes'
 # Package probe classes into one jar: passing every .class path exceeds the Windows command-line limit.
 $ProbeJar=Join-Path $Build 'probes.jar';if(Test-Path $ProbeJar){Remove-Item $ProbeJar -Force}

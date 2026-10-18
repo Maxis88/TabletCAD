@@ -31,6 +31,7 @@ public final class ProfileDependencies {
     }
     public static List<String> consumers(CadProject p,String id) {
         List<String> result=new ArrayList<>();
+        if(id==null||id.isEmpty())return result;// operations without a source profile share nothing
         if(id!=null&&id.equals(p.featureBaseProfileId)&&p.featureBase!=null)result.add("Bryła bazowa · "+(Revolve.is(p.featureBase)?"obrót":"wyciągnięcie"));
         for(int i=0;i<p.committedProfileIds.size();i++)if(id!=null&&id.equals(p.committedProfileIds.get(i)))
             result.add("Operacja "+(i+1)+" · "+(Revolve.is(p.committedFeatures.get(i))?"obrót":FeatureDirection.isCut(p.committedFeatures.get(i)[1])?"wycięcie":"wyciągnięcie"));
