@@ -43,6 +43,19 @@ public final class SemanticIcons {
     }
     /** Standard-view glyphs: the same cube, with the face seen by the camera filled. */
     private static boolean drawView(Canvas canvas,String id,float x,float y,float scale,int color) {
+        if(id.equals("Szyk liniowy")||id.equals("Szyk kołowy")) {
+            Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.7f);p.setStyle(Paint.Style.STROKE);p.setStrokeCap(Paint.Cap.ROUND);
+            canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
+            if(id.equals("Szyk liniowy")) {
+                for(int i=0;i<3;i++)canvas.drawCircle(-9+9*i,0,3.2f,p);
+                p.setStrokeWidth(1);canvas.drawLine(-12,7,12,7,p);canvas.drawLine(12,7,9,5,p);canvas.drawLine(12,7,9,9,p);
+            }else {
+                p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));canvas.drawCircle(0,0,8,p);p.setPathEffect(null);
+                for(int i=0;i<6;i++){double a=Math.PI/3*i;canvas.drawCircle((float)Math.cos(a)*8,(float)Math.sin(a)*8,2.6f,p);}
+                canvas.drawPoint(0,0,p);
+            }
+            canvas.restore();return true;
+        }
         if(id.equals("Przedłuż")) {
             Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.7f);p.setStyle(Paint.Style.STROKE);p.setStrokeCap(Paint.Cap.ROUND);
             canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);

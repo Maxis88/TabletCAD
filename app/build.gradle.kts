@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 68
-        versionName = "0.60.0-sketch-extend"
+        versionCode = 69
+        versionName = "0.61.0-sketch-patterns"
     }
 
     externalNativeBuild {

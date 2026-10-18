@@ -40,6 +40,17 @@ public final class SketchOffsetUiProbe {
         call(view,"activateTopTool",new Class<?>[]{String.class},"Przedłuż");
         SketchPrimitive grown=null;for(SketchPrimitive e:((CadProject)field(view,"project")).sketch)if(e.id.equals("probe-line"))grown=e;
         check(grown!=null&&Math.abs(grown.x1-0)<1e-9&&Math.abs(grown.x2-20)<1e-9,"extend moves the nearer end to the rectangle edge: "+(grown==null?"none":grown.x1+","+grown.x2)+" "+field(view,"operationMessage"));
+        // Geometria → Szyk kołowy: 6 holes on a pitch circle from the panel values.
+        ((CadProject)field(view,"project")).sketch.add(new SketchPrimitive("probe-hole","Okrąg",70,30,73,30));
+        InteractionFixProbe.set(view,"selectedSketchId","probe-hole");
+        call(view,"activateTopTool",new Class<?>[]{String.class},"Szyk kołowy");
+        View patternPanel=(View)field(view,"propertyEditor");List<EditText> fields=new ArrayList<>();WorkspaceUiProbe.editors(patternPanel,fields);
+        check(fields.size()==4,"circular pattern panel has count, angle and centre");
+        fields.get(0).setText("6");fields.get(1).setText("360");fields.get(2).setText("50");fields.get(3).setText("30");
+        int before=((CadProject)field(view,"project")).sketch.size();WorkspaceUiProbe.button(patternPanel,"Zastosuj").performClick();
+        List<SketchPrimitive> after=((CadProject)field(view,"project")).sketch;check(after.size()==before+5,"circular pattern adds 5 copies: "+field(view,"operationMessage"));
+        for(int i=before;i<after.size();i++)check(Math.abs(Math.hypot(after.get(i).x1-50,after.get(i).y1-30)-20)<1e-9,"pattern copy "+(i-before+1)+" on Ø40 pitch circle");
+        call(view,"undo",new Class<?>[0]);check(((CadProject)field(view,"project")).sketch.size()==before,"one undo removes the whole pattern");
         System.out.println("ALL SKETCH OFFSET UI TESTS PASSED");
     }
 }

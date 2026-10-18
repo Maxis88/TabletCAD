@@ -1,11 +1,14 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.60.0-sketch-extend**, versionCode **68**.
+Wersja źródeł: **0.61.0-sketch-patterns**, versionCode **69**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
+
+Wersja 0.61 dodaje szyki szkicu: liniowy/prostokątny i kołowy
+([audyt 0.61](docs/AUDIT-0.61.md)).
 
 Wersja 0.60 dodaje Przytnij → Przedłuż: linia rośnie wzdłuż własnego kierunku
 do najbliższej geometrii szkicu ([audyt 0.60](docs/AUDIT-0.60.md)).

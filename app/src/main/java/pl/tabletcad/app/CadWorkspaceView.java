@@ -1716,6 +1716,38 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }).show();
     }
 
+    /** Linear/rectangular or circular pattern of the selected sketch element (independent copies). */
+    private void showSketchPattern(boolean circular) {
+        SketchPrimitive source=null;
+        for(SketchPrimitive entity:project.sketch)if(entity.id.equals(selectedSketchId))source=entity;
+        if(source==null){operationMessage="Zaznacz element szkicu (Edytuj), a następnie wybierz szyk";return;}
+        final SketchPrimitive selected=source;
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        final EditText first,second,third,fourth;
+        if(circular) {
+            first=coordinateInput("Liczba elementów (z oryginałem)",6);second=coordinateInput("Kąt całkowity [°]",360);
+            third=coordinateInput("Środek X [mm]",0);fourth=coordinateInput("Środek Y [mm]",0);
+        }else {
+            first=coordinateInput("Liczba w kierunku X",3);second=coordinateInput("Odstęp X [mm]",20);
+            third=coordinateInput("Liczba w kierunku Y",1);fourth=coordinateInput("Odstęp Y [mm]",20);
+        }
+        form.addView(first);form.addView(second);form.addView(third);form.addView(fourth);
+        android.widget.TextView status=new android.widget.TextView(getContext());
+        status.setText(circular?"Kąt 360° dzieli okrąg równo. Środek w układzie szkicu.":"Liczby obejmują oryginał. Ujemny odstęp zmienia kierunek.");form.addView(status);
+        new PropertyBuilder().setTitle((circular?"Szyk kołowy · ":"Szyk liniowy · ")+selected.type).setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
+            try {
+                List<SketchPrimitive> copies;
+                double a=parseCoordinate(first),b=parseCoordinate(second),c=parseCoordinate(third),e=parseCoordinate(fourth);
+                if(a!=Math.rint(a)||(!circular&&c!=Math.rint(c)))throw new IllegalArgumentException("Liczba elementów musi być całkowita");
+                copies=circular?SketchPattern.circular(selected,(int)a,c,e,b):SketchPattern.grid(selected,(int)a,(int)c,b,e);
+                checkpoint();project.sketch.addAll(copies);mode="Edytuj szkic";
+                projectRepository.save(project);
+                operationMessage="Utworzono szyk: "+(copies.size()+1)+" elementów. Kopie są niezależne. Zakończ zatwierdza szkic.";
+            }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+            invalidate();
+        }).show();
+    }
+
     /** Extends the selected line to the nearest sketch geometry along its direction. */
     private void extendSelectedLine() {
         SketchPrimitive source=null;
@@ -4157,6 +4189,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(tool.equals("Lustro")){mode="Edytuj szkic";showSketchMirror();invalidate();return;}
         if(tool.equals("Odsunięcie")){mode="Edytuj szkic";showSketchOffset();invalidate();return;}
         if(tool.equals("Przedłuż")){mode="Edytuj szkic";extendSelectedLine();invalidate();return;}
+        if(tool.equals("Szyk liniowy")||tool.equals("Szyk kołowy")){mode="Edytuj szkic";showSketchPattern(tool.equals("Szyk kołowy"));invalidate();return;}
         if(tool.equals("Wymiar")) {
             if(!hadSketchPlane)operationMessage="Najpierw wybierz płaszczyznę szkicu";
             else {mode="Edytuj szkic";dimensionMode=true;operationMessage="Dotknij elementu, aby nadać mu wymiar sterujący";}

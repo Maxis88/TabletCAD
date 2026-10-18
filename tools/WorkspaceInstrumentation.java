@@ -12,7 +12,7 @@ public final class WorkspaceInstrumentation extends Instrumentation {
         ByteArrayOutputStream bytes=new ByteArrayOutputStream();PrintStream capture=new PrintStream(bytes);
         PrintStream previous=System.out;final Throwable[] failure={null};System.setOut(capture);
         try {
-            for(String name:new String[]{"KernelDiagnosticsProbe","SketchOffsetProbe","SketchExtendProbe","ExtrusionPlanProbe","ThreadProbe","BodyGraphProbe","RelationProbe","ConstructionAndSnapProbe","BooleanModeProbe","SplineProbe","SketchFilletProbe","DirectionProbe","SymmetricProbe","SketchWorkflowProbe","SketchTransactionProbe","TimelineProbe","ToolbarProbe"}) {
+            for(String name:new String[]{"KernelDiagnosticsProbe","SketchOffsetProbe","SketchExtendProbe","SketchPatternProbe","ExtrusionPlanProbe","ThreadProbe","BodyGraphProbe","RelationProbe","ConstructionAndSnapProbe","BooleanModeProbe","SplineProbe","SketchFilletProbe","DirectionProbe","SymmetricProbe","SketchWorkflowProbe","SketchTransactionProbe","TimelineProbe","ToolbarProbe"}) {
                 File scratch=new File(getTargetContext().getCacheDir(),"workflow-"+java.util.UUID.randomUUID()+".step");
                 try {Class.forName(name).getMethod("main",String[].class).invoke(null,(Object)new String[]{scratch.getAbsolutePath()});}
                 finally {scratch.delete();}
