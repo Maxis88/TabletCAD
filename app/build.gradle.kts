@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 64
-        versionName = "0.57.0-kernel-diagnostics"
+        versionCode = 65
+        versionName = "0.57.1-kernel-diagnostics"
     }
 
     externalNativeBuild {

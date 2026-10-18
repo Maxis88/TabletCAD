@@ -1,7 +1,7 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.57.0-kernel-diagnostics**, versionCode **64**.
+Wersja źródeł: **0.57.1-kernel-diagnostics**, versionCode **65**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,

@@ -2387,7 +2387,19 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         final double[] savedBase=base==null?null:base.clone(),savedFeatures=BodyGraph.pack(project,features);
         final double width=modelWidth,height=modelHeight;
         final String source=project.importedStep?importedSourceFile().getAbsolutePath():null;
-        return () -> NativeCadEngine.evaluateFeatures(width,height,depth,radius,savedBase,savedFeatures,null,source);
+        return () -> {
+            double[] result=NativeCadEngine.evaluateFeatures(width,height,depth,radius,savedBase,savedFeatures,null,source);
+            // Read on the evaluating thread: kernel diagnostics are thread-local.
+            previewFailureReason=result.length==0?NativeCadEngine.lastFailure().reason:null;
+            return result;
+        };
+    }
+
+    /** Last preview failure reason from the kernel, or the given fallback text. */
+    private volatile String previewFailureReason;
+    private String previewFailure(String fallback) {
+        String reason=previewFailureReason;
+        return reason==null||reason.isEmpty()?fallback:reason+". Model nie został zmieniony.";
     }
 
     private double[] evaluateQuery(java.util.concurrent.Callable<double[]> query) {
@@ -2452,7 +2464,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         new PropertyBuilder().setTitle(root?"Obrót profilu · bryła bazowa":"Obrót profilu · dodanie / wycięcie").setView(form)
             .setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)-> {
                 try {
-                    double[] f=candidate.get();if(evaluateRevolve(f,index,root).length==0)throw new IllegalArgumentException("Nie można zbudować obrotu lub odtworzyć dalszych operacji");
+                    double[] f=candidate.get();if(evaluateRevolve(f,index,root).length==0)throw new IllegalArgumentException(previewFailure("Nie można zbudować obrotu lub odtworzyć dalszych operacji"));
                     if (commitModelChange(() -> {
                         if(root){project.featureBase=f;project.featureBaseProfileId=profile.id;}
                         else if(index<0){preserveExtrudedBase();commitActiveFeature();project.committedFeatures.add(f);project.committedProfileIds.add(profile.id);}
@@ -2470,7 +2482,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             try {
                 status.setText("Obliczanie podglądu…");
                 submitGeometryPreview(owner,revolvePreviewQuery(candidate.get(),index,root),mesh->{
-                    if(mesh.length==0)status.setText("Brak poprawnej bryły. Sprawdź oś, profil i przecięcie z modelem. Dokument pozostaje bez zmian.");
+                    if(mesh.length==0)status.setText(previewFailure("Brak poprawnej bryły. Sprawdź oś, profil i przecięcie z modelem. Dokument pozostaje bez zmian."));
                     else status.setText("Podgląd obrotu. Zastosuj zapisuje edytowalną operację w historii.");
                 });
             }catch(IllegalArgumentException error){status.setText(error.getMessage());}invalidate();
@@ -2512,7 +2524,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     if(candidate[0]==null)throw new IllegalArgumentException("Najpierw dotknij widocznej krawędzi bryły");
                     double[] value=EdgeGroup.withRadius(candidate[0],parseCoordinate(radius));
                     if(chamfer)EdgeChamfer.validate(value);else EdgeFillet.validate(value);
-                    if(evaluateFillet(value,index).length==0)throw new IllegalArgumentException("Nie można wykonać operacji na tej krawędzi z podaną wartością lub przebudować kolejnych cech");
+                    if(evaluateFillet(value,index).length==0)throw new IllegalArgumentException(previewFailure("Nie można wykonać operacji na tej krawędzi z podaną wartością lub przebudować kolejnych cech"));
                     if (commitModelChange(() -> {
                         if(index<0) {
                             preserveExtrudedBase();commitActiveFeature();
@@ -2542,7 +2554,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 if(chamfer)EdgeChamfer.validate(candidate[0]);else EdgeFillet.validate(candidate[0]);
                 double proposedRadius=candidate[0][11];status.setText("Obliczanie podglądu…");
                 submitGeometryPreview(owner,filletPreviewQuery(candidate[0],index),mesh->{
-                    if(mesh.length==0)status.setText("Brak poprawnego wyniku. Zmniejsz wartość lub wskaż inną krawędź. Model nie został zmieniony.");
+                    if(mesh.length==0)status.setText(previewFailure("Brak poprawnego wyniku. Zmniejsz wartość lub wskaż inną krawędź. Model nie został zmieniony."));
                     else status.setText("Podgląd "+(chamfer?"fazy ":"R")+formatMm(proposedRadius)+". "+(chamfer?"Równe odsunięcia na obu ścianach. ":"")+"Zastosuj zapisuje operację w historii.");
                 });
             }catch(IllegalArgumentException e){status.setText(chamfer?"Wielkość fazy: 0,1–1000 mm":"Promień: 0,1–1000 mm");}
@@ -3224,7 +3236,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 status.setText("Obliczanie podglądu…");
                 submitGeometryPreview(owner,meshPreviewQuery(project.featureBase,packed,project.filletRadius,modelDepth),mesh->{
                     if(mesh.length>0)status.setText("Podgląd · "+Math.abs(candidate[6])+" mm"+(FeatureDirection.isSymmetric(candidate[1])?" · symetrycznie":candidate[6]<0?" · odwrotnie":"")+". Zastosuj zapisuje zmianę.");
-                    else status.setText("Brak poprawnego wyniku. Zmień głębokość lub kierunek.");
+                    else status.setText(previewFailure("Brak poprawnego wyniku. Zmień głębokość lub kierunek."));
                 });
             }catch(IllegalArgumentException error){status.setText(error.getMessage());}
             invalidate();
@@ -3303,7 +3315,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         android.widget.ScrollView owner=propertyEditor;
         Runnable preview=()->{
             if(propertyEditor!=owner)return;selected.setText("Wybrane profile: "+extrusionSelections.size());target.setEnabled(operation.getSelectedItemPosition()!=0);if(extrusionSelections.isEmpty()){featurePreview=null;invalidate();return;}
-            try {CadProject next=extrusionCandidate(new ArrayList<>(extrusionSelections),new String[]{"new","add","cut","common"}[operation.getSelectedItemPosition()],parseCoordinate(first),both.isChecked()?parseCoordinate(second):0,reverse.isChecked(),symmetric.isChecked(),bodies.get(target.getSelectedItemPosition()));status.setText("Obliczanie podglądu…");submitGeometryPreview(owner,candidateQuery(next),mesh->status.setText(mesh.length>0?"Podgląd gotowy. Zastosuj tworzy jedną transakcję Cofnij.":"Brak poprawnego wyniku; sprawdź zakres i cel operacji."));}
+            try {CadProject next=extrusionCandidate(new ArrayList<>(extrusionSelections),new String[]{"new","add","cut","common"}[operation.getSelectedItemPosition()],parseCoordinate(first),both.isChecked()?parseCoordinate(second):0,reverse.isChecked(),symmetric.isChecked(),bodies.get(target.getSelectedItemPosition()));status.setText("Obliczanie podglądu…");submitGeometryPreview(owner,candidateQuery(next),mesh->status.setText(mesh.length>0?"Podgląd gotowy. Zastosuj tworzy jedną transakcję Cofnij.":previewFailure("Brak poprawnego wyniku; sprawdź zakres i cel operacji.")));}
             catch(IllegalArgumentException error){status.setText(error.getMessage());}invalidate();
         };
         extrusionSelectionChanged=preview;showExtrusionSketch=true;selected.setText("Wybrane profile: "+extrusionSelections.size());
@@ -3493,7 +3505,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 previewStatus.setText("Obliczanie podglądu…");
                 submitGeometryPreview(owner,meshPreviewQuery(project.featureBase,values,project.filletRadius,modelDepth),mesh->{
                     if(mesh.length>0)previewStatus.setText("Podgląd · "+Math.abs(proposedDepth)+" mm"+(proposedSymmetric?" · symetrycznie":proposedDepth<0?" · odwrotnie":"")+". Zastosuj zapisuje operację.");
-                    else previewStatus.setText("Brak poprawnego wyniku. Zmień głębokość lub profil.");
+                    else previewStatus.setText(previewFailure("Brak poprawnego wyniku. Zmień głębokość lub profil."));
                 });
             } catch(NumberFormatException error) {previewStatus.setText("Głębokość: 0,1–5000 mm");}
             invalidate();
@@ -3569,7 +3581,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 final boolean proposedSymmetric=symmetric.isChecked();status.setText("Obliczanie podglądu…");
                 submitGeometryPreview(owner,meshPreviewQuery(candidate,kernelFeatures(),initial?0:project.filletRadius,Math.abs(signed)),mesh->{
                     if(mesh.length>0)status.setText("Podgląd · "+Math.abs(signed)+" mm"+(proposedSymmetric?" · symetrycznie":signed<0?" · odwrotnie":"")+". Zastosuj zapisuje operację.");
-                    else status.setText("Brak poprawnego wyniku. Zmień głębokość lub kierunek.");
+                    else status.setText(previewFailure("Brak poprawnego wyniku. Zmień głębokość lub kierunek."));
                 });
             }catch(IllegalArgumentException error){status.setText(error.getMessage());}
             invalidate();

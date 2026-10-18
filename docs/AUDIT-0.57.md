@@ -37,8 +37,15 @@ Fizyczny HONOR YLE-W09, Android 16 (SDK 36), ARM64, 1920×3000.
 Cała `WorkspaceInstrumentation` (w tym TabletFlowProbe z dotykiem widocznego
 okna) zakończona `result=PASS` na tablecie.
 
+## 0.57.1 — przyczyny w podglądach
+
+Podglądy wyciągnięcia, wycięcia, obrotu, zaokrąglenia/fazy i wieloprofilowego
+wyciągania pokazują przyczynę z jądra zamiast ogólnego „Brak poprawnego wyniku”.
+TabletFlowProbe w widocznym oknie zatwierdza wycięcie poza bryłą i sprawdza
+komunikat „Operacja „Wycięcie” (nr 3): … nie przecina bryły … Poprzednia
+geometria została zachowana”, niezmienioną historię i dokładną objętość.
+
 ## Granice
 
 - Nie każda przyczyna jest rozróżniona: część walidacji rekordów zwraca ogólne
   „Niepoprawne parametry operacji w historii”.
-- Podglądy w trakcie przeciągania nadal pokazują ogólny komunikat podglądu.

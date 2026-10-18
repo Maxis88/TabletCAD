@@ -61,6 +61,16 @@ public final class TabletFlowProbe {
         ui(()->{View panel=(View)field(view,"propertyEditor");findCheck(panel,"Pełna długość każdego otworu").setChecked(false);InteractionFixProbe.input(panel).setText("3");apply[0]=WorkspaceUiProbe.button(panel,"Utwórz gwinty");});click(apply[0]);pending(view);instrumentation.waitForIdleSync();
         result=parameters(view);check(result.length==7&&result[0]<drilledVolume-2&&result[5]==1,"one apply cuts two real helical threads in the target body");screenshot(activity,"07-real-threads");
         ui(()->{call(view,"undo",new Class<?>[0]);check(((CadProject)field(view,"project")).committedFeatures.size()==2,"one undo removes both threads together");});check(Math.abs(parameters(view)[0]-drilledVolume)<.001,"thread undo restores exact pre-thread volume");
+        // A failing operation must name the history entry and the concrete kernel reason, keeping the model intact.
+        int[] featureCount={0};ui(()->{CadProject p=(CadProject)field(view,"project");featureCount[0]=p.committedFeatures.size();String baseline=p.toJson().toString();
+            CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));next.committedFeatures.add(new double[]{1,1,200,15,202.5,15,10,0,0,10,1,0,0,0,1,0});next.committedProfileIds.add("");
+            call(view,"commitProjectAsync",new Class<?>[]{CadProject.class,String.class,String.class},next,baseline,"unexpected success");});
+        pending(view);instrumentation.waitForIdleSync();
+        ui(()->{String message=String.valueOf(field(view,"operationMessage"));System.out.println("DIAGNOSTIC "+message);
+            check(message.contains("(nr "+(featureCount[0]+1)+")")&&message.contains("nie przecina bryły"),"failed cut names its history operation and the kernel reason");
+            check(message.contains("Poprzednia geometria została zachowana"),"failure message confirms preserved geometry");
+            check(((CadProject)field(view,"project")).committedFeatures.size()==featureCount[0],"failed operation is not added to history");});
+        check(Math.abs(parameters(view)[0]-drilledVolume)<.001,"failed operation keeps exact previous volume");screenshot(activity,"08-kernel-diagnostic");
         ui(activity::finish);System.out.println("ALL VISIBLE TABLET FLOW TESTS PASSED");
     }
     static CheckBox findCheck(View view,String label){if(view instanceof CheckBox&&((CheckBox)view).getText().toString().equals(label))return (CheckBox)view;if(view instanceof android.view.ViewGroup)for(int i=0;i<((android.view.ViewGroup)view).getChildCount();i++){CheckBox found=findCheck(((android.view.ViewGroup)view).getChildAt(i),label);if(found!=null)return found;}return null;}
