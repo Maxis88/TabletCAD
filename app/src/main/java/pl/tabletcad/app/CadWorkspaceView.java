@@ -1066,6 +1066,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             drawSketchEntity(canvas,shown);
             if(inSketch() && showSketchDimensions)drawSketchDrivingDimensions(canvas,shown);
         }
+        if(inSketch() && showSketchDimensions)drawPositionDimensions(canvas,displayedSketch);
         paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1.5f));paint.setColor(Color.rgb(117,70,160));
         if(inSketch())for(SketchConstraints.Link link:project.coincidences)for(SketchPrimitive p:displayedSketch)if(p.id.equals(link.a)) {
             double[] a=SketchConstraints.anchor(p,link.ai);
@@ -1271,18 +1272,55 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         return true;
     }
     private void showDimensionValueEditor(DimensionHit hit) {
+        if(hit.entityId.startsWith("link:")){showPositionDimensionEditor(Integer.parseInt(hit.entityId.substring(5)));return;}
         SketchPrimitive found=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(hit.entityId))found=p;
         if(found==null)return;final SketchPrimitive source=found;beginSketchWork();mode="Edytuj szkic";
         double value=hit.kind.equals("angle")?SketchDimensions.angle(source):hit.kind.equals("width")?Math.abs(source.x2-source.x1):hit.kind.equals("height")?Math.abs(source.y2-source.y1):SketchDimensions.length(source);
         if(hit.kind.equals("side")){int i=hit.segment*2,j=(i+2)%source.vertices.length;value=Math.hypot(source.vertices[j]-source.vertices[i],source.vertices[j+1]-source.vertices[i+1]);}
         if(hit.kind.equals("arcRadius"))value=SketchCurves.arc(source.curves,hit.segment*7).r;
-        EditText input=coordinateInput(hit.kind.equals("angle")?"Kąt [°]":"Wymiar [mm]",value);
-        new PropertyBuilder().setTitle(hit.kind.equals("angle")?"Edytuj kąt [°]":"Edytuj wymiar [mm]").setView(input).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
+        if(hit.kind.equals("diameter"))value=2*SketchDimensions.length(source);
+        EditText input=coordinateInput(hit.kind.equals("angle")?"Kąt [°]":hit.kind.equals("diameter")?"Średnica Ø [mm]":"Wymiar [mm]",value);
+        new PropertyBuilder().setTitle(hit.kind.equals("angle")?"Edytuj kąt [°]":hit.kind.equals("diameter")?"Edytuj średnicę Ø [mm]":"Edytuj wymiar [mm]").setView(input).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
             try {replaceSketchEntity(source,dimensionChanged(source,hit.kind,hit.segment,parseCoordinate(input)));}
             catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
         }).show();
         input.requestFocus();input.post(()->{android.view.inputmethod.InputMethodManager keyboard=(android.view.inputmethod.InputMethodManager)getContext().getSystemService(Context.INPUT_METHOD_SERVICE);keyboard.showSoftInput(input,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);});
     }
+    private void showPositionDimensionEditor(int index) {
+        if(index<0||index>=project.coincidences.size())return;
+        final SketchConstraints.Link link=project.coincidences.get(index);if(!SketchConstraints.position(link.kind))return;
+        beginSketchWork();mode="Edytuj szkic";
+        double current=SketchConstraints.measure(project.sketch,link);
+        EditText input=coordinateInput(link.kind.equals("dimX")?"Odległość X [mm]":"Odległość Y [mm]",Math.abs(current));
+        new PropertyBuilder().setTitle(SketchConstraints.fromOrigin(link)?"Położenie od początku szkicu":"Odległość między punktami").setView(input).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
+            try {
+                double value=parseCoordinate(input);if(!Double.isFinite(value)||value<0||value>10000)throw new IllegalArgumentException("Niepoprawny wymiar");
+                double signed=current<0||(current==0&&link.x<0)?-value:value;
+                List<SketchConstraints.Link> links=new ArrayList<>(project.coincidences);links.set(links.indexOf(link),SketchConstraints.withValue(link,signed));
+                if(applySolvedSketch(SketchConstraints.resolve(project.sketch,links),links))operationMessage="Zmieniono wymiar położenia na "+formatMm(value);
+            }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+            invalidate();
+        }).show();
+    }
+
+    /** Adds driving X and Y position dimensions of the element's first point from the sketch origin. */
+    private void addOriginPositionDimensions(SketchPrimitive source) {
+        if(SketchConstraints.anchorCount(source)==0){operationMessage="Ten element nie ma punktu do zwymiarowania";invalidate();return;}
+        double[] point=SketchConstraints.anchor(source,0);int added=0;
+        for(String kind:new String[]{"dimX","dimY"}) {
+            SketchConstraints.Link link=new SketchConstraints.Link(kind,source.id,0,source.id,0,kind.equals("dimX")?point[0]:point[1],0);
+            boolean exists=false;for(SketchConstraints.Link l:project.coincidences)if(l.kind.equals(kind)&&l.a.equals(source.id)&&l.ai==0&&SketchConstraints.fromOrigin(l))exists=true;
+            if(exists)continue;
+            try {
+                List<SketchPrimitive> solved=SketchConstraints.connect(project.sketch,project.coincidences,link);
+                List<SketchConstraints.Link> links=new ArrayList<>(project.coincidences);links.add(link);
+                if(applySolvedSketch(solved,links))added++;
+            }catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();return;}
+        }
+        operationMessage=added==0?"Położenie jest już zwymiarowane":"Dodano wymiary położenia X/Y od początku szkicu. Dwukrotnie dotknij wartości, aby ją zmienić.";
+        invalidate();
+    }
+
     private SketchPrimitive dimensionChanged(SketchPrimitive source,String kind,int segment,double value) {
         if(!Double.isFinite(value)||(!kind.equals("angle")&&(value<.01||value>10000)))throw new IllegalArgumentException("Niepoprawny wymiar");
         if(kind.equals("side")) {
@@ -1293,8 +1331,30 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(kind.equals("arcRadius"))return SketchCurves.withRadius(source,segment,value);
         double first=source.type.equals("Prostokąt")?Math.abs(source.x2-source.x1):SketchDimensions.length(source);
         double second=source.type.equals("Prostokąt")?Math.abs(source.y2-source.y1):SketchDimensions.angle(source);
+        if(kind.equals("diameter"))value/=2;
         if(kind.equals("height")||kind.equals("angle"))second=value;else first=value;
         return SketchDimensions.apply(source,first,second,true);
+    }
+
+    /** Driving X/Y position dimensions (to the sketch origin or between two points). */
+    private void drawPositionDimensions(Canvas canvas,List<SketchPrimitive> geometry) {
+        for(int index=0;index<project.coincidences.size();index++) {
+            SketchConstraints.Link link=project.coincidences.get(index);if(!SketchConstraints.position(link.kind))continue;
+            SketchPrimitive a=null,b=null;for(SketchPrimitive p:geometry){if(p.id.equals(link.a))a=p;if(p.id.equals(link.b))b=p;}
+            if(a==null||b==null)continue;
+            double[] pa=SketchConstraints.anchor(a,link.ai),pb=SketchConstraints.fromOrigin(link)?new double[]{0,0}:SketchConstraints.anchor(b,link.bi);
+            boolean horizontal=link.kind.equals("dimX");
+            double[] end=horizontal?new double[]{pb[0],pa[1]}:new double[]{pa[0],pb[1]};
+            if(!sketchPointVisible(pa[0],pa[1])||!sketchPointVisible(end[0],end[1]))continue;
+            PointF from=projectSketchPoint(end[0],end[1]),to=projectSketchPoint(pa[0],pa[1]),reference=projectSketchPoint(pb[0],pb[1]);
+            if(Math.hypot(from.x-reference.x,from.y-reference.y)>dp(2)) {
+                paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(Color.rgb(117,70,160));
+                paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(4),dp(3)},0));canvas.drawLine(reference.x,reference.y,from.x,from.y,paint);paint.setPathEffect(null);
+            }
+            double value=SketchConstraints.measure(geometry,link);
+            drawingDimension=new DimensionHit("link:"+index,link.kind,0,null);
+            drawSketchDimension(canvas,from,to,null,(horizontal?"X ":"Y ")+formatMm(Math.abs(value)));drawingDimension=null;
+        }
     }
 
     private void drawSketchDrivingDimensions(Canvas canvas,SketchPrimitive entity) {
@@ -1314,7 +1374,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             PointF center=projectSketchPoint((entity.x1+entity.x2)/2,(entity.y1+entity.y2)/2);
             drawEditableDimension(canvas,entity,"width",0,a,projectSketchPoint(entity.x2,entity.y1),center,"W "+formatMm(dimensions[0]));
             drawEditableDimension(canvas,entity,"height",0,a,projectSketchPoint(entity.x1,entity.y2),center,"H "+formatMm(dimensions[1]));
-        } else {drawEditableDimension(canvas,entity,entity.type.equals("Okrąg")?"radius":"length",0,a,b,null,(entity.type.equals("Okrąg")?"R ":"L ")+formatMm(dimensions[0]));
+        } else {drawEditableDimension(canvas,entity,entity.type.equals("Okrąg")?"diameter":"length",0,entity.type.equals("Okrąg")?projectSketchPoint(2*entity.x1-entity.x2,2*entity.y1-entity.y2):a,b,null,entity.type.equals("Okrąg")?"Ø "+formatMm(2*dimensions[0]):"L "+formatMm(dimensions[0]));
             if(!entity.type.equals("Okrąg"))drawAngleDimension(canvas,entity);
         }
     }
@@ -1860,6 +1920,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             });
         }
         labels.add("Edytuj wymiary / kształt");actions.add(()->showSketchEntityEditor(source));
+        if(SketchConstraints.anchorCount(source)>0){labels.add(source.type.equals("Okrąg")?"Wymiaruj położenie środka (X/Y od początku)":"Wymiaruj położenie punktu 1 (X/Y od początku)");actions.add(()->addOriginPositionDimensions(source));}
         labels.add("Usuń element");actions.add(()->deleteSketchEntity(source.id));
         new PropertyBuilder().setTitle("Geometria · "+source.type)
             .setItems(labels.toArray(new String[0]),(dialog,which)->actions.get(which).run())
@@ -1876,6 +1937,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             PointF point=projectSketchPoint(a[0],a[1]);double distance=Math.hypot(x-point.x,y-point.y);
             if(distance<best){best=distance;picked=p;anchor=i;}
         }
+        if(SketchConstraints.position(constraintKind)&&(picked!=null||coincidenceFirst!=null)){positionDimensionTap(x,y,picked,anchor);return;}
         if(picked==null){operationMessage="Dotknij punktu innego elementu; punkty są oznaczone kółkami";invalidate();return;}
         if(constraintKind.equals("fixed")) {
             addSketchConstraint(SketchConstraints.Link.fixed(picked,anchor));return;
@@ -1893,6 +1955,25 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             coincidenceFirst=null;
         }
         invalidate();
+    }
+
+    /** Position dimension picking: first point, then a second point or the sketch origin. */
+    private void positionDimensionTap(float x,float y,SketchPrimitive picked,int anchor) {
+        PointF origin=projectSketchPoint(0,0);boolean nearOrigin=Math.hypot(x-origin.x,y-origin.y)<dp(18);
+        int axis=constraintKind.equals("dimX")?0:1;
+        if(coincidenceFirst==null) {
+            coincidenceFirst=picked.id;coincidenceAnchor=anchor;selectedSketchId=picked.id;
+            operationMessage="Wskaż drugi punkt albo początek układu szkicu (przecięcie osi)";invalidate();return;
+        }
+        if(picked==null&&!nearOrigin){operationMessage="Wskaż punkt innego elementu albo początek układu szkicu";invalidate();return;}
+        SketchPrimitive first=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(coincidenceFirst))first=p;
+        String firstId=coincidenceFirst;int firstAnchor=coincidenceAnchor;coincidenceFirst=null;
+        if(first==null){invalidate();return;}
+        SketchConstraints.Link link;
+        if(nearOrigin||picked==null||(picked.id.equals(firstId)&&anchor==firstAnchor))link=new SketchConstraints.Link(constraintKind,firstId,firstAnchor,firstId,firstAnchor,SketchConstraints.anchor(first,firstAnchor)[axis],0);
+        else link=new SketchConstraints.Link(constraintKind,firstId,firstAnchor,picked.id,anchor,SketchConstraints.anchor(picked,anchor)[axis]-SketchConstraints.anchor(first,firstAnchor)[axis],0);
+        addSketchConstraint(link);
+        if(project.coincidences.contains(link))operationMessage="Dodano wymiar położenia. Dwukrotnie dotknij wartości, aby ją zmienić.";
     }
 
     private void addSketchConstraint(SketchConstraints.Link rule) {
@@ -1947,8 +2028,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
     private void showConstraintMenu() {
         new PropertyBuilder().setTitle("Więzy szkicu")
-            .setItems(new String[]{"Połącz dwa punkty","Odcinek poziomy (H)","Odcinek pionowy (V)","Unieruchom punkt","Równoległość ∥","Prostopadłość ⊥","Równa długość / promień =","Styczność T","Współśrodkowość ◎","Symetria względem osi ↔","Punkt na obiekcie"},(d,which)-> {
-                constraintKind=new String[]{"coincident","horizontal","vertical","fixed","parallel","perpendicular","equal","tangent","concentric","symmetric","pointOn"}[which];
+            .setItems(new String[]{"Połącz dwa punkty","Odcinek poziomy (H)","Odcinek pionowy (V)","Unieruchom punkt","Równoległość ∥","Prostopadłość ⊥","Równa długość / promień =","Styczność T","Współśrodkowość ◎","Symetria względem osi ↔","Punkt na obiekcie","Wymiar położenia X ↔","Wymiar położenia Y ↕"},(d,which)-> {
+                constraintKind=new String[]{"coincident","horizontal","vertical","fixed","parallel","perpendicular","equal","tangent","concentric","symmetric","pointOn","dimX","dimY"}[which];
                 coincidenceMode=true;coincidenceFirst=null;
                 operationMessage=NonlinearConstraints.relation(constraintKind)?"Wskaż dwa elementy relacji "+NonlinearConstraints.symbol(constraintKind):which==0?"Wskaż dwa punkty różnych elementów":which==3?"Dotknij punktu, który ma pozostać na miejscu":"Dotknij odcinka lub boku konturu";
                 invalidate();
@@ -2348,9 +2429,13 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         double vx = ny * uz - nz * uy;
         double vy = nz * ux - nx * uz;
         double vz = nx * uy - ny * ux;
-        project.sketchOriginX = selectedPointX;
-        project.sketchOriginY = selectedPointY;
-        project.sketchOriginZ = selectedPointZ;
+        // Origin = projection of the model origin onto the face plane (not the tapped point), so
+        // face-sketch coordinates and position dimensions are reproducible and match the base
+        // sketch axes, e.g. a hole on the top face is dimensioned from the same X/Y origin.
+        double offset = selectedPointX * nx + selectedPointY * ny + selectedPointZ * nz;
+        project.sketchOriginX = nx * offset;
+        project.sketchOriginY = ny * offset;
+        project.sketchOriginZ = nz * offset;
         project.sketchUx = ux; project.sketchUy = uy; project.sketchUz = uz;
         project.sketchVx = vx; project.sketchVy = vy; project.sketchVz = vz;
     }

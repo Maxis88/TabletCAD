@@ -56,22 +56,35 @@ public final class SketchConstraints {
         return l.kind+":"+l.axis+":"+(a.compareTo(b)<0?a+"/"+b:b+"/"+a);
     }
     private static void structure(Link l) {
-        if(!Arrays.asList("coincident","horizontal","vertical","fixed").contains(l.kind)&&!NonlinearConstraints.relation(l.kind))throw new IllegalArgumentException("Nieznany typ więzu");
+        if(!Arrays.asList("coincident","horizontal","vertical","fixed","dimX","dimY").contains(l.kind)&&!NonlinearConstraints.relation(l.kind))throw new IllegalArgumentException("Nieznany typ więzu");
         if(l.ai<0||l.bi<0)throw new IllegalArgumentException("Niepoprawny punkt relacji");
         if(!Double.isFinite(l.x)||!Double.isFinite(l.y)||l.axis==null)throw new IllegalArgumentException("Niepoprawne parametry więzu");
         if(l.a==null||l.b==null||l.a.isEmpty()||l.b.isEmpty())throw new IllegalArgumentException("Niepoprawny element więzu");
         boolean same=l.a.equals(l.b)&&l.ai==l.bi;
         if(l.kind.equals("fixed")) {
             if(!same||!Double.isFinite(l.x)||!Double.isFinite(l.y)||Math.abs(l.x)>5000||Math.abs(l.y)>5000)throw new IllegalArgumentException("Niepoprawny punkt stały");
+        }else if(position(l.kind)) {
+            // Same anchor: coordinate measured from the sketch origin; otherwise b − a along the axis.
+            if(Math.abs(l.x)>10000)throw new IllegalArgumentException("Wymiar położenia poza zakresem");
         }else if(same)throw new IllegalArgumentException("Wybierz dwa różne punkty");
     }
+    /** Driving position dimension along the sketch X (dimX) or Y (dimY) axis. */
+    public static boolean position(String kind){return kind.equals("dimX")||kind.equals("dimY");}
+    public static boolean fromOrigin(Link l){return l.a.equals(l.b)&&l.ai==l.bi;}
+    /** Current measured value of a position dimension (signed). */
+    public static double measure(List<SketchPrimitive> geometry,Link l) {
+        int axis=l.kind.equals("dimX")?0:1;double[] a=anchor(entity(geometry,l.a),l.ai);
+        return fromOrigin(l)?a[axis]:anchor(entity(geometry,l.b),l.bi)[axis]-a[axis];
+    }
+    public static Link withValue(Link l,double value){return new Link(l.kind,l.a,l.ai,l.b,l.bi,value,0,l.axis);}
+    public static List<SketchPrimitive> resolve(List<SketchPrimitive> geometry,List<Link> links){return solve(geometry,links,null,null,null,-1);}
     public static void validate(List<SketchPrimitive> geometry,List<Link> links) {
         Set<String> seen=new HashSet<>();
         for(Link l:links) {
             structure(l);if(!seen.add(key(l)))throw new IllegalArgumentException("Powtórzony więz punktów");
             if(NonlinearConstraints.relation(l.kind)){NonlinearConstraints.validate(geometry,l);continue;}
             double[] a=anchor(entity(geometry,l.a),l.ai),b=anchor(entity(geometry,l.b),l.bi);
-            double error=l.kind.equals("fixed")?Math.hypot(a[0]-l.x,a[1]-l.y):l.kind.equals("horizontal")?Math.abs(a[1]-b[1])
+            double error=position(l.kind)?Math.abs(measure(geometry,l)-l.x):l.kind.equals("fixed")?Math.hypot(a[0]-l.x,a[1]-l.y):l.kind.equals("horizontal")?Math.abs(a[1]-b[1])
                 :l.kind.equals("vertical")?Math.abs(a[0]-b[0]):Math.hypot(a[0]-b[0],a[1]-b[1]);
             if(error>1e-6)throw new IllegalArgumentException("Geometria nie spełnia zapisanego więzu");
         }
@@ -161,11 +174,14 @@ public final class SketchConstraints {
             SketchPrimitive a=entity(input,l.a),b=entity(input,l.b);int[] ai=indices(a,l.ai),bi=indices(b,l.bi);
             if(l.kind.equals("coincident")||l.kind.equals("vertical"))union.join(starts.get(l.a)+ai[0],starts.get(l.b)+bi[0],0);
             if(l.kind.equals("coincident")||l.kind.equals("horizontal"))union.join(starts.get(l.a)+ai[1],starts.get(l.b)+bi[1],0);
+            if(position(l.kind)&&!fromOrigin(l)){int k=l.kind.equals("dimX")?0:1;union.join(starts.get(l.a)+ai[k],starts.get(l.b)+bi[k],l.x);}
         }
         Map<Integer,Double> pinned=new HashMap<>();
         for(Link l:links)if(l.kind.equals("fixed")) {
             int s=starts.get(l.a);int[] i=indices(entity(input,l.a),l.ai);
             pin(union,pinned,s+i[0],l.x);pin(union,pinned,s+i[1],l.y);
+        }else if(position(l.kind)&&fromOrigin(l)) {
+            int s=starts.get(l.a);int[] i=indices(entity(input,l.a),l.ai);pin(union,pinned,s+i[l.kind.equals("dimX")?0:1],l.x);
         }
         if(edited!=null) {
             Integer start=starts.get(edited);if(start==null)throw new IllegalArgumentException("Brak edytowanego elementu");

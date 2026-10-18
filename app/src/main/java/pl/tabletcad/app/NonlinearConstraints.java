@@ -39,6 +39,7 @@ public final class NonlinearConstraints {
         if(!relation(l.kind)) {
             double[] pa=a.point(all,l.ai),pb=b.point(all,l.bi);
             if(l.kind.equals("fixed")){out.add(pa[0]-l.x);out.add(pa[1]-l.y);}
+            else if(SketchConstraints.position(l.kind)){int k=l.kind.equals("dimX")?0:1;out.add((SketchConstraints.fromOrigin(l)?pa[k]:pb[k]-pa[k])-l.x);}
             else {if(l.kind.equals("coincident")||l.kind.equals("vertical"))out.add(pa[0]-pb[0]);if(l.kind.equals("coincident")||l.kind.equals("horizontal"))out.add(pa[1]-pb[1]);}return;
         }
         switch(l.kind) {
