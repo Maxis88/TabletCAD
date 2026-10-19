@@ -90,6 +90,8 @@ public final class CadToolsHostTest {
         List<SketchPrimitive> solved=SketchConstraints.connect(Arrays.asList(l1,l2),new ArrayList<>(),col);
         near(solved.get(1).y1,0,"collinear moves the second line onto the first (start)");near(solved.get(1).y2,0,"collinear (end)");check(solved.get(0).x2==10,"first line stays");
         st=NonlinearConstraints.status(solved,Collections.singletonList(col));check(st.freedoms==6,"collinear removes two freedoms: "+st.label());
+        JSONObject doc36=new JSONObject(p.toJson().toString());check(doc36.getInt("schema")==37,"0.74 documents use schema 37");doc36.put("schema",36);doc36.remove("parameters");doc36.remove("parameterBindings");
+        check(CadProject.fromJson(doc36).parameters.isEmpty(),"schema 36 documents load without parameters");
         System.out.println("PASS CadToolsHostTest: "+checks+" checks");
     }
 }

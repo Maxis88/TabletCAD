@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.73.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.74.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,12 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.74.0: parametry użytkownika z powiązaniami, elipsa, Przejście (-19),
+Przeciągnij (-20), lustro/szyki brył (-21), status więzów, współliniowość,
+rzutowanie krawędzi, podglądy i uchwyty otworu/powłoki/szyku, położenie otworu
+od krawędzi. Schemat .tcad 37. Jądro sprawdzone na komputerze; UI bez testu
+na Androidzie. Audyt: docs/AUDIT-0.74.md.
 
 0.73.0: lustro, szyk liniowy i kołowy operacji (parametryczne, rekord -13),
 Otwór na płaskiej ścianie z pogłębieniami i stożkiem wiertła (-14), Powłoka (-12),

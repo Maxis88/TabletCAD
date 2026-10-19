@@ -40,11 +40,16 @@ function Invoke-Job([string]$id, [string[]]$lines, [string]$log) {
                       if (-not $apk) { 'no APK'; $script:Code = 2 } else { "installing $($apk.FullName)"; & $Adb install -r $apk.FullName 2>&1 | ForEach-Object { "$_" }; $script:Code = $LASTEXITCODE } }
         'launch'    { & $Adb shell am force-stop $Pkg; & $Adb shell am start -W -n "$Pkg/.MainActivity" 2>&1 | ForEach-Object { "$_" }; $script:Code = $LASTEXITCODE }
         'stop'      { & $Adb shell am force-stop $Pkg; $script:Code = $LASTEXITCODE }
+        'awake'     { # keeps the screen on while USB-powered so long instrumented runs and screenshots are not interrupted
+                      & $Adb shell svc power stayon usb; & $Adb shell input keyevent 224; & $Adb shell wm dismiss-keyguard; $script:Code = $LASTEXITCODE }
+        'awake-off' { & $Adb shell svc power stayon false; $script:Code = $LASTEXITCODE }
         'uitests'   { Run-Ps (Join-Path $Root 'tools\build-ui-tests.ps1') @('-Sdk', $Sdk, '-Jdk', $Jdk)
                       if ($script:Code -eq 0) {
+                          & $Adb shell svc power stayon usb; & $Adb shell input keyevent 224; & $Adb shell wm dismiss-keyguard
                           & $Adb install -r (Join-Path $Root 'build\ui-tests\TabletCAD-ui-tests.apk') 2>&1 | ForEach-Object { "$_" }
                           $out = @(& $Adb shell am instrument -w -r 'pl.tabletcad.test/pl.tabletcad.test.WorkspaceInstrumentation' 2>&1 | ForEach-Object { "$_" })
                           $out
+                          & $Adb shell svc power stayon false
                           if (-not ($out -match 'result=PASS')) { $script:Code = 3 } } }
         'logcat'    { $n = if ($a.Count) { Num $a[0] } else { '3000' }; & $Adb logcat -d -t $n 2>&1 | ForEach-Object { "$_" } }
         'logcat-clear' { & $Adb logcat -c; $script:Code = $LASTEXITCODE }

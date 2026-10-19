@@ -1,11 +1,20 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.73.0-solid-tools**, versionCode **82**.
+Wersja źródeł: **0.74.0-parametric-tools**, versionCode **83**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
+
+Wersja 0.74 — parametry użytkownika (wyrażenia, powiązania z wymiarami szkicu,
+głębokościami i otworami), elipsa jako dokładny profil, Przejście (loft) i
+Przeciągnij (sweep) z asocjacyjnymi przekrojami, lustro/szyki całych brył,
+status więzów szkicu (niedowiązany / w pełni / nadmiernie / sprzeczny),
+współliniowość, rzutowanie krawędzi B-Rep na szkic, podgląd na żywo i uchwyty
+na modelu dla otworu, powłoki i szyku, położenie otworu od krawędzi ściany.
+Schemat .tcad 37. Sprawdzone na komputerze (15 zestawów PASS); bez testu na
+tablecie. [Audyt 0.74](docs/AUDIT-0.74.md).
 
 Wersja 0.73 — narzędzia bryłowe: parametryczne lustro oraz szyk liniowy
 i kołowy operacji (kopie śledzą zmiany źródeł), Otwór na płaskiej ścianie

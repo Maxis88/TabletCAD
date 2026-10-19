@@ -9,11 +9,11 @@ public final class SketchEditingProbe {
     public static void main(String[] args)throws Exception {
         SketchPrimitive locked=SketchDimensions.apply(new SketchPrimitive("guide","Linia",10,20,40,20),30,0,true);
         SketchPrimitive guide=SketchEditing.toggleConstruction(locked);
-        require(guide.type.equals("Pomocnicza")&&guide.id.equals(locked.id),"construction conversion retains stable identity");
+        require(guide.construction&&guide.type.equals("Linia")&&guide.id.equals(locked.id),"construction conversion retains stable identity");
         require(guide.driving!=null&&guide.driving[0]==30&&guide.x1==10&&guide.x2==40,"conversion retains geometry and driving dimensions");
         SketchPrimitive ordinary=SketchEditing.toggleConstruction(guide);
-        require(ordinary.type.equals("Linia")&&ordinary.driving!=null,"construction conversion reversible without unlock");
-        require(SketchPrimitive.fromJson(guide.toJson()).type.equals("Pomocnicza"),"construction conversion persists JSON");
+        require(!ordinary.construction&&ordinary.type.equals("Linia")&&ordinary.driving!=null,"construction conversion reversible without unlock");
+        require(SketchPrimitive.fromJson(guide.toJson()).construction,"construction conversion persists JSON");
         SketchPrimitive rect=new SketchPrimitive("rect","Prostokąt",20,10,-10,-10);
         List<SketchPrimitive> edges=SketchEditing.explode(rect);
         require(edges.size()==4&&edges.get(0).id.equals(rect.id),"reversed rectangle split preserves first identity");
@@ -34,7 +34,7 @@ public final class SketchEditingProbe {
         rejected(()->SketchEditing.explode(locked),"dimension locks not silently lost");
         rejected(()->SketchEditing.explode(SketchDimensions.apply(rect,30,20,true)),"locked rectangle cannot be split");
         rejected(()->SketchEditing.explode(new SketchPrimitive("c","Okrąg",0,0,10,0)),"circle not approximated destructively as lines");
-        rejected(()->SketchEditing.toggleConstruction(polygon),"unsupported construction conversion explicit");
+        SketchPrimitive helperPolygon=SketchEditing.toggleConstruction(polygon);require(helperPolygon.construction&&!helperPolygon.closedProfile()&&Arrays.equals(helperPolygon.vertices,polygon.vertices),"closed contours become construction geometry without losing vertices");
         double[] base=SketchContours.join(restored.sketch,polygon.id).profile.appendVertices(new double[]{6,0,0,20,10,0,8});
         double[] mesh=NativeCadEngine.evaluateFeatures(80,48,32,0,base,new double[0],null);
         double volume=0;for(int i=0;i<mesh.length;i+=13)volume+=mesh[i]*(mesh[i+4]*mesh[i+8]-mesh[i+5]*mesh[i+7])

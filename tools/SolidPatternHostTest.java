@@ -83,7 +83,7 @@ public final class SolidPatternHostTest {
 
         // Persistence: schema 36 round trip keeps the record; corrupt references are refused on load.
         String text=p.toJson().toString();CadProject loaded=CadProject.fromJson(new JSONObject(text));
-        check(new JSONObject(text).getInt("schema")==CadProject.CURRENT_SCHEMA&&CadProject.CURRENT_SCHEMA==36,"documents are written as schema 36");
+        check(new JSONObject(text).getInt("schema")==CadProject.CURRENT_SCHEMA&&CadProject.CURRENT_SCHEMA>=36,"documents are written with the current schema (≥ 36)");
         check(Arrays.equals(loaded.committedFeatures.get(1),p.committedFeatures.get(1)),"pattern survives save/load");
         JSONObject broken=new JSONObject(text);broken.getJSONArray("committedFeatures").getJSONArray(1).put(16,5);
         rejects(()->CadProject.fromJson(broken),"load rejects pattern referencing missing operation");

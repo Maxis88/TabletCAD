@@ -14,24 +14,24 @@ public final class WorkspaceInstrumentation extends Instrumentation {
         PrintStream previous=System.out;final Throwable[] failure={null};System.setOut(capture);
         int executed=0;
         try {
-            for(String name:new String[]{"VisibilityProbe","KernelDiagnosticsProbe","SketchOffsetProbe","SketchExtendProbe","ExtrudeToFaceProbe","SketchPatternProbe","LibraryThumbnailProbe","ExtrusionPlanProbe","ThreadProbe","BodyGraphProbe","RelationProbe","ConstructionAndSnapProbe","BooleanModeProbe","SplineProbe","SketchFilletProbe","DirectionProbe","SymmetricProbe","SketchWorkflowProbe","SketchTransactionProbe","TimelineProbe","ToolbarProbe","SketchDesignKernelProbe","SolidPatternKernelProbe"}) {
+            for(String name:new String[]{"VisibilityProbe","KernelDiagnosticsProbe","SketchOffsetProbe","SketchExtendProbe","ExtrudeToFaceProbe","SketchPatternProbe","LibraryThumbnailProbe","ExtrusionPlanProbe","ThreadProbe","BodyGraphProbe","RelationProbe","ConstructionAndSnapProbe","BooleanModeProbe","SplineProbe","SketchFilletProbe","DirectionProbe","SymmetricProbe","SketchWorkflowProbe","SketchTransactionProbe","TimelineProbe","ToolbarProbe","SketchDesignKernelProbe","SolidPatternKernelProbe","CadToolsKernelProbe","BodyPropertiesProbe","EdgeChamferProbe","SketchEditingProbe"}) {
                 if(onlyProbe!=null&&!onlyProbe.equals(name))continue;executed++;
                 File scratch=new File(getTargetContext().getCacheDir(),"workflow-"+java.util.UUID.randomUUID()+".step");
                 try {Class.forName(name).getMethod("main",String[].class).invoke(null,(Object)new String[]{scratch.getAbsolutePath()});}
                 finally {scratch.delete();}
             }
-            for(String name:new String[]{"WorkspaceUiProbe","InteractionFixProbe","ViewCameraProbe","SketchOffsetUiProbe","LibraryAuditProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe","TabletFlowProbe","CadScenarioProbe","ThreadRenderProbe"}) {
+            for(String name:new String[]{"WorkspaceUiProbe","InteractionFixProbe","ViewCameraProbe","SketchOffsetUiProbe","LibraryAuditProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe","TabletFlowProbe","CadScenarioProbe","ThreadRenderProbe","CadToolsUiProbe"}) {
                 if(onlyProbe!=null&&!onlyProbe.equals(name))continue;executed++;
                 Runnable execute=()-> {
                     try {
                         Class<?> probe=Class.forName(name);
                         probe.getField("applicationContext").set(null,getTargetContext());
-                        if(!name.equals("WorkspaceUiProbe")&&!name.equals("InteractionFixProbe")&&!name.equals("ViewCameraProbe")&&!name.equals("SketchOffsetUiProbe")&&!name.equals("LibraryAuditProbe"))probe.getField("instrumentation").set(null,this);
+                        if(!name.equals("WorkspaceUiProbe")&&!name.equals("InteractionFixProbe")&&!name.equals("ViewCameraProbe")&&!name.equals("SketchOffsetUiProbe")&&!name.equals("LibraryAuditProbe")&&!name.equals("CadToolsUiProbe"))probe.getField("instrumentation").set(null,this);
                         Method run=probe.getDeclaredMethod("run",String[].class);run.setAccessible(true);
                         run.invoke(null,(Object)new String[]{getTargetContext().getCacheDir().getAbsolutePath()});
                     }catch(Throwable error){failure[0]=error instanceof InvocationTargetException?error.getCause():error;}
                 };
-                if(name.equals("WorkspaceUiProbe")||name.equals("InteractionFixProbe")||name.equals("ViewCameraProbe")||name.equals("SketchOffsetUiProbe")||name.equals("LibraryAuditProbe"))runOnMainSync(execute);else execute.run();
+                if(name.equals("WorkspaceUiProbe")||name.equals("InteractionFixProbe")||name.equals("ViewCameraProbe")||name.equals("SketchOffsetUiProbe")||name.equals("LibraryAuditProbe")||name.equals("CadToolsUiProbe"))runOnMainSync(execute);else execute.run();
                 if(failure[0]!=null)break;
             }
             if(executed==0)throw new IllegalArgumentException("Unknown probe: "+onlyProbe);

@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /** Versioned, geometry-independent source of truth for a TabletCAD document. */
 public final class CadProject {
-    public static final int CURRENT_SCHEMA = 36;
+    public static final int CURRENT_SCHEMA = 37;
     public String sketchEditBaseline;
     public final java.util.Map<String,String> sketchLineage=new java.util.LinkedHashMap<>();
     public final java.util.Map<String,String> sketchBindings=new java.util.LinkedHashMap<>();
