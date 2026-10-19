@@ -152,7 +152,7 @@ public final class SolidPatternHostTest {
         double[] rot=BodyTransform.rotate(new double[]{1,1,1},new double[]{0,0,5},45);check(rot[7]==1&&rot[8]==45,"rotation axis normalised");
         CadProject tp=plate();add(tp,rot);check(Arrays.equals(CadProject.fromJson(new JSONObject(tp.toJson().toString())).committedFeatures.get(1),rot),"transform survives save/load");
         check(CadTimeline.entries(tp).stream().anyMatch(i->i.title.equals("Obrót bryły"))&&CadTimeline.entries(dp).stream().anyMatch(i->i.title.equals("Pochylenie")),"timeline names draft and transforms");
-        for(String c:new String[]{"Otwór","Pochyl ściany","Połącz bryły","Odejmij bryły","Część wspólna brył","Przesuń bryłę","Obróć bryłę","Skaluj bryłę","Cieniowanie","Krawędzie","Przezroczystość","Przekrój"})check(ToolbarCatalog.allows(false,c),"solid toolbar exposes "+c);
+        for(String c:new String[]{"Otwór","Pochyl ściany","Połącz bryły","Odejmij bryły","Część wspólna brył","Przesuń bryłę","Obróć bryłę","Skaluj bryłę","Bryła","Krawędzie","Przezroczystość","Przekrój"})check(ToolbarCatalog.allows(false,c),"solid toolbar exposes "+c);
         check(FeaturePattern.eligible(HoleFeature.create(new double[]{1,1,20},new double[]{0,0,1},-1,5,true,0,0,0,0,0)),"holes can be patterned");
         check(!FeaturePattern.eligible(rot)&&!FeaturePattern.eligible(draft),"body transforms and drafts are not patterned");
         CadProject sp=plate();int splitId=BodyGraph.allocate(sp);add(sp,BodySplit.create(splitId,new double[]{40,0,0},new double[]{1,0,0}));BodyGraph.validate(sp);
