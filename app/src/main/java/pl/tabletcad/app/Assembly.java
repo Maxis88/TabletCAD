@@ -37,7 +37,7 @@ public final class Assembly {
         return new double[]{t*x*x+c,t*x*y-s*z,t*x*z+s*y, t*x*y+s*z,t*y*y+c,t*y*z-s*x, t*x*z-s*y,t*y*z+s*x,t*z*z+c};
     }
     static double[] multiply(double[] a,double[] b){double[] r=new double[9];for(int i=0;i<3;i++)for(int j=0;j<3;j++){double v=0;for(int k=0;k<3;k++)v+=a[i*3+k]*b[k*3+j];r[i*3+j]=v;}return r;}
-    static double[] apply(double[] m,double[] v){return new double[]{m[0]*v[0]+m[1]*v[1]+m[2]*v[2],m[3]*v[0]+m[4]*v[1]+m[5]*v[2],m[6]*v[0]+m[7]*v[1]+m[8]*v[2]};}
+    public static double[] apply(double[] m,double[] v){return new double[]{m[0]*v[0]+m[1]*v[1]+m[2]*v[2],m[3]*v[0]+m[4]*v[1]+m[5]*v[2],m[6]*v[0]+m[7]*v[1]+m[8]*v[2]};}
     /** Axis (unit) and angle [°] of a rotation matrix; zero axis for the identity. */
     static double[] axisAngle(double[] m) {
         double trace=m[0]+m[4]+m[8],cos=Math.max(-1,Math.min(1,(trace-1)/2)),angle=Math.acos(cos);
@@ -91,6 +91,38 @@ public final class Assembly {
         double[] shifted={old[1][0]-movingPoint[0],old[1][1]-movingPoint[1],old[1][2]-movingPoint[2]},rs=apply(rd,shifted);
         double[] tr={rs[0]+movingPoint[0]+td[0],rs[1]+movingPoint[1]+td[1],rs[2]+movingPoint[2]+td[2]};
         return record(BodyInstance.created(current),r,tr);
+    }
+    /**
+     * Rigid motion {R(9), t(3)} (x' = R·x + t) placing a moving planar face on a target face: opposite
+     * normals (contact) or, with {@code flush}, equal normals (faces in one plane), at the given gap.
+     */
+    public static double[][] planeDelta(double[] mp,double[] mn,double[] tp,double[] tn,double gap,boolean flush) {
+        double[] m=unit(mn),t=unit(tn),want=flush?t.clone():new double[]{-t[0],-t[1],-t[2]};
+        double[] rd=turn(m,want);
+        double distance=(mp[0]-tp[0])*t[0]+(mp[1]-tp[1])*t[1]+(mp[2]-tp[2])*t[2],k=-(distance-gap);
+        double[] rp=apply(rd,mp);
+        return new double[][]{rd,{mp[0]-rp[0]+t[0]*k,mp[1]-rp[1]+t[1]*k,mp[2]-rp[2]+t[2]*k}};
+    }
+    /** Rigid motion making the moving axis (point, direction) coincide with the target axis (coaxial). */
+    public static double[][] axisDelta(double[] mp,double[] md,double[] tp,double[] td) {
+        double[] m=unit(md),d=unit(td);if(m[0]*d[0]+m[1]*d[1]+m[2]*d[2]<0)m=new double[]{-m[0],-m[1],-m[2]};
+        double[] rd=turn(m,d),rp=apply(rd,mp),v={tp[0]-mp[0],tp[1]-mp[1],tp[2]-mp[2]};double along=v[0]*d[0]+v[1]*d[1]+v[2]*d[2];
+        return new double[][]{rd,{mp[0]-rp[0]+v[0]-along*d[0],mp[1]-rp[1]+v[1]-along*d[1],mp[2]-rp[2]+v[2]-along*d[2]}};
+    }
+    /** Rotation taking unit vector a onto unit vector b (180° about a perpendicular axis when opposite). */
+    static double[] turn(double[] a,double[] b) {
+        double cos=Math.max(-1,Math.min(1,a[0]*b[0]+a[1]*b[1]+a[2]*b[2]));double[] axis=cross(a,b);
+        if(Math.sqrt(axis[0]*axis[0]+axis[1]*axis[1]+axis[2]*axis[2])<1e-12){if(cos>0)return matrix(new double[3],0);axis=perpendicular(a);}
+        return matrix(axis,Math.toDegrees(Math.acos(cos)));
+    }
+    /** Instance record moved by a rigid delta. */
+    public static double[] composeDelta(double[][] delta,double[] f){return compose(record(BodyInstance.created(f),delta[0],delta[1]),f);}
+    /** History records (rotation about the origin, then translation) applying a rigid delta to an ordinary body. */
+    public static List<double[]> transformRecords(double[][] delta) {
+        List<double[]> r=new ArrayList<>();double[] aa=axisAngle(delta[0]);
+        if(Math.abs(aa[3])>1e-9)r.add(BodyTransform.rotate(new double[3],new double[]{aa[0],aa[1],aa[2]},aa[3]));
+        double[] t=delta[1];if(Math.abs(t[0])+Math.abs(t[1])+Math.abs(t[2])>1e-9)r.add(BodyTransform.move(t[0],t[1],t[2]));
+        return r;
     }
     static double[] unit(double[] v){double l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);if(!(l>1e-12))throw new IllegalArgumentException("Zerowa normalna ściany");return new double[]{v[0]/l,v[1]/l,v[2]/l};}
     static double[] cross(double[] a,double[] b){return new double[]{a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]};}

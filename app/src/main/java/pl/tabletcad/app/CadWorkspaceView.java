@@ -578,6 +578,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             }
 
             @Override public void onLongPress(MotionEvent e) {
+                if(!treeCollapsed&&e.getX()<leftWidth()&&e.getY()>treeTop()){treeLongPress(e.getY());return;}
                 float historyY=getHeight()-dp(62)-bottomSystemInset;
                 if(e.getY()>=historyY&&e.getX()>=leftWidth()+dp(116)&&e.getX()<viewportRight()) {
                     int index=(int)((e.getX()-leftWidth()-dp(116)+timelineScroll)/dp(64));List<CadTimeline.Item> items=CadTimeline.entries(project);
@@ -932,6 +933,13 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         button.setContentDescription(label);return button;
     }
 
+    /** Runs a toolbar command; when it neither opened a panel nor changed the mode, its message is shown as a toast. */
+    private void runToolWithFeedback(String command,boolean quiet) {
+        String message=operationMessage;String before=mode;android.widget.ScrollView editor=propertyEditor;
+        activateTopTool(command);
+        if(!quiet&&propertyEditor==editor&&mode.equals(before)&&!operationMessage.isEmpty()&&!operationMessage.equals(message))
+            android.widget.Toast.makeText(getContext(),operationMessage,android.widget.Toast.LENGTH_LONG).show();
+    }
     private void dismissToolPopup() {if(toolbarPopup!=null){toolbarPopup.dismiss();toolbarPopup=null;}}
 
     private void openToolGroup(ToolbarCatalog.Group group,float anchorX) {
@@ -939,7 +947,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         dismissToolPopup();
         boolean role=inSketch();String[] commands=group.commands();
         for(String command:commands)if(!ToolbarCatalog.allows(role,command)){invalidate();return;}
-        if(group.direct()){activateTopTool(commands[0]);return;}
+        if(group.direct()){runToolWithFeedback(commands[0],group.title.equals("Widok"));return;}
         LinearLayout body=new LinearLayout(getContext());body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding((int)dp(8),(int)dp(6),(int)dp(8),(int)dp(8));body.setBackgroundColor(CHROME);
         android.widget.TextView heading=new android.widget.TextView(getContext());
@@ -952,7 +960,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             String label=command.equals("Ukryj bryłę")&&!showSolid?"Pokaż bryłę":command;
             View button=toolbarButton(label,command,false,isToolActive(command),true);
             button.setOnClickListener(v->{dismissToolPopup();
-                if(inSketch()==role&&ToolbarCatalog.allows(role,command))activateTopTool(command);
+                if(inSketch()==role&&ToolbarCatalog.allows(role,command))runToolWithFeedback(command,group.title.equals("Widok"));
             });
             row.addView(button,new LinearLayout.LayoutParams((int)dp(88),(int)dp(64)));
         }
@@ -1039,6 +1047,58 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         else if(x>dp(167))renameTreeSketch(entry);
         else {selectedTreeKey=entry.key;highlightSketch=true;highlightBody=0;highlightFeature=Integer.MIN_VALUE;selectedSketchId=null;editTreeSketch(entry);}
         invalidate();
+    }
+    /** Long press in the model tree: context menu of the element (edit, rename, hide, delete…). */
+    private void treeLongPress(float y) {
+        int index=(int)((y-treeTop()+treeScroll)/dp(36));if(index<0||index>=modelTreeRows.size())return;
+        ModelTree.Row entry=modelTreeRows.get(index);selectedTreeKey=entry.key;
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+        List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();String title;
+        if(entry.datum()) {
+            Datum d=datum(entry.datum);if(d==null)return;title=d.name;
+            labels.add("Edytuj parametry…");actions.add(()->showDatumEditor(commandOf(d),d,null));
+            if(d.plane()){labels.add("Nowy szkic na tej płaszczyźnie");actions.add(()->{activateTopTool("Szkic");if(mode.equals("Szkic")&&!sketchPlaneChosen)sketchOnDatum(d);});}
+            labels.add("Zmień nazwę");actions.add(()->askName("Nazwa elementu konstrukcyjnego",d.name,v->commitModelChange(()->{Datum x=datum(d.id);if(x!=null)x.name=v;})));
+            labels.add(d.hidden?"Pokaż":"Ukryj");actions.add(()->{if(commitModelChange(()->{Datum x=datum(d.id);if(x!=null)x.hidden=!x.hidden;}))operationMessage=(d.hidden?"Ukryto: ":"Pokazano: ")+d.name;});
+            labels.add("Usuń");actions.add(()->confirm("Usunąć „"+d.name+"”?","Szkice narysowane na tej płaszczyźnie zachowują swój układ.",()->removeDatum(d)));
+        } else if(entry.componentHeader()) {
+            Component c=Assembly.find(project,entry.component);if(c!=null)showComponentActions(c);invalidate();return;
+        } else if(!entry.sketch()) {
+            if(entry.body<=0){invalidate();return;}
+            final int body=entry.body;title=BodyGraph.name(project,body);
+            highlightBody=body;project.selectedBody=body;
+            labels.add("Zmień nazwę");actions.add(()->askName("Nazwa bryły",BodyGraph.name(project,body),v->commitModelChange(()->project.bodyNames.put(body,v))));
+            boolean hidden=project.hiddenBodies.contains(body);
+            labels.add(hidden?"Pokaż":"Ukryj");actions.add(()->{if(!project.hiddenBodies.add(body))project.hiddenBodies.remove(body);projectRepository.save(project);});
+            labels.add("Pokaż tylko tę bryłę");actions.add(()->{project.hiddenBodies.clear();for(int b:BodyGraph.bodies(project))if(b!=body)project.hiddenBodies.add(b);projectRepository.save(project);operationMessage="Widoczna tylko: "+BodyGraph.name(project,body);});
+            labels.add("Właściwości i masa…");actions.add(()->{project.selectedBody=body;showBodyProperties();});
+            labels.add("Materiał…");actions.add(()->{project.selectedBody=body;showMaterialChoice();});
+            labels.add("Utwórz komponent z bryły");actions.add(()->{if(commitModelChange(()->Assembly.group(project,null,java.util.Collections.singletonList(body))))operationMessage="Utworzono komponent z bryły "+BodyGraph.name(project,body);});
+            int creator=-1;for(int i=0;i<project.committedFeatures.size();i++){if(i<project.featureBodyTargets.size()&&project.featureBodyTargets.get(i)==0&&project.featureBodyOutputs.get(i)==body)creator=i;if(BodyGraph.createdBody(project.committedFeatures.get(i))==body)creator=i;}
+            if(creator>=0){final int at=creator;labels.add("Usuń bryłę (usuwa tworzącą ją operację)…");actions.add(()->{for(CadTimeline.Item item:CadTimeline.entries(project))if(item.kind==CadTimeline.Kind.FEATURE&&item.featureIndex==at){confirmFeatureRemoval(item);return;}});}
+        } else {
+            title=entry.name;
+            labels.add("Edytuj szkic");actions.add(()->editTreeSketch(entry));
+            labels.add("Zmień nazwę");actions.add(()->renameTreeSketch(entry));
+            boolean hidden=project.hiddenSketchParts.contains(entry.key);
+            labels.add(hidden?"Pokaż":"Ukryj");actions.add(()->{if(!project.hiddenSketchParts.add(entry.key))project.hiddenSketchParts.remove(entry.key);projectRepository.save(project);});
+            boolean used=false;for(ModelTree.Row r:modelTreeRows)if(r.sketch()&&entry.sketchId!=null&&entry.sketchId.equals(r.sketchId)&&r.body!=0)used=true;
+            final boolean usedFinal=used;
+            labels.add("Usuń szkic");actions.add(()->{
+                if(usedFinal){operationMessage="Szkic jest podstawą operacji – najpierw usuń zależne operacje z historii";invalidate();return;}
+                if(entry.sketchId.equals(project.sketchId)){operationMessage="To bieżący szkic – otwórz go i użyj Usuń → Wyczyść szkic";invalidate();return;}
+                confirm("Usunąć szkic „"+entry.name+"”?","Szkic nie jest używany przez żadną operację.",()->{if(commitModelChange(()->project.savedSketches.removeIf(x->entry.sketchId.equals(x.optString("id")))))operationMessage="Usunięto szkic "+entry.name;});
+            });
+        }
+        new PropertyBuilder().setTitle(title).setItems(labels.toArray(new String[0]),(d,w)->{actions.get(w).run();invalidate();}).setNegativeButton("Zamknij",null).show();
+        invalidate();
+    }
+    private void askName(String title,String current,java.util.function.Consumer<String> save) {
+        EditText name=new EditText(getContext());name.setSingleLine(true);name.setText(current);name.setSelectAllOnFocus(true);name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(48)});
+        new PropertyBuilder().setTitle(title).setView(name).setNegativeButton("Anuluj",null).setPositiveButton("Zapisz",(d,w)->{String v=name.getText().toString().trim();if(v.isEmpty()){operationMessage="Nazwa nie może być pusta";invalidate();return;}save.accept(v);operationMessage="Zmieniono nazwę na „"+v+"”";invalidate();}).show();
+    }
+    private void confirm(String title,String message,Runnable action) {
+        new android.app.AlertDialog.Builder(getContext()).setTitle(title).setMessage(message).setNegativeButton("Anuluj",null).setPositiveButton("Usuń",(d,w)->{action.run();invalidate();}).show();
     }
     private void editTreeSketch(ModelTree.Row row) {
         if(SketchTransactions.active(project)){finishSketchWork();if(SketchTransactions.active(project))return;}
@@ -2780,7 +2840,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         boolean length=hint!=null&&hint.contains("[mm]");
         input.setHint(Units.label(hint,project.units));
         // Text keyboard: values may be expressions with units, e.g. 100/3, 1in+2mm, 2*(10+5).
-        input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        numericKeyboard(input);
         input.setSingleLine(true);
         if(length){input.setTag(LENGTH_INPUT);input.setText(Units.input(value,project.units));}
         else input.setText(value==Math.rint(value)&&Math.abs(value)<1e9?String.valueOf((long)value):String.format(java.util.Locale.US, "%.3f", value));
@@ -2788,7 +2848,17 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         return input;
     }
     /** Shows the bound parameter expression instead of the value, when the field is driven by one. */
-    private EditText bound(EditText field,String key){String expression=project.parameterBindings.get(key);if(expression!=null)field.setText(expression);return field;}
+    private EditText bound(EditText field,String key){String expression=project.parameterBindings.get(key);if(expression!=null){textKeyboard(field);field.setText(expression);}return field;}
+    /** Numeric keypad that still accepts simple expressions (digits, separators, + − × ÷, brackets). */
+    private static void numericKeyboard(EditText input) {
+        input.setKeyListener(android.text.method.DigitsKeyListener.getInstance("0123456789.,-+*/() "));
+        input.setRawInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL|InputType.TYPE_NUMBER_FLAG_SIGNED);
+        // Long press switches to the full keyboard for parameter names and units (e.g. "szer/2", "1in").
+        input.setOnLongClickListener(v->{if((input.getInputType()&InputType.TYPE_MASK_CLASS)==InputType.TYPE_CLASS_TEXT)return false;textKeyboard(input);
+            android.view.inputmethod.InputMethodManager keyboard=(android.view.inputmethod.InputMethodManager)input.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);keyboard.restartInput(input);keyboard.showSoftInput(input,0);
+            android.widget.Toast.makeText(input.getContext(),"Pełna klawiatura: wpisz wyrażenie, parametr lub jednostkę",android.widget.Toast.LENGTH_SHORT).show();return true;});
+    }
+    private static void textKeyboard(EditText input){input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);input.setSingleLine(true);}
     /** Binds (expression with parameter names) or unbinds (plain value) a driven value in the given document. */
     private static void bindField(CadProject target,String key,EditText field){String text=field.getText().toString().trim();if(UserParameters.isExpression(text))UserParameters.bind(target,key,text);else target.parameterBindings.remove(key);}
     /** Length input (project units, expressions allowed) for forms built outside coordinateInput. */
@@ -3987,30 +4057,55 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }).show();
         attachLivePreview(form,candidate,status,"Podgląd wystąpienia. Zastosuj zapisuje je w historii.");
     }
+    private java.util.Set<Integer> mateBodies=new java.util.LinkedHashSet<>();private double[] mateMovingAxis;
     private void beginMate() {
-        boolean any=false;for(Component c:project.components)any|=c.instance();
-        if(!any){operationMessage="Dosuń ściany przesuwa wystąpienia – najpierw Złożenie → Wstaw wystąpienie";invalidate();return;}
-        mode="Dosuń";mateComponent=null;operationMessage="Dotknij płaskiej ściany wystąpienia, które ma się przesunąć";invalidate();
+        if(!project.hasSolid()||BodyGraph.bodies(project).size()<2){operationMessage="Dosuń ściany łączy dwie bryły – potrzebne są co najmniej dwie bryły (np. wyciągnięcie jako „Nowa bryła” albo wystąpienie)";invalidate();return;}
+        closePropertyEditor();mode="Dosuń";mateComponent=null;mateBodies.clear();mateMovingAxis=null;mateMovingPoint=null;
+        operationMessage="Dotknij płaskiej lub walcowej ściany bryły, która ma się przesunąć";invalidate();
     }
+    /** Axis {point, direction} of a cylindrical/conical face. */
+    private double[] faceAxis(int face){int old=selectedFace;selectedFace=face;try{return selectedSurfaceAxis();}finally{selectedFace=old;}}
     private void mateTap(int face) {
-        if(face<0||!isFacePlanar(face)){operationMessage="Dotknij płaskiej ściany";invalidate();return;}
+        if(face<0){operationMessage="Dotknij ściany bryły";invalidate();return;}
+        boolean planar=isFacePlanar(face);double[] axis=planar?null:faceAxis(face);
+        if(!planar&&axis==null){operationMessage="Dotknij płaskiej ściany albo walcowej ściany (otwór, wałek)";invalidate();return;}
         double l=Math.sqrt(selectedNormalX*selectedNormalX+selectedNormalY*selectedNormalY+selectedNormalZ*selectedNormalZ);
         double[] point={selectedPointX,selectedPointY,selectedPointZ},normal={selectedNormalX/l,selectedNormalY/l,selectedNormalZ/l};int body=faceBodies.getOrDefault(face,1);
-        if(mateComponent==null) {
+        if(mateComponent==null&&mateBodies.isEmpty()) {
             Component c=Component.of(project.components,body);
-            if(c==null||!c.instance()){operationMessage="To nie jest ściana wystąpienia – dotknij ściany wstawionej kopii";invalidate();return;}
-            mateComponent=c.id;mateMovingPoint=point;mateMovingNormal=normal;selectedFace=face;operationMessage="Teraz dotknij ściany, do której „"+c.name+"” ma przylegać";invalidate();return;
+            if(c!=null&&c.instance())mateComponent=c.id;else if(c!=null)mateBodies.addAll(c.bodies);else mateBodies.add(body);
+            mateMovingAxis=axis;mateMovingPoint=point;mateMovingNormal=normal;selectedFace=face;
+            operationMessage=(axis!=null?"Teraz dotknij walcowej ściany, z którą oś ma być współosiowa":"Teraz dotknij ściany, do której ta ściana ma przylegać")+" (inna bryła)";invalidate();return;
         }
-        Component moving=Assembly.find(project,mateComponent);if(moving==null||moving.bodies.contains(body)){operationMessage="Wybierz ścianę innej bryły";invalidate();return;}
-        final double[] tp=point,tn=normal;mode="Wybierz";
-        EditText gap=coordinateInput("Odstęp [mm]",0);
-        new PropertyBuilder().setTitle("Dosuń ściany · odstęp").setView(gap).setNegativeButton("Anuluj",(d,w)->mateComponent=null).setPositiveButton("Dosuń",(d,w)->{
+        java.util.Set<Integer> moving=new java.util.LinkedHashSet<>(mateBodies);if(mateComponent!=null){Component c=Assembly.find(project,mateComponent);if(c!=null)moving.addAll(c.bodies);}
+        if(moving.contains(body)){operationMessage="Wybierz ścianę innej bryły";invalidate();return;}
+        if((mateMovingAxis!=null)!=(axis!=null)){operationMessage=mateMovingAxis!=null?"Pierwsza ściana była walcowa – dotknij walcowej ściany drugiej bryły":"Pierwsza ściana była płaska – dotknij płaskiej ściany drugiej bryły";invalidate();return;}
+        final double[] tp=point,tn=normal,ta=axis,mp=mateMovingPoint,mn=mateMovingNormal,ma=mateMovingAxis;final String component=mateComponent;final java.util.Set<Integer> bodies=new java.util.LinkedHashSet<>(mateBodies);
+        mode="Wybierz";selectedFace=face;
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView info=new android.widget.TextView(getContext());form.addView(info);
+        EditText gap=null;android.widget.CheckBox flush=new android.widget.CheckBox(getContext());
+        if(ta==null){info.setText("Ściany zostaną ustawione naprzeciw siebie (styk) albo w jednej płaszczyźnie (wyrównanie).");gap=labeledCoordinate(form,"Odstęp [mm]",0);slider(form,gap,-modelExtent()/2,modelExtent()/2,.5);flush.setText("Wyrównaj (ściany w jednej płaszczyźnie, ten sam kierunek)");form.addView(flush);}
+        else info.setText("Osie walcowych ścian zostaną wyrównane (współosiowo). Położenie wzdłuż osi ustawisz kolejnym dosunięciem płaskich ścian.");
+        final EditText gapField=gap;
+        android.content.DialogInterface.OnClickListener apply=(d,w)->{
             try {
-                double g=parseCoordinate(gap);CadProject next=copyProject(project);Component c=Assembly.find(next,mateComponent);String baseline=project.toJson().toString();
-                for(int index:Assembly.instanceRecords(next,c))next.committedFeatures.set(index,Assembly.mate(next.committedFeatures.get(index),mateMovingPoint,mateMovingNormal,tp,tn,g));
-                mateComponent=null;commitProjectAsync(next,baseline,"Dosunięto „"+c.name+"” ścianą do wskazanej ściany"+(g!=0?" z odstępem "+formatMm(g):""));
+                double[][] delta=ta==null?Assembly.planeDelta(mp,mn,tp,tn,parseCoordinate(gapField),flush.isChecked()):Assembly.axisDelta(new double[]{ma[0],ma[1],ma[2]},new double[]{ma[3],ma[4],ma[5]},new double[]{ta[0],ta[1],ta[2]},new double[]{ta[3],ta[4],ta[5]});
+                String baseline=project.toJson().toString();CadProject next=copyProject(project);String name;
+                if(component!=null) {
+                    Component c=Assembly.find(next,component);name=c.name;
+                    for(int index:Assembly.instanceRecords(next,c))next.committedFeatures.set(index,Assembly.composeDelta(delta,next.committedFeatures.get(index)));
+                } else {
+                    List<double[]> records=Assembly.transformRecords(delta);if(records.isEmpty())throw new IllegalArgumentException("Bryła już jest w tym położeniu");
+                    for(int b:bodies)for(double[] r:records){next.committedFeatures.add(r);next.committedProfileIds.add("");next.featureBodyTargets.add(b);next.featureBodyOutputs.add(b);}
+                    name=bodies.size()==1?BodyGraph.name(next,bodies.iterator().next()):bodies.size()+" brył";
+                }
+                if(previewSink==null){mateComponent=null;mateBodies.clear();mateMovingAxis=null;}
+                commitProjectAsync(next,baseline,ta!=null?"Ustawiono współosiowo: "+name:"Dosunięto „"+name+"” do wskazanej ściany"+(flush.isChecked()?" (wyrównanie)":"")+(gapField!=null&&parseCoordinate(gapField)!=0?" z odstępem "+formatMm(parseCoordinate(gapField)):""));
             }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-        }).show();
+        };
+        new PropertyBuilder().setTitle(ta!=null?"Dosuń · współosiowo":"Dosuń ściany").setView(form).setNegativeButton("Anuluj",(d,w)->{mateComponent=null;mateBodies.clear();mateMovingAxis=null;}).setPositiveButton("Dosuń",apply).show();
+        capturedPreview(form,apply,"Podgląd położenia bryły.");
     }
     private void showComponentActions(Component c) {
         List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
@@ -4093,7 +4188,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         form.setPadding((int)dp(20),(int)dp(8),(int)dp(20),0);
         android.widget.TextView hint=new android.widget.TextView(getContext());
         hint.setText("Jednakowa gęstość wszystkich brył [kg/m³]. Wpisz wartość dla używanego materiału. Puste pole usuwa przypisanie.");form.addView(hint);
-        EditText density=new EditText(getContext());density.setSingleLine(true);density.setSelectAllOnFocus(true);
+        EditText density=new EditText(getContext());density.setSingleLine(true);density.setSelectAllOnFocus(true);density.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         density.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         density.setKeyListener(android.text.method.DigitsKeyListener.getInstance("0123456789.,"));
         density.setHint("Gęstość [kg/m³]");
@@ -4816,9 +4911,11 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         for(CadTimeline.Item item:CadTimeline.entries(project))if(item.kind==CadTimeline.Kind.FEATURE&&FeaturePattern.eligible(project.committedFeatures.get(item.featureIndex))) {
             eligible.add(item.featureIndex);titles.add((item.featureIndex+1)+". "+item.title+" · "+BodyGraph.name(project,featureBody(project,item.featureIndex)));
         }
-        if(eligible.isEmpty()){operationMessage=name+": brak operacji do powielenia. Powielać można wyciągnięcia, wycięcia, obroty profilu i gwinty z historii.";invalidate();return;}
+        final int bodyKind=kind==FeaturePattern.MIRROR?1:kind==FeaturePattern.LINEAR?2:3;
+        if(eligible.isEmpty()){operationMessage=name+": w historii nie ma operacji do powielenia – powielana jest cała bryła.";showBodyPatternDialog(bodyKind,-1);return;}
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Zaznacz operacje z historii. Kopie powstają jako jedna operacja i śledzą późniejsze zmiany źródeł.");form.addView(info);
+        android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Zaznacz operacje z historii (np. otwór, wycięcie) albo powiel całą bryłę. Kopie operacji śledzą późniejsze zmiany źródeł.");form.addView(info);
+        android.widget.Button whole=new android.widget.Button(getContext());whole.setText("Powiel całą bryłę…");form.addView(whole);
         List<android.widget.CheckBox> boxes=new ArrayList<>();
         for(int i=0;i<eligible.size();i++){android.widget.CheckBox box=new android.widget.CheckBox(getContext());box.setText(titles.get(i));box.setChecked(eligible.get(i)==highlightFeature||(eligible.size()==1));form.addView(box);boxes.add(box);}
         new PropertyBuilder().setTitle(name+" · operacje źródłowe").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Dalej",(d,w)->{
@@ -4828,6 +4925,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             int[] sources=new int[chosen.size()];for(int i=0;i<sources.length;i++)sources[i]=chosen.get(i);
             showPatternParameters(kind,sources,-1);
         }).show();
+        whole.setOnClickListener(v->showBodyPatternDialog(bodyKind,-1));
     }
     /** Planar face currently selected in the viewport, as point + outward normal, or null. */
     private double[] selectedPlanarFace() {
