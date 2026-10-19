@@ -27,6 +27,12 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        String version="?";try{version=getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception ignored){}
+        CrashReport.install(this,version);
+        android.content.SharedPreferences prefs=getSharedPreferences("crash",MODE_PRIVATE);
+        String report=CrashReport.pending(this,prefs.getLong("seen",0));
+        if(report!=null){prefs.edit().putLong("seen",System.currentTimeMillis()).apply();
+            Toast.makeText(this,"Poprzednie uruchomienie zakończyło się błędem. Raport: Android/data/pl.tabletcad.app/files/"+CrashReport.NAME,Toast.LENGTH_LONG).show();}
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         workspace = new CadWorkspaceView(this, new CadWorkspaceView.FileRequestListener() {
             @Override public void requestExport(String format) { requestExportFile(format); }

@@ -51,6 +51,11 @@ function Invoke-Job([string]$id, [string[]]$lines, [string]$log) {
                           $out
                           & $Adb shell svc power stayon false
                           if (-not ($out -match 'result=PASS')) { $script:Code = 3 } } }
+        'exitinfo'  { & $Adb shell dumpsys activity exit-info $Pkg 2>&1 | Select-Object -First 160 | ForEach-Object { "$_" }; $script:Code = $LASTEXITCODE }
+        'pull-crash'{ $dst = Join-Path $Results "$id-crash.txt"
+                      & $Adb pull "/sdcard/Android/data/$Pkg/files/tabletcad-crash.txt" $dst 2>&1 | ForEach-Object { "$_" }
+                      $script:Code = [int](-not (Test-Path $dst)); if (Test-Path $dst) { Get-Content $dst -Encoding UTF8 } }
+        'git-pull'  { Push-Location $Root; & $Git pull --ff-only 2>&1 | ForEach-Object { "$_" }; $script:Code = $LASTEXITCODE; Pop-Location }
         'logcat'    { $n = if ($a.Count) { Num $a[0] } else { '3000' }; & $Adb logcat -d -t $n 2>&1 | ForEach-Object { "$_" } }
         'logcat-clear' { & $Adb logcat -c; $script:Code = $LASTEXITCODE }
         'crash'     { & $Adb logcat -d -b crash 2>&1 | ForEach-Object { "$_" } }
