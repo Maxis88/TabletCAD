@@ -48,6 +48,8 @@ public final class CadProject {
     public final List<Datum> datums=new ArrayList<>();
     /** History indices of suppressed operations (kept in history, not evaluated). */
     public final java.util.Set<Integer> suppressedFeatures=new java.util.TreeSet<>();
+    /** Hole index → edge-face references of its dimensioned centre (see HoleAssociation). */
+    public final java.util.Map<Integer,double[]> holeReferences=new java.util.TreeMap<>();
     /** Rollback marker: operations historyMarker … historyMarkerCount−1 are not evaluated; -1 = end of history.
      *  Operations appended while the marker is set are moved to the marker on commit (FeatureHistory.settle). */
     public int historyMarker=-1,historyMarkerCount=-1;
@@ -152,6 +154,7 @@ public final class CadProject {
         if(!parameters.isEmpty())root.put("parameters",pl.tabletcad.app.UserParameters.toJson(this));
         if(!parameterBindings.isEmpty())root.put("parameterBindings",new JSONObject(parameterBindings));
         if(!suppressedFeatures.isEmpty())root.put("suppressed",new JSONArray(suppressedFeatures));
+        if(!holeReferences.isEmpty()){JSONObject holes=new JSONObject();for(java.util.Map.Entry<Integer,double[]> e:holeReferences.entrySet()){double[] r=e.getValue();try{pl.tabletcad.app.HoleAssociation.validate(r);}catch(IllegalArgumentException x){throw new JSONException(x.getMessage());}JSONArray a=new JSONArray();for(int i=0;i<(Double.isNaN(r[5])?5:10);i++)a.put(r[i]);holes.put(e.getKey().toString(),a);}root.put("holeReferences",holes);}
         if(historyMarker>=0)root.put("historyMarker",historyMarker).put("historyMarkerCount",historyMarkerCount);
         if(!datums.isEmpty()){JSONArray construction=new JSONArray();for(Datum d:datums)construction.put(d.toJson());root.put("construction",construction);}
         root.put("sketchPlane", sketchPlane);
@@ -347,6 +350,11 @@ public final class CadProject {
             if(!(value>0)||!Double.isFinite(value))throw new JSONException("Gęstość bryły musi być dodatnia");project.bodyDensities.put(body,value);}}
         int marker=root.optInt("historyMarker",-1),markerCount=root.optInt("historyMarkerCount",-1);
         if(marker>=0){if(marker>=markerCount||markerCount>project.committedFeatures.size())throw new JSONException("Niepoprawny znacznik historii");project.historyMarker=marker;project.historyMarkerCount=markerCount;}
+        JSONObject holes=root.optJSONObject("holeReferences");
+        if(holes!=null){java.util.Iterator<String> keys=holes.keys();while(keys.hasNext()){String key=keys.next();int index;try{index=Integer.parseInt(key);}catch(NumberFormatException e){throw new JSONException("Niepoprawny numer otworu");}
+            JSONArray a=holes.getJSONArray(key);if(a.length()!=5&&a.length()!=10)throw new JSONException("Niepoprawne odniesienie otworu");double[] r=new double[10];java.util.Arrays.fill(r,Double.NaN);for(int i=0;i<a.length();i++)r[i]=a.getDouble(i);
+            try{pl.tabletcad.app.HoleAssociation.validate(r);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
+            if(index<0||index>=project.committedFeatures.size()||!pl.tabletcad.app.HoleFeature.is(project.committedFeatures.get(index)))throw new JSONException("Odniesienie do nieistniejącego otworu");project.holeReferences.put(index,r);}}
         JSONArray suppressed=root.optJSONArray("suppressed");
         if(suppressed!=null)for(int i=0;i<suppressed.length();i++){int index=suppressed.getInt(i);if(index<0||index>=project.committedFeatures.size())throw new JSONException("Wygaszona operacja poza historią");project.suppressedFeatures.add(index);}
         pl.tabletcad.app.SketchTransactions.validateLoaded(project);

@@ -122,16 +122,16 @@ public final class NonlinearConstraints {
         public String label() {
             if(contradictory)return "Szkic sprzeczny geometrycznie";
             if(redundant>0)return "Szkic nadmiernie związany ("+redundant+(redundant==1?" zbędny więz)":" zbędne więzy)");
-            if(freedoms>0)return "Szkic niedowiązany: "+freedoms+" st. swobody"+(unanalysed>0?", "+unanalysed+" el. bez analizy":"");
-            if(unanalysed>0)return "Szkic: "+unanalysed+" el. bez analizy więzów (łuki/krzywe)";
+            if(freedoms>0)return "Szkic niedowiązany: "+freedoms+" st. swobody"+(unanalysed>0?" (w tym kontury z łukami: "+unanalysed+" – ustalane wymiarami w edycji, bez więzów)":"");
             return "Szkic w pełni związany";
         }
     }
     public static Status status(List<SketchPrimitive> geometry,List<Link> links) {
         Map<String,Block> blocks=new LinkedHashMap<>();int size=0,circles=0,unanalysed=0;
-        for(SketchPrimitive p:geometry){Block b=new Block(p,size);if(b.size==0){unanalysed++;continue;}blocks.put(p.id,b);size+=b.size;if(b.circle())circles++;}
+        int curveFreedoms=0;
+        for(SketchPrimitive p:geometry){Block b=new Block(p,size);if(b.size==0){if(p.curves!=null){unanalysed++;curveFreedoms+=curveFreedoms(p.curves);}continue;}blocks.put(p.id,b);size+=b.size;if(b.circle())circles++;}
         double[] all=coordinates(blocks,size);List<Link> used=new ArrayList<>();for(Link l:links)if(blocks.containsKey(l.a)&&blocks.containsKey(l.b)&&(l.axis.isEmpty()||l.axis.startsWith("@")||blocks.containsKey(l.axis)))used.add(l);
-        double[] r;try{r=residuals(blocks,all,used);}catch(IllegalArgumentException e){return new Status(0,0,true,unanalysed);}
+        double[] r;try{r=residuals(blocks,all,used);}catch(IllegalArgumentException e){return new Status(curveFreedoms,0,true,unanalysed);}
         boolean contradictory=maximum(r)>1e-6;int rows=r.length;
         double[][] jac=new double[rows][size];
         for(int j=0;j<size;j++){double old=all[j],h=1e-6*Math.max(1,Math.abs(old));all[j]=old+h;double[] plus=residuals(blocks,all,used);all[j]=old-h;double[] minus=residuals(blocks,all,used);all[j]=old;for(int i=0;i<rows;i++)jac[i][j]=(plus[i]-minus[i])/(2*h);}
@@ -144,7 +144,13 @@ public final class NonlinearConstraints {
         for(int i=0;i<rows;i++)for(int k=0;k<gauges.size();k++){double sum=0;double[] g=gauges.get(k);for(int j=0;j<size;j++)sum+=jac[i][j]*g[j];jg[i][k]=sum;}
         int gaugeFree=gauges.size()-(rows==0?0:rank(jg,gauges.size()));
         int freedoms=Math.max(0,size-gaugeFree-rank);
-        return new Status(freedoms,rows-rank,contradictory,unanalysed);
+        return new Status(freedoms+curveFreedoms,rows-rank,contradictory,unanalysed);
+    }
+    /** Degrees of freedom of a line/arc contour (no stored constraints can reference it): 2 per distinct end point, 1 per arc (curvature). */
+    static int curveFreedoms(double[] curves) {
+        List<double[]> ends=new ArrayList<>();int arcs=0;
+        for(int i=0;i+6<curves.length;i+=7){if(curves[i]==1)arcs++;for(int j:new int[]{1,5}){double x=curves[i+j],y=curves[i+j+1];boolean known=false;for(double[] e:ends)if(Math.hypot(e[0]-x,e[1]-y)<1e-7){known=true;break;}if(!known)ends.add(new double[]{x,y});}}
+        return 2*ends.size()+arcs;
     }
     static int rank(double[][] m,int columns) {
         int rows=m.length,rank=0;double[][] a=new double[rows][];for(int i=0;i<rows;i++){a[i]=m[i].clone();double norm=0;for(double v:a[i])norm=Math.max(norm,Math.abs(v));if(norm>0)for(int j=0;j<columns;j++)a[i][j]/=norm;}
@@ -161,6 +167,9 @@ public final class NonlinearConstraints {
         double[] all=coordinates(blocks,size);List<Double> residual=new ArrayList<>();residual(link,blocks,all,residual);
         for(double v:residual)if(!Double.isFinite(v)||Math.abs(v)>1e-6)throw new IllegalArgumentException("Geometria nie spełnia więzu "+symbol(link.kind));
     }
+    private static boolean centred(Block b){return b.size==4&&(b.circle()||b.source.isEllipse());}
+    static double[] relative(Map<String,Block> blocks,double[] all){double[] r=all.clone();for(Block b:blocks.values())if(centred(b)){r[b.start+2]-=r[b.start];r[b.start+3]-=r[b.start+1];}return r;}
+    static double[] absolute(Map<String,Block> blocks,double[] rel){double[] r=rel.clone();for(Block b:blocks.values())if(centred(b)){r[b.start+2]+=r[b.start];r[b.start+3]+=r[b.start+1];}return r;}
     private static double[] coordinates(Map<String,Block> blocks,int size) {
         double[] all=new double[size];for(Block b:blocks.values())if(b.size>0){double[] p=b.source.vertices!=null?b.source.vertices:new double[]{b.source.x1,b.source.y1,b.source.x2,b.source.y2};System.arraycopy(p,0,all,b.start,b.size);}return all;
     }
@@ -242,16 +251,20 @@ public final class NonlinearConstraints {
             }
         }
         List<Integer> free=new ArrayList<>();for(int i=0;i<size;i++)if(!pinned[i])free.add(i);
-        double damping=1e-4;double[] r=residuals(blocks,all,links);
+        // Circles and ellipses are solved with their second point relative to the centre, so a moved
+        // centre carries the radius/axis point along instead of silently changing the size.
+        all=relative(blocks,all);
+        double damping=1e-4;double[] r=residuals(blocks,absolute(blocks,all),links);
         for(int iteration=0;iteration<80&&maximum(r)>1e-8;iteration++) {
             int n=free.size();if(n==0)break;double[][] jac=new double[n][r.length];
-            for(int j=0;j<n;j++){int variable=free.get(j);double old=all[variable],h=1e-5*Math.max(1,Math.abs(old)*.001);all[variable]=old+h;double[] plus=residuals(blocks,all,links);all[variable]=old-h;double[] minus=residuals(blocks,all,links);all[variable]=old;for(int i=0;i<r.length;i++)jac[j][i]=(plus[i]-minus[i])/(2*h);}
+            for(int j=0;j<n;j++){int variable=free.get(j);double old=all[variable],h=1e-5*Math.max(1,Math.abs(old)*.001);all[variable]=old+h;double[] plus=residuals(blocks,absolute(blocks,all),links);all[variable]=old-h;double[] minus=residuals(blocks,absolute(blocks,all),links);all[variable]=old;for(int i=0;i<r.length;i++)jac[j][i]=(plus[i]-minus[i])/(2*h);}
             double[][] matrix=new double[n][n];double[] rhs=new double[n];for(int j=0;j<n;j++){for(int i=0;i<r.length;i++)rhs[j]-=jac[j][i]*r[i];for(int k=0;k<=j;k++){double sum=0;for(int i=0;i<r.length;i++)sum+=jac[j][i]*jac[k][i];matrix[j][k]=matrix[k][j]=sum;}matrix[j][j]+=damping;}
             double[] delta=linear(matrix,rhs),proposal=all.clone();for(int i=0;i<n;i++)proposal[free.get(i)]+=delta[i];
-            double[] proposed;try{proposed=residuals(blocks,proposal,links);}catch(IllegalArgumentException e){damping*=10;continue;}
+            double[] proposed;try{proposed=residuals(blocks,absolute(blocks,proposal),links);}catch(IllegalArgumentException e){damping*=10;continue;}
             if(error(proposed)<error(r)){all=proposal;r=proposed;damping=Math.max(1e-12,damping*.25);}else damping*=10;
             if(damping>1e12)break;
         }
+        all=absolute(blocks,all);
         if(maximum(r)>5e-7||!Double.isFinite(error(r)))throw new IllegalArgumentException("Sprzeczne więzy lub brak zbieżności — szkic zachowano");
         List<SketchPrimitive> result=new ArrayList<>();
         for(SketchPrimitive original:geometry) {

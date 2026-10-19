@@ -4485,10 +4485,14 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }else if(failure.feature>=model.committedFeatures.size())where="Bieżąca operacja: ";
         return where+failure.reason+". Poprzednia geometria została zachowana.";
     }
-    private void commitProjectAsync(CadProject next,String baseline,String success) {
+    private void commitProjectAsync(CadProject next,String baseline,String requested) {
+        String success=requested;
         if(modelOperationPending){operationMessage="Trwa już obliczanie operacji";invalidate();return;}
         BodyGraph.reconcile(next);
         try{FeatureHistory.settle(next);}catch(IllegalArgumentException error){operationMessage="Nie można wstawić operacji w miejscu znacznika: "+error.getMessage();invalidate();return;}
+        List<String> lostHoles;try{lostHoles=HoleAssociation.update(next,next.importedStep?new File(projectRepository.importedStepFile().getParentFile(),next.importedStepSource).getAbsolutePath():null);}catch(IllegalArgumentException error){operationMessage="Nie zaktualizowano położenia otworu: "+error.getMessage();invalidate();return;}
+        if(!lostHoles.isEmpty())success+=" · Nie odnaleziono krawędzi odniesienia: "+String.join(", ",lostHoles)+" – środek bez zmian";
+        final String message=success;
         CadProject current=project;final double[] base,features;
         try {project=next;base=evaluationBase()==null?null:evaluationBase().clone();features=kernelFeatures();}finally {project=current;}
         final String source=next.importedStep?new File(projectRepository.importedStepFile().getParentFile(),next.importedStepSource).getAbsolutePath():null;
@@ -4500,7 +4504,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 if(!project.toJson().toString().equals(baseline))throw new IllegalArgumentException("Dokument zmienił się podczas obliczania. Wynik nie został zastosowany.");
                 projectRepository.save(next);project=next;nativeMesh=result.mesh;faceBodies=result.bodies;faceFeatures=result.features;holeCylinders=result.holes;
                 modelWidth=next.width;modelHeight=next.height;modelDepth=next.depth;nativePrism=NativeCadEngine.createPrism(modelWidth,modelHeight,modelDepth);modelSnapGeometry=null;updateMeshCenter();technicalSheet=null;scheduleThumbnail();
-                undoStack.push(baseline);while(undoStack.size()>50)undoStack.removeLast();redoStack.clear();mode="Wybierz";selectedFace=-1;threadSelections.clear();highlightBody=0;highlightFeature=next.committedFeatures.size()-1;operationMessage=success;
+                undoStack.push(baseline);while(undoStack.size()>50)undoStack.removeLast();redoStack.clear();mode="Wybierz";selectedFace=-1;threadSelections.clear();highlightBody=0;highlightFeature=next.committedFeatures.size()-1;operationMessage=message;
             }catch(Exception failure){operationMessage="Nie zatwierdzono operacji: "+kernelFailureMessage(next,error!=null?error:failure);}
             invalidate();
         });
@@ -4754,12 +4758,15 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         double[] original=holeEditIndex>=0?project.committedFeatures.get(holeEditIndex):null;
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         android.widget.TextView info=new android.widget.TextView(getContext());
-        info.setText("Środek leży na wskazanej ścianie i przesuwa się razem z nią przy zmianie parametrów. Dotknij innej płaskiej ściany, aby ją zmienić.");form.addView(info);
+        info.setText("Środek leży na wskazanej ścianie. Odległości od krawędzi A i B są zapamiętywane – po zmianie modelu środek zachowuje te odległości. Dotknij innej płaskiej ściany, aby ją zmienić.");form.addView(info);
         EditText x=labeledCoordinate(form,"Środek X [mm]",holeReference[0]),y=labeledCoordinate(form,"Środek Y [mm]",holeReference[1]),z=labeledCoordinate(form,"Środek Z [mm]",holeReference[2]);
         // Exact distances from the nearest straight face edge (A) and a perpendicular one (B).
         HolePlacement placement=null;
         try{String src=project.importedStep?importedSourceFile().getAbsolutePath():null;placement=HolePlacement.find(new double[]{holeReference[0],holeReference[1],holeReference[2]},new double[]{holeReference[3],holeReference[4],holeReference[5]},
             NativeCadEngine.edgeMeasurements(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),src));}catch(IllegalArgumentException ignored){placement=null;}
+        double[] holeFaces=new double[0];
+        if(placement!=null)try{String src=project.importedStep?importedSourceFile().getAbsolutePath():null;holeFaces=NativeCadEngine.faceAnalysis(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),src);}catch(IllegalArgumentException ignored){holeFaces=new double[0];}
+        final double[] faceRows=holeFaces;
         final HolePlacement place=placement;final EditText fromA=place==null?null:labeledCoordinate(form,"Odległość od krawędzi A (najbliższej) [mm]",place.distanceA),
             fromB=place==null||!place.hasB()?null:labeledCoordinate(form,"Odległość od krawędzi B (prostopadłej) [mm]",place.distanceB);
         if(place!=null) {
@@ -4804,7 +4811,10 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             int body=selectedFace>=0?faceBodies.getOrDefault(selectedFace,1):project.selectedBody>0?project.selectedBody:1;
             if(editIndex>=0)next.committedFeatures.set(editIndex,record);
             else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
-            int at=editIndex>=0?editIndex:next.committedFeatures.size()-1;bindField(next,"hole:"+at+":d",diameter);if(through.isChecked())next.parameterBindings.remove("hole:"+at+":h");else bindField(next,"hole:"+at+":h",depth);
+            int at=editIndex>=0?editIndex:next.committedFeatures.size()-1;
+            // Keep the centre associative with the reference edges (the faces meeting the hole face there).
+            double[] refs=place==null?null:HoleAssociation.references(place,point,faceRows);if(refs!=null)next.holeReferences.put(at,refs);else next.holeReferences.remove(at);
+            bindField(next,"hole:"+at+":d",diameter);if(through.isChecked())next.parameterBindings.remove("hole:"+at+":h");else bindField(next,"hole:"+at+":h",depth);
             return next;
         };
         new PropertyBuilder().setTitle(holeEditIndex>=0?"Edytuj otwór":"Otwór").setView(form)
@@ -5763,6 +5773,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             change.run();
             BodyGraph.reconcile(project);
             FeatureHistory.settle(project);
+            HoleAssociation.update(project,project.importedStep?importedSourceFile().getAbsolutePath():null);
             modelWidth = project.width; modelHeight = project.height; modelDepth = project.depth;
             mode = "Wybierz";
             if (!updateNativeModel()) throw new IllegalArgumentException(operationMessage);

@@ -1,5 +1,24 @@
 # TabletCAD 0.79 — poprawki znalezionych problemów i pakiet „druk 3D”
 
+## 0.79.1 (versionCode 89) — pozostałe problemy
+
+- Położenie otworu od krawędzi jest asocjacyjne: zapamiętywane są ściany stykające się
+  z płaszczyzną otworu wzdłuż krawędzi A i B (operacja tworząca + normalna) oraz
+  odległości. Przed każdym przeliczeniem model do otworu jest liczony ponownie, ściany
+  są odnajdywane i środek przesuwany tak, by odległości się zgadzały (np. otwór 20 mm od
+  prawej krawędzi płyty zostaje 20 mm od niej po poszerzeniu płyty 100 → 120). Brak
+  ściany jest zgłaszany w komunikacie, środek zostaje bez zmian. Odniesienia są
+  przenumerowywane przy usuwaniu i zmianie kolejności operacji oraz zapisywane w projekcie.
+- Status więzów liczy kontury z łuków: 2 stopnie swobody na każdy punkt końcowy i 1 na
+  łuk (dotąd „bez analizy”).
+- Solver traktuje punkt promienia okręgu (i końca półosi elipsy) względem środka —
+  przesunięcie środka (np. przez więz symetrii przy przesunięciu osi) nie zmienia już
+  promienia.
+
+Testy: 21 zestawów PASS (CadToolsKernelProbe 47 z asocjacją otworu, CadToolsHostTest 66,
+LinkedCopiesHostTest 24) oraz regresje szkicu i historii.
+
+
 0.79.0-print, versionCode 88. Schemat .tcad 37 (nowe opcjonalne pola: znacznik
 historii, ustawienia eksportu siatki). Etap bez tabletu; jądro sprawdzone na komputerze.
 
@@ -48,6 +67,4 @@ z metadanymi szyku i symetrią okręgów.
 ## Nie zweryfikowano / do zrobienia
 
 - Brak testów na tablecie.
-- Położenie otworu od krawędzi nadal nie jest asocjacyjne; łuki bez analizy stopni swobody.
-- Przy przesuwaniu osi lustra promienie okręgów symetrycznych mogą się zmienić (równe
-  sobie), jeśli nie mają wymiaru sterującego.
+- (rozwiązane w 0.79.1: asocjacja otworu, łuki w statusie, promień przy przesuwaniu osi)

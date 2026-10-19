@@ -108,6 +108,19 @@ public final class CadToolsKernelProbe {
         double[] at=place.at(25,10);close("placed X",at[0],10,1e-12);close("placed Y",at[1],25,1e-12);close("placed Z stays on the face",at[2],20,1e-12);
         double[] hr=HoleFeature.create(at,new double[]{0,0,1},-1,6.5,true,0,0,0,0,0);add(hp,hr,"",1);close("hole Ø6.5 at the dimensioned position",volume(hp),plate-Math.PI*3.25*3.25*20,1e-6);
         check(HolePlacement.find(new double[]{50,30,20},new double[]{0,0,1},new double[0])==null,"no straight edge → no edge dimensions offered");
+        // Associative placement: centre 20 mm from the right edge and 15 mm from the front edge follows a wider plate.
+        CadProject as=plate();double[] asProps=NativeCadEngine.edgeMeasurements(100,60,20,0,as.featureBase,packed(as),null),asFaces=NativeCadEngine.faceAnalysis(100,60,20,0,as.featureBase,packed(as),null);
+        double[] centre={80,15,20};HolePlacement ap=HolePlacement.find(centre,new double[]{0,0,1},asProps);check(ap!=null&&ap.hasB(),"two reference edges for the hole");
+        double[] refs=HoleAssociation.references(ap,centre,asFaces);check(refs!=null&&!Double.isNaN(refs[5]),"both edges resolve to their adjacent faces");
+        add(as,HoleFeature.create(centre,new double[]{0,0,1},-1,6,true,0,0,0,0,0),"",1);as.holeReferences.put(0,refs);
+        check(HoleAssociation.update(as,null).isEmpty()&&as.committedFeatures.get(0)[2]==80,"unchanged model keeps the centre");
+        as.featureBase[3]=120;as.width=120;List<String> lostRefs=HoleAssociation.update(as,null);check(lostRefs.isEmpty(),"reference faces found after the change");
+        close("centre stays 20 mm from the moved right edge",as.committedFeatures.get(0)[2],100,1e-9);close("and 15 mm from the front edge",as.committedFeatures.get(0)[3],15,1e-9);
+        CadProject asj=CadProject.fromJson(new JSONObject(as.toJson().toString()));check(asj.holeReferences.containsKey(0)&&asj.holeReferences.get(0).length==10,"hole references persist");
+        as.featureBase[4]=80;as.height=80;HoleAssociation.update(as,null);close("front-edge distance unaffected by a deeper plate",as.committedFeatures.get(0)[3],15,1e-9);
+        CadProject sw2=CadProject.fromJson(new JSONObject(as.toJson().toString()));add(sw2,ExtrusionPlan.feature(withFrame(xy(20)),new SketchPrimitive("x","Okrąg",10,10,12,10),"cut",20,0,false,false),"",1);FeatureHistory.swap(sw2,0);
+        check(sw2.holeReferences.containsKey(1)&&!sw2.holeReferences.containsKey(0),"hole references move with the hole when reordered");
+        FeatureRemoval.apply(sw2,FeatureRemoval.plan(sw2,0));check(sw2.holeReferences.containsKey(0),"and shift when an earlier operation is removed");
         System.out.println("PASS CadToolsKernelProbe: "+checks+" checks");
     }
     static CadProject withFrame(double[] f){CadProject p=new CadProject();p.sketchOriginX=f[0];p.sketchOriginY=f[1];p.sketchOriginZ=f[2];p.sketchUx=f[3];p.sketchUy=f[4];p.sketchUz=f[5];p.sketchVx=f[6];p.sketchVy=f[7];p.sketchVz=f[8];return p;}

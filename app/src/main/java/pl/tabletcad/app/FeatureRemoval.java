@@ -63,7 +63,7 @@ public final class FeatureRemoval {
             for(int i=index+1;i<p.committedFeatures.size();i++)p.committedFeatures.set(i,renumber(p.committedFeatures.get(i),index));
             BodyGraph.removeRoute(p,index);p.committedFeatures.remove(index);
             if(index<p.committedProfileIds.size())p.committedProfileIds.remove(index);
-            UserParameters.removed(p,index);FeatureHistory.removed(p,index);
+            UserParameters.removed(p,index);FeatureHistory.removed(p,index);HoleAssociation.removed(p,index);
         }
     }
 

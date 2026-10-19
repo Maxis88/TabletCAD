@@ -85,6 +85,9 @@ public final class CadToolsHostTest {
         List<SketchConstraints.Link> pos=Arrays.asList(new SketchConstraints.Link("dimX","r",0,"r",0,0,0),new SketchConstraints.Link("dimY","r",0,"r",0,0,0));
         st=NonlinearConstraints.status(Collections.singletonList(rr),pos);check(st.full(),"rectangle 30×20 positioned from the origin is fully constrained: "+st.label());
         st=NonlinearConstraints.status(Collections.singletonList(dimmed),Arrays.asList(SketchConstraints.Link.fixed(dimmed,0),new SketchConstraints.Link("fixed","l",1,"l",1,12,0)));check(st.contradictory,"violated constraints are reported as contradictory");
+        SketchPrimitive arc=new SketchPrimitive("a",SketchCurves.arc(0,0,5,5,10,0),false);
+        st=NonlinearConstraints.status(Collections.singletonList(arc),new ArrayList<>());check(st.freedoms==5&&st.label().contains("łukami"),"a free 3-point arc has 5 freedoms: "+st.label());
+        st=NonlinearConstraints.status(Arrays.asList(arc,dimmed),Collections.singletonList(SketchConstraints.Link.fixed(dimmed,0)));check(st.freedoms==5&&!st.full(),"arc freedoms add to a fully constrained line");
         SketchPrimitive l1=new SketchPrimitive("a","Linia",0,0,10,0),l2=new SketchPrimitive("b","Linia",20,3,30,5);
         SketchConstraints.Link col=new SketchConstraints.Link("collinear","a",0,"b",0,1,0);
         List<SketchPrimitive> solved=SketchConstraints.connect(Arrays.asList(l1,l2),new ArrayList<>(),col);

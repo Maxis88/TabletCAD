@@ -86,6 +86,7 @@ public final class FeatureHistory {
             bindings.put(m.matches()?m.group(1)+":"+map.applyAsInt(Integer.parseInt(m.group(2)))+m.group(3):e.getKey(),e.getValue());
         }
         p.parameterBindings.clear();p.parameterBindings.putAll(bindings);
+        HoleAssociation.remap(p,map);
         // The moved operations must still see their references before them and their bodies must exist.
         for(int i=0;i<p.committedFeatures.size();i++)for(int r:references(p.committedFeatures.get(i)))if(r>=i)throw new IllegalArgumentException("Nowa kolejność odwraca zależność operacji nr "+(i+1));
         BodyGraph.validate(p);
