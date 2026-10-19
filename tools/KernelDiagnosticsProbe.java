@@ -80,6 +80,7 @@ public final class KernelDiagnosticsProbe {
         start=System.nanoTime();double[] warm=NativeCadEngine.bodyProperties(100,60,20,0,BASE,plusOne,null);long appendMs=(System.nanoTime()-start)/1000000;
         System.out.println("TIMING append one hole to cached history: "+appendMs+" ms");
         NativeCadEngine.bodyProperties(1,1,1,0,new double[]{0,0,0,5,5,0,5},new double[0],null);// evict cache
+        pl.tabletcad.app.KernelCache.clear();// the Java memo would answer the identical query without the kernel
         start=System.nanoTime();double[] cold=NativeCadEngine.bodyProperties(100,60,20,0,BASE,plusOne,null);long coldMs=(System.nanoTime()-start)/1000000;
         System.out.println("TIMING same model without cache: "+coldMs+" ms");
         check(warm.length==7&&cold.length==7,"cached and cold evaluations succeed");

@@ -201,6 +201,19 @@ public final class CadWorkspaceView extends View {
     private boolean dimensionMode;
     private boolean coincidenceMode;
     private String coincidenceFirst;
+    /** Entity under the finger when drawing started; a long press grabs it instead of drawing. */
+    private SketchPrimitive drawGrabTarget;
+    private final Runnable drawGrab=()->{
+        SketchPrimitive target=drawGrabTarget;drawGrabTarget=null;
+        if(target==null||!sketching||!mode.equals("Szkic"))return;
+        sketching=false;sketchRect=null;snapMarker=null;
+        mode="Edytuj szkic";selectedSketchId=target.id;draggedSketch=target;dragWasSelected=true;dragHandle=0;
+        double[] start=screenToSketch(touchDownX,touchDownY);dragStartU=start[0];dragStartV=start[1];
+        dragPreview=null;dragSolvedPreview=null;dragConstraintRejected=false;
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+        operationMessage="Przesuń palec, aby przenieść element. Puść bez ruchu, aby edytować wartości.";
+        invalidate();
+    };
     private int coincidenceAnchor;
     private String constraintKind="coincident";
     private boolean dragConstraintRejected;
@@ -299,7 +312,8 @@ public final class CadWorkspaceView extends View {
 
     /** One finger on empty space orbits in every mode except while drawing sketch geometry. */
     private boolean orbitAllowed() {
-        if(mode.equals("Szkic"))return !sketchPlaneChosen||sketchOrbit;
+        // On a chosen sketch plane one finger belongs to the geometry: it pans, it never turns the view.
+        if(inSketch())return !sketchPlaneChosen||sketchOrbit;
         return !mode.equals("Rysunek");
     }
 
@@ -391,7 +405,7 @@ public final class CadWorkspaceView extends View {
             android.widget.Button button=new android.widget.Button(getContext());button.setText(labels.get(index));
             if(index==positive)PanelStyle.primary(button);else if(PanelStyle.destructive(labels.get(index)))PanelStyle.danger(button);else PanelStyle.secondary(button);
             button.setOnClickListener(v->{closePropertyEditor();
-                if(actions.get(index)!=null) actions.get(index).onClick(null,index);invalidate();});
+                try{if(actions.get(index)!=null) actions.get(index).onClick(null,index);}catch(RuntimeException error){recoverFromError(labels.get(index),error);}invalidate();});
             return button;
         }
         void show() {
@@ -416,7 +430,7 @@ public final class CadWorkspaceView extends View {
                 for(int i=0;i<items.length;i++) {
                     final int index=i;android.widget.Button button=new android.widget.Button(c);
                     button.setText(items[i]);PanelStyle.row(button);
-                    button.setOnClickListener(v->{closePropertyEditor();itemAction.onClick(null,index);invalidate();});
+                    button.setOnClickListener(v->{closePropertyEditor();try{itemAction.onClick(null,index);}catch(RuntimeException error){recoverFromError(items[index],error);}invalidate();});
                     if(!grid){contents.addView(button,PanelStyle.spaced(c,i==0?8:6));continue;}
                     if(i%2==0){pair=new LinearLayout(c);pair.setOrientation(LinearLayout.HORIZONTAL);contents.addView(pair,PanelStyle.spaced(c,i==0?8:6));}
                     button.setTextSize(13);button.setPadding((int)dp(10),0,(int)dp(6),0);
@@ -613,6 +627,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     if(filletSelectionChanged!=null) {
                         selectFilletEdge(e.getX(),e.getY());return true;
                     }
+                    if(positionPickId!=null&&inSketch()){positionPickTap(e.getX(),e.getY());return true;}
                     if (mode.equals("Edytuj szkic")) {
                         if(cornerFilletPicking){cornerFilletTap(e.getX(),e.getY());return true;}
                         if(coincidenceMode){coincidenceTap(e.getX(),e.getY());return true;}
@@ -698,6 +713,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     panX -= dx;
                     panY -= dy;
                     invalidate();
+                } else if (!scaleGestures.isInProgress() && inSketch() && sketchPlaneChosen && !sketchOrbit) {
+                    panX -= dx;
+                    panY -= dy;
+                    invalidate();
                 } else if (!scaleGestures.isInProgress() && orbitAllowed()) {
                     cameraYaw -= dx * 0.22f;
                     cameraPitch = Math.max(-89f, Math.min(89f, cameraPitch - dy * 0.22f));
@@ -725,6 +744,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     @Override public boolean onTouchEvent(MotionEvent event) {
+        try{return touchEvent(event);}
+        catch(RuntimeException error){recoverFromError("Dotyk",error);return true;}
+    }
+    private boolean touchEvent(MotionEvent event) {
         if(handleDimensionTouch(event))return true;
         if(handleExtrusionTouch(event))return true;
         if(handleFieldHandleTouch(event))return true;
@@ -762,7 +785,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 polylinePreview=null;snapMarker=null;invalidate();return true;
             }
         }
-        if (mode.equals("Edytuj szkic") && !trimMode && !dimensionMode && !coincidenceMode && !cornerFilletPicking) {
+        if (mode.equals("Edytuj szkic") && !trimMode && !dimensionMode && !coincidenceMode && !cornerFilletPicking && positionPickId==null) {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN
                     && isInsideViewport(event.getX(), event.getY())) {
                 draggedSketch = null;
@@ -770,7 +793,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     if (p.id.equals(selectedSketchId)
                             && sketchHandleAt(p,event.getX(),event.getY()) != 0) draggedSketch = p;
                 }
-                if (draggedSketch == null) draggedSketch = findSketchAt(event.getX(), event.getY());
+                if (draggedSketch == null) draggedSketch = findSketchForMove(event.getX(), event.getY());
                 if (draggedSketch != null) {
                     dragWasSelected = draggedSketch.id.equals(selectedSketchId);
                     dragHandle = dragWasSelected
@@ -853,6 +876,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     else if(changed!=null&&solved!=null)applySolvedSketch(solved,new ArrayList<>(project.coincidences));
                     else if (changed != null) replaceSketchEntity(original, changed);
                     else if(dragConstraintRejected)operationMessage="Ruch narusza więzy. Usuń blokadę punktu lub zmień wymiary zgodnie z więzami.";
+                    else if(positionNext){positionNext=false;showSketchPosition(original.id,0,null,0);}
                     else if (dragWasSelected) showSketchEntityEditor(original);
                     else operationMessage = "Przeciągnij uchwyt, aby zmienić rozmiar; krawędź, aby przesunąć";
                     invalidate();
@@ -880,9 +904,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 sketchEndX=screen.x;sketchEndY=screen.y;
                 sketchRect = new RectF(sketchStartX, sketchStartY, sketchStartX, sketchStartY);
                 sketching = true;
+                removeCallbacks(drawGrab);drawGrabTarget=findSketchForMove(event.getX(),event.getY());
+                if(drawGrabTarget!=null)postDelayed(drawGrab,android.view.ViewConfiguration.getLongPressTimeout());
                 invalidate();
                 return true;
             }
+            if(event.getActionMasked()==MotionEvent.ACTION_MOVE&&drawGrabTarget!=null&&Math.hypot(event.getX()-touchDownX,event.getY()-touchDownY)>dp(8)){removeCallbacks(drawGrab);drawGrabTarget=null;}
             if (event.getActionMasked() == MotionEvent.ACTION_MOVE && sketching) {
                 double[] start=screenToSketch(sketchStartX,sketchStartY);
                 double[] end=snappedSketchPoint(event.getX(),event.getY(),null,start[0],start[1]);
@@ -893,10 +920,13 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 return true;
             }
             if (event.getActionMasked() == MotionEvent.ACTION_UP && sketching) {
-                sketching = false;
+                sketching = false;removeCallbacks(drawGrab);SketchPrimitive tapped=drawGrabTarget;drawGrabTarget=null;
                 if (Math.hypot(event.getX() - sketchStartX, event.getY() - sketchStartY) > dp(4)) {
                     sketchEntitiesAdd(sketchTool, sketchStartX, sketchStartY,
                         sketchEndX, sketchEndY);
+                } else if(tapped!=null) {
+                    selectedSketchId=tapped.id;
+                    operationMessage="Przytrzymaj element i przeciągnij, aby go przesunąć. Położenie: menu ⋯ elementu albo Więzy → Wymiar położenia.";
                 }
                 sketchRect = null;
                 snapMarker = null;
@@ -909,8 +939,18 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return true;
     }
 
+    private int drawFailures;
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+        int save=canvas.getSaveCount();
+        try{drawWorkspace(canvas);drawFailures=0;}
+        catch(RuntimeException error) {
+            // A drawing failure must not crash the app repeatedly; reset transient state once and report it.
+            canvas.restoreToCount(save);
+            if(drawFailures++==0)post(()->recoverFromError("Rysowanie",error));
+        }
+    }
+    private void drawWorkspace(Canvas canvas) {
         dimensionHits.clear();
         scheduleToolbarUpdate();
         scheduleContextPanel();
@@ -1048,9 +1088,21 @@ if (isInsideViewport(e.getX(), e.getY())) {
     /** Runs a toolbar command; when it neither opened a panel nor changed the mode, its message is shown as a toast. */
     private void runToolWithFeedback(String command,boolean quiet) {
         String message=operationMessage;String before=mode;android.widget.ScrollView editor=propertyEditor;
-        activateTopTool(command);
+        try{activateTopTool(command);}catch(RuntimeException error){recoverFromError("Polecenie "+command,error);return;}
         // The viewport message bubble already shows the reason; keep it visible a little longer when nothing opened.
         if(!quiet&&propertyEditor==editor&&mode.equals(before)&&!operationMessage.isEmpty()&&!operationMessage.equals(message))performHapticFeedback(android.view.HapticFeedbackConstants.REJECT);
+    }
+    /**
+     * An unexpected failure of one command must not close the app and lose work: it is written to
+     * tabletcad-error.txt for diagnosis, transient interaction state is reset and the user is told.
+     */
+    private void recoverFromError(String where,RuntimeException error) {
+        CrashReport.note(getContext(),where,error);
+        try{closePropertyEditor();}catch(RuntimeException ignored){}
+        draggedSketch=dragPreview=null;dragSolvedPreview=null;sketching=false;sketchRect=null;snapMarker=null;positionPickId=null;positionNext=false;
+        sketchGhost.clear();drawGrabTarget=null;removeCallbacks(drawGrab);
+        operationMessage=where+": błąd ("+error.getClass().getSimpleName()+(error.getMessage()==null?"":": "+error.getMessage())+"). Dane projektu nie zostały utracone.";
+        invalidate();
     }
     private void dismissToolPopup() {if(toolbarPopup!=null){toolbarPopup.dismiss();toolbarPopup=null;}}
 
@@ -1319,12 +1371,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private void contextAction(LinearLayout parent,String label,boolean primary,Runnable action) {
         android.widget.Button button=new android.widget.Button(getContext());button.setText(label);
         if(primary)PanelStyle.primary(button);else PanelStyle.secondary(button);
-        button.setOnClickListener(v->{action.run();contextPanelKey="";invalidate();});
+        button.setOnClickListener(v->{try{action.run();}catch(RuntimeException error){recoverFromError(label,error);}contextPanelKey="";invalidate();});
         parent.addView(button,PanelStyle.spaced(getContext(),8));
     }
     /** Default tool contexts use the same native controls as parameter forms. */
     private void scheduleContextPanel() {
-        String key=propertyEditor!=null||!propertiesVisible()?"":mode+"|"+sketchTool+"|"+sketchPlaneChosen+"|"+project.sketchId+"|"+project.sketch.size()+"|"+project.polylineDraft.size()+"|"+project.threePointDraft.size()+"|"+arcDraft.size()+"|"+coincidenceMode+"|"+constraintKind+"|"+trimMode+"|"+dimensionMode+"|"+projectionMode+"|"+displayMode+"|"+(sectionPlane!=null);
+        String key=propertyEditor!=null||!propertiesVisible()?"":mode+"|"+sketchTool+"|"+sketchPlaneChosen+"|"+project.sketchId+"|"+project.sketch.size()+"|"+project.polylineDraft.size()+"|"+project.threePointDraft.size()+"|"+arcDraft.size()+"|"+coincidenceMode+"|"+selectedSketchId+"|"+constraintKind+"|"+trimMode+"|"+dimensionMode+"|"+projectionMode+"|"+displayMode+"|"+(sectionPlane!=null);
         if(key.equals(contextPanelKey)||contextPanelPosted)return;
         contextPanelPosted=true;post(()->{contextPanelPosted=false;if(!isAttachedToWindow()||!(getParent() instanceof android.widget.FrameLayout))return;
             removeContextPanel();if(propertyEditor!=null||!propertiesVisible())return;
@@ -1344,7 +1396,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 } else {
                     String tool=projectionMode?"Rzutowanie krawędzi":coincidenceMode?"Więzy · "+constraintKind:dimensionMode?"Wymiar":trimMode?"Przytnij":mode.equals("Edytuj szkic")?"Wybór i edycja":sketchTool;
                     contextText(contents,tool,true);
-                    String hint=projectionMode?"Dotknij krawędzi bryły.":coincidenceMode?"Wskaż geometrię, której dotyczy więz.":dimensionMode?"Dotknij elementu lub wartości wymiaru.":trimMode?"Dotknij fragmentu między przecięciami.":mode.equals("Edytuj szkic")?"Dotknij elementu, aby go edytować. Przeciągnij uchwyt, aby zmienić kształt.":"Narysuj profil w obszarze roboczym.";
+                    String hint=projectionMode?"Dotknij krawędzi bryły.":coincidenceMode?"Wskaż geometrię, której dotyczy więz.":dimensionMode?"Dotknij elementu lub wartości wymiaru.":trimMode?"Dotknij fragmentu między przecięciami.":mode.equals("Edytuj szkic")?"Dotknij elementu, aby go edytować. Przeciągnij element (krawędź lub wnętrze), aby go przesunąć; uchwyt zmienia kształt.":"Narysuj profil w obszarze roboczym.";
                     contextText(contents,hint,false);
                     if(!project.polylineDraft.isEmpty()) {
                         contextText(contents,"Punkty: "+project.polylineDraft.size(),false);
@@ -1355,6 +1407,15 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     } else if(!arcDraft.isEmpty())contextAction(contents,"Opcje łuku…",false,()->showArcDraftActions(null));
                     else if(!project.threePointDraft.isEmpty())contextAction(contents,"Opcje konstrukcji…",false,()->showThreePointActions(null));
                     contextText(contents,"Elementy: "+project.sketch.size(),false);
+                    SketchPrimitive picked=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(selectedSketchId))picked=p;
+                    if(picked!=null&&project.polylineDraft.isEmpty()&&!coincidenceMode&&!trimMode&&!dimensionMode) {
+                        final SketchPrimitive chosen=picked;
+                        contextText(contents,"Zaznaczony: "+sketchEntityName(chosen),true);
+                        contextText(contents,"Przeciągnij element (także za wnętrze), aby go przesunąć.",false);
+                        contextAction(contents,"Położenie i wyrównanie…",false,()->showSketchPosition(chosen.id,0,null,0));
+                        contextAction(contents,"Wartości i kształt…",false,()->{mode="Edytuj szkic";showSketchEntityEditor(chosen);});
+                        contextAction(contents,"Więcej (więzy, pomocnicza…)",false,()->{mode="Edytuj szkic";showSketchGeometryTools();});
+                    }
                     if(project.hasSolid())addPreviewControls(contents);
                     contextAction(footer,"Zakończ szkic",true,()->{if(SketchTransactions.active(project))finishSketchWork();else activateTopTool("Zakończ");});
                 }
@@ -2085,6 +2146,123 @@ if (isInsideViewport(e.getX(), e.getY())) {
             List<SketchConstraints.Link> links=new ArrayList<>(project.coincidences);links.set(links.indexOf(link),SketchConstraints.withValue(link,signed));showSolvedGhost(SketchConstraints.resolve(project.sketch,links));}catch(IllegalArgumentException ignored){}invalidate();});
     }
 
+    /** Element being positioned while the user points at a reference (sketch point, element or body edge). */
+    private String positionPickId;private int positionPickPoint;
+    /** "Położenie" chosen without a selection: the next touched element opens it. */
+    private boolean positionNext;
+    private String sketchEntityName(SketchPrimitive p) {
+        if(p.type.equals("Okrąg")&&p.vertices==null&&p.curves==null)return "Okrąg Ø"+formatMm(2*Math.hypot(p.x2-p.x1,p.y2-p.y1));
+        if(p.type.equals("Prostokąt")&&p.vertices==null)return "Prostokąt "+formatMm(Math.abs(p.x2-p.x1))+" × "+formatMm(Math.abs(p.y2-p.y1));
+        return p.type;
+    }
+    /**
+     * "Położenie": puts the element at exact X/Y distances from the sketch origin or from a point of
+     * another element (also an edge projected from the body), or aligns it with that element.
+     */
+    private void showSketchPosition(String id,int pointChoice,String refId,int refAnchor) {
+        SketchPrimitive element=null,reference=null;
+        for(SketchPrimitive p:project.sketch){if(p.id.equals(id))element=p;if(p.id.equals(refId))reference=p;}
+        if(element==null){operationMessage="Zaznacz element szkicu";invalidate();return;}
+        if(reference==null)refId=null;
+        final SketchPrimitive source=element,ref=reference;final String refKey=refId;
+        final int refPoint=ref!=null&&refAnchor>=0&&refAnchor<SketchConstraints.anchorCount(ref)?refAnchor:-1;
+        beginSketchWork();mode="Edytuj szkic";selectedSketchId=id;
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView what=new android.widget.TextView(getContext());what.setText("Element: "+sketchEntityName(source));form.addView(what);
+        List<String> points=SketchPosition.pointNames(source);
+        android.widget.TextView pointLabel=new android.widget.TextView(getContext());pointLabel.setText("Punkt elementu");form.addView(pointLabel);
+        android.widget.Spinner point=new android.widget.Spinner(getContext());point.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,points));
+        point.setSelection(Math.max(0,Math.min(pointChoice,points.size()-1)));form.addView(point);
+        String refText=ref==null?"Początek układu szkicu (0, 0)":refPoint>=0?SketchPosition.pointNames(ref).get(Math.min(SketchPosition.pointNames(ref).size()-1,ref.type.equals("Prostokąt")&&ref.vertices==null?refPoint+1:refPoint))+" · "+sketchEntityName(ref):sketchEntityName(ref);
+        android.widget.TextView refLabel=new android.widget.TextView(getContext());refLabel.setText("Odniesienie: "+refText);form.addView(refLabel);
+        android.widget.Button pick=new android.widget.Button(getContext());pick.setText("Wskaż odniesienie na szkicu lub bryle…");form.addView(pick);
+        pick.setOnClickListener(v->{closePropertyEditor();sketchGhost.clear();positionPickId=source.id;positionPickPoint=point.getSelectedItemPosition();
+            if(project.hasSolid()&&project.importedMeshSource==null&&projectionEdges.length==0)loadProjectionEdges();
+            operationMessage="Dotknij punktu lub elementu szkicu, krawędzi bryły (zostanie zrzutowana) albo początku układu";invalidate();});
+        if(ref!=null){android.widget.Button origin=new android.widget.Button(getContext());origin.setText("Odniesienie: początek układu");form.addView(origin);
+            origin.setOnClickListener(v->{closePropertyEditor();showSketchPosition(source.id,point.getSelectedItemPosition(),null,0);});}
+        final boolean pointRef=ref==null||refPoint>=0;
+        int anchorNow=SketchPosition.anchorOf(source,point.getSelectedItemPosition());
+        double[] offset=SketchPosition.offset(project.sketch,source.id,anchorNow,pointRef?refKey:null,Math.max(0,refPoint));
+        EditText fx=labeledCoordinate(form,"Odległość X [mm]",offset[0]),fy=labeledCoordinate(form,"Odległość Y [mm]",offset[1]);
+        android.widget.CheckBox lock=new android.widget.CheckBox(getContext());lock.setText("Zablokuj wymiarami położenia (sterujące)");
+        lock.setChecked(SketchPosition.lockable(source,anchorNow));lock.setEnabled(SketchPosition.lockable(source,anchorNow));form.addView(lock);
+        if(!pointRef){android.widget.TextView note=new android.widget.TextView(getContext());note.setText("Ten element nie ma punktów — odległości X/Y liczone od początku układu.");form.addView(note);}
+        if(ref!=null) {
+            android.widget.TextView alignLabel=new android.widget.TextView(getContext());alignLabel.setText("Wyrównaj do: "+sketchEntityName(ref));form.addView(alignLabel);
+            for(int i=0;i<SketchPosition.ALIGN.length;i++) {
+                final int alignMode=i;android.widget.Button align=new android.widget.Button(getContext());align.setText(SketchPosition.ALIGN[i]);form.addView(align);
+                align.setOnClickListener(v->{closePropertyEditor();sketchGhost.clear();
+                    try{SketchPosition.Result r=SketchPosition.align(project.sketch,project.coincidences,source.id,ref.id,alignMode,lock.isChecked());
+                        if(applySolvedSketch(r.sketch,r.links))operationMessage="Wyrównano: "+SketchPosition.ALIGN[alignMode].toLowerCase(java.util.Locale.ROOT)+(r.added>0?" · zablokowano wymiarem":"");}
+                    catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+                    invalidate();});
+            }
+        }
+        java.util.function.Supplier<SketchPosition.Result> compute=()->{
+            int anchor=SketchPosition.anchorOf(source,point.getSelectedItemPosition());boolean canLock=lock.isChecked()&&SketchPosition.lockable(source,anchor);
+            return SketchPosition.place(project.sketch,project.coincidences,source.id,anchor,pointRef?refKey:null,Math.max(0,refPoint),parseCoordinate(fx),parseCoordinate(fy),canLock,canLock);
+        };
+        point.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
+            boolean first=true;
+            public void onItemSelected(android.widget.AdapterView<?> parent,View v,int position,long rowId){
+                if(first){first=false;return;}
+                int anchor=SketchPosition.anchorOf(source,position);double[] o=SketchPosition.offset(project.sketch,source.id,anchor,pointRef?refKey:null,Math.max(0,refPoint));
+                fx.setText(Units.input(o[0],project.units));fy.setText(Units.input(o[1],project.units));
+                lock.setEnabled(SketchPosition.lockable(source,anchor));if(!lock.isEnabled())lock.setChecked(false);}
+            public void onNothingSelected(android.widget.AdapterView<?> parent){}});
+        new PropertyBuilder().setTitle("Położenie elementu").setView(form).setNegativeButton("Anuluj",(d,w)->{sketchGhost.clear();invalidate();}).setPositiveButton("Zastosuj",(d,w)->{
+            sketchGhost.clear();
+            try{SketchPosition.Result r=compute.get();
+                if(applySolvedSketch(r.sketch,r.links))operationMessage="Położenie: X "+formatMm(parseCoordinate(fx))+", Y "+formatMm(parseCoordinate(fy))+(r.added>0?" · wymiary sterujące widoczne na szkicu":"");}
+            catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+            invalidate();
+        }).show();
+        Runnable ghost=()->{sketchGhost.clear();try{showSolvedGhost(compute.get().sketch);}catch(IllegalArgumentException ignored){}invalidate();};
+        watchFields(form,ghost);
+    }
+    /** Reference pick of "Położenie": origin, a point, an element or a body edge (projected first). */
+    private void positionPickTap(float x,float y) {
+        String id=positionPickId;int choice=positionPickPoint;positionPickId=null;positionNext=false;
+        PointF origin=projectSketchPoint(0,0);
+        if(Math.hypot(x-origin.x,y-origin.y)<dp(18)){showSketchPosition(id,choice,null,0);return;}
+        SketchPrimitive best=null;int anchor=-1;double distance=dp(18);
+        for(SketchPrimitive p:project.sketch){if(p.id.equals(id)||!sketchEntityVisible(p))continue;
+            for(int i=0;i<SketchConstraints.anchorCount(p);i++){double[] a=SketchConstraints.anchor(p,i);PointF s=projectSketchPoint(a[0],a[1]);double d=Math.hypot(x-s.x,y-s.y);if(d<distance){distance=d;best=p;anchor=i;}}}
+        if(best!=null){showSketchPosition(id,choice,best.id,anchor);return;}
+        SketchPrimitive entity=findSketchAt(x,y);
+        if(entity!=null&&!entity.id.equals(id)){showSketchPosition(id,choice,entity.id,nearestAnchor(entity,x,y));return;}
+        // A body edge: project it into the sketch (fixed reference geometry), then use it.
+        int edge=-1;double edgeDistance=dp(18);
+        for(int i=0;i+15<projectionEdges.length;i+=16) {
+            double[] a=projectWorldPoint(projectionEdges[i+9],projectionEdges[i+10],projectionEdges[i+11]),b=projectWorldPoint(projectionEdges[i+12],projectionEdges[i+13],projectionEdges[i+14]);
+            double d=sketchScreenSegmentDistance(x,y,a[0],a[1],b[0],b[1]);if(d<edgeDistance){edgeDistance=d;edge=(int)projectionEdges[i+15];}
+        }
+        if(edge>=0) {
+            int before=project.sketch.size();java.util.Set<String> known=new java.util.HashSet<>();for(SketchPrimitive p:project.sketch)known.add(p.id);
+            applyProjection(java.util.Collections.singletonList(edge));
+            for(SketchPrimitive p:project.sketch)if(!known.contains(p.id)){showSketchPosition(id,choice,p.id,nearestAnchor(p,x,y));operationMessage="Zrzutowano krawędź bryły jako odniesienie";return;}
+            if(project.sketch.size()==before){
+                // Already projected earlier: use the matching sketch element.
+                SketchPrimitive again=findSketchAt(x,y);if(again!=null&&!again.id.equals(id)){showSketchPosition(id,choice,again.id,nearestAnchor(again,x,y));return;}
+            }
+            invalidate();return;
+        }
+        operationMessage="Nie wskazano odniesienia. Dotknij punktu, elementu, krawędzi bryły lub początku układu.";
+        positionPickId=id;positionPickPoint=choice;invalidate();
+    }
+    private int nearestAnchor(SketchPrimitive p,float x,float y) {
+        int best=-1;double distance=Double.POSITIVE_INFINITY;
+        for(int i=0;i<SketchConstraints.anchorCount(p);i++){double[] a=SketchConstraints.anchor(p,i);PointF s=projectSketchPoint(a[0],a[1]);double d=Math.hypot(x-s.x,y-s.y);if(d<distance){distance=d;best=i;}}
+        return best;
+    }
+    /** Exact B-Rep edges of the model for projection picking (same source as "Rzutuj"). */
+    private void loadProjectionEdges() {
+        String source=project.importedStep?importedSourceFile().getAbsolutePath():null;double radius=project.importedStep?0:project.filletRadius;
+        projectionEdges=NativeCadEngine.modelEdges(modelWidth,modelHeight,modelDepth,radius,evaluationBase(),kernelFeatures(),source);
+        projectionProperties=NativeCadEngine.edgeMeasurements(modelWidth,modelHeight,modelDepth,radius,evaluationBase(),kernelFeatures(),source);
+    }
+
     /** Adds driving X and Y position dimensions of the element's first point from the sketch origin. */
     private void addOriginPositionDimensions(SketchPrimitive source) {
         if(SketchConstraints.anchorCount(source)==0){operationMessage="Ten element nie ma punktu do zwymiarowania";invalidate();return;}
@@ -2318,7 +2496,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
         commitActiveFeature();
         SketchPrimitive created=SketchShapes.drag(UUID.randomUUID().toString(),type,x1,y1,x2,y2,project.polygonSides).withConstruction(project.drawingConstruction);
         project.sketch.add(created);
-        if(type.equals("Linia")){selectedSketchId=created.id;post(()->showSketchDimensionEditor(created));}
+        selectedSketchId=created.id;
+        if(type.equals("Linia"))post(()->showSketchDimensionEditor(created));
+        else operationMessage="Narysowano: "+sketchEntityName(created)+". Przytrzymaj go i przeciągnij, aby przesunąć; Położenie ustawi dokładne odległości.";
         project.featureProfileId = null;
         project.sketchExtruded = false;
         project.featureOperation = "none";
@@ -2459,6 +2639,13 @@ if (isInsideViewport(e.getX(), e.getY())) {
             operationMessage="Gotowe: usunięto fragment pomiędzy przecięciami. Możesz cofnąć zmianę.";
         } catch(IllegalArgumentException e){operationMessage=e.getMessage();}
         invalidate();
+    }
+
+    /** Outline first; otherwise the smallest closed entity whose interior was touched. */
+    private SketchPrimitive findSketchForMove(float sx,float sy) {
+        SketchPrimitive outline=findSketchAt(sx,sy);if(outline!=null)return outline;
+        double[] p=screenToSketch(sx,sy);
+        return SketchHit.smallestContaining(project.sketch,p[0],p[1],e->!sketchEntityVisible(e));
     }
 
     private SketchPrimitive findSketchAt(float sx, float sy) {
@@ -2853,6 +3040,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 }catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
             });
         }
+        labels.add(0,"Położenie (odległość / wyrównanie)…");actions.add(0,()->showSketchPosition(source.id,0,null,0));
         labels.add("Edytuj wymiary / kształt");actions.add(()->showSketchEntityEditor(source));
         if(SketchConstraints.anchorCount(source)>0){labels.add(source.type.equals("Okrąg")?"Wymiaruj położenie środka (X/Y od początku)":"Wymiaruj położenie punktu 1 (X/Y od początku)");actions.add(()->addOriginPositionDimensions(source));}
         labels.add("Usuń element");actions.add(()->deleteSketchEntity(source.id));
@@ -6960,10 +7148,16 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(inSketch()&&!SketchTransactions.active(project))beginSketchWork();
         boolean hadSketchPlane=inSketch() && sketchPlaneChosen;
         closePropertyEditor();
-        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;
+        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;positionPickId=null;positionNext=false;
         dimensionMode=false;
         coincidenceMode=false;coincidenceFirst=null;
         if(tool.equals("Przesuń szkic")||tool.equals("Obróć szkic")||tool.equals("Skaluj szkic")){mode="Edytuj szkic";showSketchTransform(tool);invalidate();return;}
+        if(tool.equals("Położenie")) {
+            mode="Edytuj szkic";SketchPrimitive chosen=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(selectedSketchId))chosen=p;
+            if(chosen!=null)showSketchPosition(chosen.id,0,null,0);
+            else{positionNext=true;operationMessage="Dotknij elementu, który chcesz ustawić";}
+            invalidate();return;
+        }
         if(tool.equals("Powiązania profilu")){showProfileDependencies();return;}
         if(tool.equals("Edytuj profil źródłowy")){editSourceProfile(selectedSourceProfile());return;}
 
@@ -7492,17 +7686,37 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 mode="Wybierz";showSolid=true;selectedSketchId=null;selectedFace=-1;
                 trimMode=dimensionMode=coincidenceMode=false;closePropertyEditor();
                 operationMessage="Zatwierdzono szkic i przebudowano bryłę";leaveSketchView();
-            }
+            } else showFinishFailure(operationMessage);
         }catch(RuntimeException error) {
-            operationMessage="Nie zatwierdzono: "+error.getMessage()+". Popraw szkic albo anuluj edycję.";
+            showFinishFailure("Nie zatwierdzono: "+error.getMessage());
         }
         invalidate();
     }
 
+    /** A sketch that cannot be finished never traps the user: return to it or discard its changes. */
+    private void showFinishFailure(String reason) {
+        String text=reason==null||reason.isEmpty()?"Nie można przebudować bryły z tym szkicem.":reason;
+        operationMessage=text;
+        android.widget.TextView info=new android.widget.TextView(getContext());info.setText(text+"\n\nBryła pozostaje bez zmian. Popraw szkic (np. domknij profil) albo odrzuć zmiany szkicu.");
+        new PropertyBuilder().setTitle("Nie zatwierdzono szkicu").setView(info)
+            .setNeutralButton("Odrzuć zmiany szkicu",(d,w)->cancelSketchWork())
+            .setPositiveButton("Wróć do szkicu",null).show();
+    }
+
     private void cancelSketchWork() {
         if(!SketchTransactions.active(project))return;
-        CadProject original=SketchTransactions.baseline(project);
-        if(!commitModelChange(() -> project=original)){invalidate();return;}
+        CadProject original;
+        try{original=SketchTransactions.baseline(project);}
+        catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();return;}
+        // While a sketch is edited the solid shown is already the baseline's (see updateNativeModel),
+        // so cancelling restores the document without rebuilding the model: instant and cannot fail.
+        try {
+            String snapshot=project.toJson().toString();
+            project=original;modelWidth=project.width;modelHeight=project.height;modelDepth=project.depth;
+            undoStack.push(snapshot);while(undoStack.size()>50)undoStack.removeLast();redoStack.clear();
+            projectRepository.save(project);
+        }catch(org.json.JSONException error){operationMessage="Nie anulowano: "+error.getMessage();invalidate();return;}
+        project.polylineDraft.clear();project.threePointDraft.clear();sketchGhost.clear();draggedSketch=dragPreview=null;dragSolvedPreview=null;positionPickId=null;
         arcDraft.clear();threePointPreview=null;polylinePreview=null;selectedSketchId=null;selectedFace=-1;
         trimMode=dimensionMode=coincidenceMode=false;mode="Wybierz";showSolid=true;
         closePropertyEditor();
@@ -7517,7 +7731,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     private void enterSketchEditor() {
         restoreSketchPlacement();
-        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;
+        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;positionPickId=null;positionNext=false;
         dimensionMode=false;
         coincidenceMode=false;coincidenceFirst=null;
         mode = "Edytuj szkic";

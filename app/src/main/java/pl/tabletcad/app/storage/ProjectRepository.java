@@ -143,6 +143,8 @@ public final class ProjectRepository {
                 File individual=projectFile(project.id);changes.put(individual,data);changes.put(document,data);
                 prepareBackup(individual,changes);prepareBackup(document,changes);return changes;
             });
+            File individual=projectFile(project.id);
+            remember(individual,validated.id);remember(document,validated.id);
         } catch (Exception error) {
             if(new File(folder,"save-transaction.bin").exists()) {
                 try{savePair.recover();}catch(IOException unresolved){recoveryFailure=unresolved;}
@@ -151,11 +153,19 @@ public final class ProjectRepository {
         }
     }
 
+    /** Files this repository wrote and verified itself: size, time and project id (skips re-parsing them on every save). */
+    private final Map<File,long[]> verifiedSize=new HashMap<>();private final Map<File,String> verifiedId=new HashMap<>();
+    private void remember(File file,String id){verifiedSize.put(file,new long[]{file.length(),file.lastModified()});verifiedId.put(file,id);}
+    private String knownId(File file) {
+        long[] known=verifiedSize.get(file);
+        return known!=null&&known[0]==file.length()&&known[1]==file.lastModified()?verifiedId.get(file):null;
+    }
     private void prepareBackup(File target,LinkedHashMap<File,byte[]> changes)throws IOException {
         if(target.exists()) {
             if(!target.isFile())throw new IOException("Document target is not a regular file");
-            CadProject previous=tryLoad(target);
-            boolean valid=previous!=null&&(target.equals(document)||target.equals(projectFile(previous.id)));
+            String id=knownId(target);
+            if(id==null){CadProject previous=tryLoad(target);id=previous==null?null:previous.id;}
+            boolean valid=id!=null&&(target.equals(document)||target.equals(projectFile(id)));
             File copy=valid?new File(target.getPath()+".bak")
                 :new File(folder,"unreadable-"+UUID.randomUUID()+".tcad");
             if(valid)changes.put(copy,Files.readAllBytes(target.toPath()));

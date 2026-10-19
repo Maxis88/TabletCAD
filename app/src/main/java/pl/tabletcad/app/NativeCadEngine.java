@@ -80,26 +80,26 @@ public final class NativeCadEngine {
     /** Segments: signature (start/mid/end xyz), segment endpoints xyz, edge index. */
     public static double[] modelEdges(double width,double height,double depth,double radius,
             double[] base,double[] features,String sourceStep) {
-        return LOADED ? nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,1) : new double[0];
+        return LOADED ? cached(width,height,depth,radius,base,features,sourceStep,1) : new double[0];
     }
 
     /** Signature xyz*3, exact length, circle radius, circle center xyz, kind (line/circle/other), edge index. */
     public static double[] edgeMeasurements(double width,double height,double depth,double radius,
             double[] base,double[] features,String sourceStep) {
-        return LOADED ? nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,2) : new double[0];
+        return LOADED ? cached(width,height,depth,radius,base,features,sourceStep,2) : new double[0];
     }
 
     /** Exact per-face analysis, stride 12: face (1-based), body, area, type (0 plane, 1 cylinder, 2 cone,
      *  3 sphere, 4 torus, 5 other), point xyz, direction xyz, radius, creating operation. */
     public static double[] faceAnalysis(double width,double height,double depth,double radius,
             double[] base,double[] features,String sourceStep) {
-        return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,10):new double[0];
+        return LOADED?cached(width,height,depth,radius,base,features,sourceStep,10):new double[0];
     }
 
     /** Per body, stride 16: id, volume, centroid xyz, inertia about the centroid for unit density (Ixx Iyy Izz Ixy Ixz Iyz,
      *  mm^5), principal moments (mm^5), area, 0. */
     public static double[] bodyInertia(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep) {
-        return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,11):new double[0];
+        return LOADED?cached(width,height,depth,radius,base,features,sourceStep,11):new double[0];
     }
     /** Minimum distance between bodies a and b: distance, closest point on a xyz, on b xyz, overlap volume. */
     public static double[] bodyDistance(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep,int a,int b) {
@@ -118,11 +118,11 @@ public final class NativeCadEngine {
     /** Exact OCCT volume, area, centroid XYZ, solid count and face count (mm units). */
     public static double[] bodyProperties(double width,double height,double depth,double radius,
             double[] base,double[] features,String sourceStep) {
-        return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,3):new double[0];
+        return LOADED?cached(width,height,depth,radius,base,features,sourceStep,3):new double[0];
     }
 
     public static double[] evaluateModel(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep) {
-        return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,8):new double[0];
+        return LOADED?cached(width,height,depth,radius,base,features,sourceStep,8):new double[0];
     }
     /** Kernel failure with the index of the failing history record (-1 base body, -2 output stage). */
     public static final class KernelException extends IllegalArgumentException {
@@ -163,9 +163,13 @@ public final class NativeCadEngine {
     private static native void nativeSetSectionPlane(double[] plane);
 
     public static double[] faceOrigins(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep) {
-        return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,6):new double[0];
+        return LOADED?cached(width,height,depth,radius,base,features,sourceStep,6):new double[0];
     }
 
+    /** Pure query modes (no export file, no thread-local arguments) go through the memo. */
+    private static double[] cached(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep,int mode) {
+        return KernelCache.get(mode,width,height,depth,radius,base,features,sourceStep,()->nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,mode));
+    }
     private static native double[] nativeEvaluateFeatures(double width, double height,
         double depth, double radius, double[] base, double[] features, String exportPath,
         String sourceStep, int queryMode);

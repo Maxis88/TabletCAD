@@ -20,7 +20,7 @@ public final class WorkspaceInstrumentation extends Instrumentation {
                 try {Class.forName(name).getMethod("main",String[].class).invoke(null,(Object)new String[]{scratch.getAbsolutePath()});}
                 finally {scratch.delete();}
             }
-            for(String name:new String[]{"WorkspaceUiProbe","InteractionFixProbe","ViewCameraProbe","SketchOffsetUiProbe","LibraryAuditProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe","TabletFlowProbe","CadScenarioProbe","ThreadRenderProbe","ContextPanelsUiProbe","CadToolsUiProbe"}) {
+            for(String name:new String[]{"WorkspaceUiProbe","InteractionFixProbe","ViewCameraProbe","SketchOffsetUiProbe","LibraryAuditProbe","ExtrusionManipulatorProbe","EdgeGroupUiProbe","RecoveryUiProbe","TabletFlowProbe","CadScenarioProbe","ThreadRenderProbe","ContextPanelsUiProbe","CadToolsUiProbe","SketchMoveUiProbe"}) {
                 if(onlyProbe!=null&&!onlyProbe.equals(name))continue;executed++;
                 Runnable execute=()-> {
                     try {

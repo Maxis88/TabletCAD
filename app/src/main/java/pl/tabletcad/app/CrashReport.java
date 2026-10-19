@@ -24,6 +24,20 @@ public final class CrashReport {
             if(previous!=null)previous.uncaughtException(thread,error);
         });
     }
+    /** Non-fatal error caught by the workspace: appended (last ~64 KB kept) to tabletcad-error.txt. */
+    public static void note(Context context,String where,Throwable error) {
+        try {
+            StringWriter text=new StringWriter();PrintWriter out=new PrintWriter(text);
+            out.println("---- "+new java.util.Date()+" · "+where);error.printStackTrace(out);out.flush();
+            byte[] data=text.toString().getBytes(StandardCharsets.UTF_8);
+            Context app=context.getApplicationContext();
+            for(File dir:new File[]{app.getExternalFilesDir(null),app.getFilesDir()})if(dir!=null) {
+                File file=new File(dir,"tabletcad-error.txt");if(file.length()>64*1024)file.delete();
+                try(FileOutputStream f=new FileOutputStream(file,true)){f.write(data);}
+            }
+        }catch(Throwable ignored){}
+        android.util.Log.e("TabletCAD",where,error);
+    }
     /** Text of a report written after the given time, or null. */
     public static String pending(Context context,long seenAt) {
         File file=new File(context.getFilesDir(),NAME);if(!file.isFile()||file.lastModified()<=seenAt)return null;
