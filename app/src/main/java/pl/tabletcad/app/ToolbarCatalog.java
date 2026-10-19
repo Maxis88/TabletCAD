@@ -20,7 +20,7 @@ public final class ToolbarCatalog {
             new Group("Przytnij","Przytnij","Przytnij","Przedłuż","Zaokrąglij szkic"),
             new Group("Więzy","Więzy","Więzy","Wymiar"),
             new Group("Usuń","Usuń","Usuń","Wyczyść szkic"),
-            new Group("Widok","Obróć widok","Obróć widok","Widok na szkic","Ukryj bryłę","Wymiary","Dopasuj"),
+            new Group("Widok","Obróć widok","Obróć widok","Widok na szkic","Bryła","Bryła z liniami niewidocznymi","Przekrój","Ukryj bryłę","Wymiary","Dopasuj"),
             new Group("Anuluj szkic","Anuluj szkic","Anuluj szkic"),
             new Group("Zakończ","Zakończ","Zakończ")
         }:new Group[]{
@@ -33,7 +33,7 @@ public final class ToolbarCatalog {
             new Group("Złożenie","Komponent","Nowy komponent","Wstaw wystąpienie","Dosuń ściany","Kolizje","Lista części"),
             new Group("Konstrukcja","Elementy konstrukcyjne","Płaszczyzna odsunięta","Płaszczyzna pod kątem","Płaszczyzna przez 3 punkty","Oś konstrukcyjna","Punkt konstrukcyjny"),
             new Group("Pomiary","Zmierz","Zmierz","Zmierz kąt","Pole ściany","Właściwości bryły","Odległość brył","Nawisy","Rysunek"),
-            new Group("Widok","Dopasuj","Dopasuj","Izometryczny","Przód","Góra","Prawy bok","Rzut prostokątny","Cieniowanie","Krawędzie","Przezroczystość","Przekrój","Wyczyść widok")
+            new Group("Widok","Dopasuj","Dopasuj","Izometryczny","Przód","Góra","Prawy bok","Rzut prostokątny","Bryła","Bryła z liniami niewidocznymi","Krawędzie","Przezroczystość","Przekrój","Wyczyść widok")
         };
     }
     public static boolean allows(boolean sketch,String command) {

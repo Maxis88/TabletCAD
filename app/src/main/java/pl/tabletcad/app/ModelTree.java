@@ -63,14 +63,19 @@ public final class ModelTree {
         if(!collapsed.contains(body))result.addAll(sketches);
     }
     public static CadProject display(CadProject model,Row row) {
+        return display(model,row,null);
+    }
+    public static CadProject display(CadProject model,Row row,String onlyEntity) {
         try {
-            CadProject display=CadProject.blank();display.restoreSketch(row.snapshot);display.sketch.removeIf(p->!row.entities.contains(p.id));
+            CadProject display=CadProject.blank();display.restoreSketch(row.snapshot);display.sketch.removeIf(p->!row.entities.contains(p.id)||onlyEntity!=null&&!p.id.equals(onlyEntity));
             for(int i=0;i<display.sketch.size();i++) {
                 SketchPrimitive p=display.sketch.get(i);
                 if(p.id.equals(model.featureBaseProfileId)&&model.featureBase!=null)p=p.restoreFeature(model.featureBase,1,7);
                 for(int j=0;j<model.committedProfileIds.size();j++)if(p.id.equals(model.committedProfileIds.get(j)))p=p.restoreFeature(model.committedFeatures.get(j),2,16);
                 display.sketch.set(i,p);
-            }return display;
+            }
+            if(!display.sketch.isEmpty())SketchPlacement.frame(display,SketchPlacement.of(model,display.sketch.get(0).id,row.body));
+            return display;
         }catch(JSONException error){throw new IllegalArgumentException("Nie można odtworzyć widoku szkicu",error);}
     }
 }

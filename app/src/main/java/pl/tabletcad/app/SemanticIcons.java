@@ -6,6 +6,8 @@ import android.graphics.*;
 public final class SemanticIcons {
     private SemanticIcons() {}
     public static boolean draw(Canvas canvas,String id,float x,float y,float scale,int color) {
+        if(id.equals("Bryła"))id="Cieniowanie";
+        else if(id.equals("Bryła z liniami niewidocznymi"))id="Krawędzie";
         if(drawConstruction(canvas,id,x,y,scale,color)||drawView(canvas,id,x,y,scale,color)||drawSolidCopy(canvas,id,x,y,scale,color))return true;
         if(id.equals("Zmierz kąt"))id="Kąt";
         if(!java.util.Arrays.asList("Splajn","Wielokąt","Kwadrat","Prostokąt od środka","Zaokrąglij szkic","Wymiary","Wyciągnij","Wytnij","Wycięcie","Połączenie","Dodanie","Nowa bryła","Część wspólna","Gwint","Kąt").contains(id))return false;

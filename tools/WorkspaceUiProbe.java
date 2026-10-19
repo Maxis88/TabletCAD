@@ -59,7 +59,7 @@ public final class WorkspaceUiProbe {
         check(!visible(view)&&result(view,"viewportRight")==2200,"idle model uses full width without property sidebar");
         Method inside=CadWorkspaceView.class.getDeclaredMethod("isInsideViewport",float.class,float.class);inside.setAccessible(true);
         check((boolean)inside.invoke(view,2190f,500f),"freed right region accepts model gestures");
-        set(view,"mode","Edytuj szkic");check(visible(view)&&Math.abs(result(view,"viewportRight")-(2200-252*density))<.01,"sketch context reserves panel width");
+        set(view,"mode","Edytuj szkic");check(visible(view)&&Math.abs(result(view,"viewportRight")-(2200-272*density))<.01,"sketch context reserves panel width");
         check(!(boolean)inside.invoke(view,2190f,500f),"sketch panel excluded from geometry hit-testing");set(view,"mode","Wybierz");
         CadProject project=(CadProject)field(view,"project");for(int i=0;i<30;i++) {
             project.committedFeatures.add(new double[]{0,0,0,0,5,5,i+1,0,0,32,1,0,0,0,1,0});project.committedProfileIds.add("");
@@ -111,7 +111,7 @@ public final class WorkspaceUiProbe {
         check(draft.sketch.size()==1&&SketchSpline.is(draft.sketch.get(0)),"gesture produces spline rather than straight lines");
         sketchView.draw(sketchCanvas);call(sketchView,"finishSketchWork");check(!SketchTransactions.active((CadProject)field(sketchView,"project")),"spline sketch commits successfully");
         check(SketchSpline.is(new ProjectRepository(sketchRoot).loadOrCreate().sketch.get(0)),"spline survives actual autosave reload");
-        call(sketchView,"showProjectMenu");View editor=(View)field(sketchView,"propertyEditor");check(editor.getLayoutParams().height<1400-110*density,"short property panel fits content");call(sketchView,"closePropertyEditor");
+        call(sketchView,"showProjectMenu");View editor=(View)field(sketchView,"propertyEditor");check(Math.abs(editor.getLayoutParams().height-(result(sketchView,"timelineTop")-result(sketchView,"viewTop")))<1,"property shell fills column above history");call(sketchView,"closePropertyEditor");
         sketchView.draw(sketchCanvas);int sketchRow=-1;List<?> treeRows=(List<?>)field(sketchView,"modelTreeRows");
         for(int i=0;i<treeRows.size();i++)if(((ModelTree.Row)treeRows.get(i)).sketch())sketchRow=i;check(sketchRow>=0,"tree lists the committed sketch");
         java.lang.reflect.Method rowY=CadWorkspaceView.class.getDeclaredMethod("treeRowCenterY",int.class);rowY.setAccessible(true);

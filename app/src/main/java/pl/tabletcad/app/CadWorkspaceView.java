@@ -43,9 +43,11 @@ import pl.tabletcad.app.storage.ProjectRepository;
  */
 public final class CadWorkspaceView extends View {
     private int bottomSystemInset;
+    private int keyboardInset;
 
     @Override public WindowInsets onApplyWindowInsets(WindowInsets insets) {
         bottomSystemInset = insets.getInsets(WindowInsets.Type.navigationBars()).bottom;
+        keyboardInset=insets.getInsets(WindowInsets.Type.ime()).bottom;
         layoutPropertyEditor();
         invalidate();
         return super.onApplyWindowInsets(insets);
@@ -124,9 +126,12 @@ public final class CadWorkspaceView extends View {
     private double modelWidth = 80.0;
     private double modelHeight = 48.0;
     private double modelDepth = 32.0;
+    /** World-space camera pivot; geometry bounds below are tracked separately. */
     private double meshCenterX;
     private double meshCenterY;
     private double meshCenterZ;
+    private double modelCenterX,modelCenterY,modelCenterZ;
+    private boolean cameraAnchorSet;
     private RectF sketchRect;
     private float sketchStartX;
     private float sketchStartY;
@@ -152,12 +157,15 @@ public final class CadWorkspaceView extends View {
     /** Back-facing triangles, collected only for the edge and transparent display modes. */
     private final List<ProjectedTriangle> backTriangles = new ArrayList<>();
     /** View-only display style; never changes the document or the B-Rep. */
-    private static final int DISPLAY_SHADED=0,DISPLAY_EDGES=1,DISPLAY_TRANSPARENT=2;
+    private static final int DISPLAY_SHADED=0,DISPLAY_EDGES=1,DISPLAY_TRANSPARENT=2,DISPLAY_HIDDEN=3;
     private int displayMode=DISPLAY_SHADED;
     /** 3D printing view: faces that need supports (steeper than the project overhang angle, not on the bed) are red. */
     private boolean overhangView;
     /** View-only section plane (point xyz, normal xyz) and its OCCT result for the current mesh. */
-    private double[] sectionPlane;private CadModelResult sectionResult;private double[] sectionSource;private GeometryPreviewWorker sectionWorker;
+    private volatile double[] sectionPlane;private CadModelResult sectionResult;private double[] sectionSource;private GeometryPreviewWorker sectionWorker;
+    private java.util.concurrent.Callable<double[]> lastPreviewQuery;
+    private java.util.function.Consumer<double[]> lastPreviewDisplay;
+    private Runnable previewControlsRefresh;
     private boolean showingSection(){return sectionPlane!=null&&sectionResult!=null&&featurePreview==null;}
     private final List<HiddenLineVisibility.Triangle> depthSurfaces = new HiddenLineVisibility.Index();
     private DisplayMeshTopology displayTopology;
@@ -177,6 +185,9 @@ public final class CadWorkspaceView extends View {
     private float workCenterX;
     private float workCenterY;
     private String selectedSketchId;
+    private int editingSketchBody;
+    private double[] editingSketchPlacement=SketchPlacement.identity();
+    private boolean displayingTreeSketch;
     private SketchPrimitive draggedSketch, dragPreview;
     private List<SketchPrimitive> dragSolvedPreview;
     private double dragStartU, dragStartV;
@@ -196,8 +207,12 @@ public final class CadWorkspaceView extends View {
     private boolean polylineTouch;
     private double[] polylinePreview;
     private android.widget.ScrollView propertyEditor;
+    private android.widget.ScrollView contextEditor;
+    private String contextPanelKey="";
+    private boolean contextPanelPosted;
     private android.app.AlertDialog projectChooser;
     private double[] featurePreview;
+    private CadProject featurePreviewDocument;
     private double[] filletEdges=new double[0];
     private final java.util.Map<Integer,Integer> filletSelections=new java.util.LinkedHashMap<>();
     private Runnable filletSelectionChanged;
@@ -234,6 +249,7 @@ public final class CadWorkspaceView extends View {
     private EditText extrusionDimension;
     private android.widget.CheckBox extrusionReverse,extrusionSymmetric;
     private double[] extrusionOrigin,extrusionAxis;
+    private double extrusionWorldScale=1;
     private PointF extrusionHandle;
     private final RectF extrusionValueBounds=new RectF();
     private Runnable extrusionPreview;
@@ -248,10 +264,11 @@ public final class CadWorkspaceView extends View {
         return propertyEditor != null || inSketch() || mode.equals("Zmierz") || mode.equals("Rysunek");
     }
 
-    private float viewportRight() { return getWidth() - (propertyEditor!=null ? dp(PANEL_DP) : propertiesVisible() ? dp(252) : 0); }
+    private float viewportRight() { return getWidth() - (propertiesVisible() ? dp(PANEL_DP) : 0); }
 
     /** History is application chrome, independent of either side panel. */
     private float timelineTop() { return getHeight() - dp(62) - bottomSystemInset; }
+    private float panelBottom(){return Math.min(timelineTop(),getHeight()-keyboardInset);}
 
     @Override protected void onSizeChanged(int w,int h,int oldw,int oldh) {
         super.onSizeChanged(w,h,oldw,oldh);
@@ -260,12 +277,13 @@ public final class CadWorkspaceView extends View {
 
     /** Keep native panels above history after rotation, keyboard or system-bar changes. */
     private void layoutPropertyEditor() {
+        if(contextEditor!=null&&contextEditor.getLayoutParams() instanceof android.widget.FrameLayout.LayoutParams) {
+            android.widget.FrameLayout.LayoutParams cp=(android.widget.FrameLayout.LayoutParams)contextEditor.getLayoutParams();
+            cp.height=Math.max(0,(int)(panelBottom()-viewTop()));contextEditor.setLayoutParams(cp);
+        }
         if(propertyEditor==null||propertyEditor.getChildCount()==0)return;
-        View body=propertyEditor.getChildAt(0);
-        body.measure(MeasureSpec.makeMeasureSpec((int)dp(PANEL_DP),MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(0,MeasureSpec.UNSPECIFIED));
         android.widget.FrameLayout.LayoutParams p=(android.widget.FrameLayout.LayoutParams)propertyEditor.getLayoutParams();
-        int height=Math.min(body.getMeasuredHeight(),Math.max(0,(int)(timelineTop()-viewTop())));
+        int height=Math.max(0,(int)(panelBottom()-viewTop()));
         if(p.height!=height){p.height=height;propertyEditor.setLayoutParams(p);}
     }
 
@@ -322,14 +340,16 @@ public final class CadWorkspaceView extends View {
     }
 
     private void closePropertyEditor() {
-        panelDismiss=null;
+        panelDismiss=null;panelConfirm=null;
+        lastPreviewQuery=null;lastPreviewDisplay=null;
+        previewControlsRefresh=null;removeCallbacks(sectionRefresh);
         showExtrusionSketch=false;extrusionSelectionChanged=null;extrusionFacePick=null;
         invalidateGeometryPreview();
         removeCallbacks(extrusionPreviewTask);extrusionPreviewScheduled=false;
         extrusionDimension=null;extrusionReverse=extrusionSymmetric=null;
         extrusionOrigin=extrusionAxis=null;extrusionHandle=null;extrusionPreview=null;
         extrusionTouch=false;extrusionValueBounds.setEmpty();
-        featurePreview=null;sketchGhost.clear();datumGhost=null;datumFaceListener=null;
+        featurePreview=null;featurePreviewDocument=null;sketchGhost.clear();datumGhost=null;datumFaceListener=null;
         measurementOutput=null;
         filletEdges=new double[0];filletSelections.clear();filletSelectionChanged=null;
         if(propertyEditor!=null) {
@@ -384,17 +404,21 @@ public final class CadWorkspaceView extends View {
             final int dismiss=negative;
             Runnable close=()->{closePropertyEditor();if(dismiss>=0&&actions.get(dismiss)!=null)actions.get(dismiss).onClick(null,dismiss);invalidate();};
             body.addView(PanelStyle.header(c,title,close));
-            if(content!=null){PanelStyle.form(content);body.addView(content,PanelStyle.spaced(c,4));}
+            LinearLayout contents=new LinearLayout(c);contents.setOrientation(LinearLayout.VERTICAL);contents.setTag("panel-content");
+            android.widget.ScrollView scroll=new android.widget.ScrollView(c);scroll.setFillViewport(false);scroll.setClipToPadding(false);
+            scroll.setPadding(0,0,0,(int)dp(12));scroll.addView(contents);
+            body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+            if(content!=null){PanelStyle.form(content);contents.addView(content,PanelStyle.spaced(c,4));}
             if(items!=null) {
                 // Long menus of short commands (e.g. constraints) use two columns to stay within the screen.
-                boolean grid=items.length>7;for(String item:items)if(item.length()>26)grid=false;
+                boolean grid=false;
                 LinearLayout pair=null;
                 for(int i=0;i<items.length;i++) {
                     final int index=i;android.widget.Button button=new android.widget.Button(c);
                     button.setText(items[i]);PanelStyle.row(button);
                     button.setOnClickListener(v->{closePropertyEditor();itemAction.onClick(null,index);invalidate();});
-                    if(!grid){body.addView(button,PanelStyle.spaced(c,i==0?8:6));continue;}
-                    if(i%2==0){pair=new LinearLayout(c);pair.setOrientation(LinearLayout.HORIZONTAL);body.addView(pair,PanelStyle.spaced(c,i==0?8:6));}
+                    if(!grid){contents.addView(button,PanelStyle.spaced(c,i==0?8:6));continue;}
+                    if(i%2==0){pair=new LinearLayout(c);pair.setOrientation(LinearLayout.HORIZONTAL);contents.addView(pair,PanelStyle.spaced(c,i==0?8:6));}
                     button.setTextSize(13);button.setPadding((int)dp(10),0,(int)dp(6),0);
                     LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1);if(i%2==0)p.rightMargin=(int)dp(6);pair.addView(button,p);
                     if(i%2==0&&i==items.length-1){View filler=new View(c);pair.addView(filler,new LinearLayout.LayoutParams(0,1,1));}
@@ -404,7 +428,7 @@ public final class CadWorkspaceView extends View {
             // A menu of items closes with ✕; a separate "Zamknij" without an action would only repeat it.
             if(items!=null&&positive<0&&negative>=0&&actions.get(negative)==null&&labels.size()==1&&labels.get(negative).equals("Zamknij"))negative=-2;
             // Additional actions (Do powierzchni…, Usuń, Edytuj profil…) full width, then Anuluj | main action side by side.
-            for(int i=0;i<labels.size();i++)if(i!=positive&&i!=negative&&negative!=-2)body.addView(action(i),PanelStyle.spaced(c,8));
+            for(int i=0;i<labels.size();i++)if(i!=positive&&i!=negative&&negative!=-2)contents.addView(action(i),PanelStyle.spaced(c,8));
             if(positive>=0||negative>=0) {
                 LinearLayout footer=new LinearLayout(c);footer.setOrientation(LinearLayout.HORIZONTAL);
                 if(negative>=0){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1);if(positive>=0)p.rightMargin=(int)dp(8);footer.addView(action(negative),p);}
@@ -424,12 +448,13 @@ public final class CadWorkspaceView extends View {
                         confirm.performClick();return true;});
                 }
             }
-            propertyEditor=new android.widget.ScrollView(c);propertyEditor.setFillViewport(false);
+            panelConfirm=positiveButton;
+            propertyEditor=new android.widget.ScrollView(c);propertyEditor.setFillViewport(true);
             propertyEditor.addView(body);propertyEditor.setElevation(dp(6));
             body.measure(View.MeasureSpec.makeMeasureSpec((int)dp(PANEL_DP),View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
             android.widget.FrameLayout.LayoutParams layout=new android.widget.FrameLayout.LayoutParams(
-                (int)dp(PANEL_DP),Math.min(body.getMeasuredHeight(),Math.max(0,(int)(timelineTop()-viewTop()))));
+                (int)dp(PANEL_DP),Math.max(0,(int)(panelBottom()-viewTop())));
             layout.gravity=android.view.Gravity.TOP|android.view.Gravity.RIGHT;layout.topMargin=(int)viewTop();
             ((android.widget.FrameLayout)getParent()).addView(propertyEditor,layout);
             panelDismiss=close;
@@ -437,6 +462,7 @@ public final class CadWorkspaceView extends View {
     }
     /** Dismiss action of the open panel (✕, Anuluj or the system back gesture). */
     private Runnable panelDismiss;
+    private android.widget.Button panelConfirm;
     /**
      * System back: closes the tool menu, then the open panel (like Anuluj), then leaves the active tool.
      * Returns false when there is nothing to close, so the activity can handle back itself.
@@ -512,15 +538,6 @@ public final class CadWorkspaceView extends View {
                         ||(e.getY()<topBar()&&e.getX()>getWidth()-dp(330)))) {
                     showPolylineActions(null);return true;
                 }
-                if(mode.equals("Szkic")&&(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn"))&&sketchPlaneChosen
-                        && e.getX()>getWidth()-dp(234)&&e.getY()>topBar()&&e.getY()<timelineTop()) {
-                    float y=e.getY()+propertiesShift();
-                    if(y>=dp(374)&&y<=dp(422))finishPolyline(true);
-                    else if(y>=dp(432)&&y<=dp(480))finishPolyline(false);
-                    else if(y>=dp(490)&&y<=dp(538))removePolylinePoint();
-                    else if(y>=dp(548)&&y<=dp(596))cancelPolyline();
-                    return true;
-                }
                 if(e.getX()<leftWidth() || e.getY()>getHeight()-dp(68)-bottomSystemInset) closePropertyEditor();
                 float historyY = timelineTop();
                 if (e.getX() >= 0 && e.getX() <= dp(104) && e.getY() >= historyY) {
@@ -587,13 +604,7 @@ public final class CadWorkspaceView extends View {
                 if(selectionChipTap(e.getX(),e.getY()))return true;
 
                 
-if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234)) {
-                    float py=e.getY()+propertiesShift();
-                    if (py >= dp(374) && py <= dp(426)) chooseSketchPlane("XY");
-                    else if (py >= dp(432) && py <= dp(484)) chooseSketchPlane("XZ");
-                    else if (py >= dp(490) && py <= dp(542)) chooseSketchPlane("YZ");
-                    else if (py >= dp(548) && py <= dp(600) && !datumsOf(Datum.PLANE).isEmpty()) showDatumPlanePicker();
-                } else if (isInsideViewport(e.getX(), e.getY())) {
+if (isInsideViewport(e.getX(), e.getY())) {
                     if(mode.equals("Profile wyciągnięcia")){if(extrusionFacePick!=null)pickExtrusionFace(e.getX(),e.getY());else toggleExtrusionProfile(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchOrbit)return true;
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&(sketchTool.equals("Okrąg 3 pkt")||sketchTool.equals("Szczelina")||sketchTool.equals("Elipsa"))){threePointTap(e.getX(),e.getY());return true;}
@@ -708,7 +719,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     private void applyZoom(float factor,float focusX,float focusY) {
         if(!Float.isFinite(factor)||factor<=0)return;
         float next=Math.max(.02f,Math.min(200f,zoom*factor)),ratio=next/zoom;
-        float cx=(leftWidth()+viewportRight())/2,cy=(viewTop()+getHeight()-dp(68)-bottomSystemInset)/2;
+        float cx=(dp(224)+getWidth())/2,cy=(viewTop()+getHeight()-dp(68)-bottomSystemInset)/2;
         panX=focusX-cx-ratio*(focusX-cx-panX);panY=focusY-cy-ratio*(focusY-cy-panY);zoom=next;
     }
 
@@ -901,34 +912,35 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         super.onDraw(canvas);
         dimensionHits.clear();
         scheduleToolbarUpdate();
+        scheduleContextPanel();
         float left = leftWidth();
         float right = viewportRight();
         float top = viewTop();
         float bottom = getHeight() - dp(68) - bottomSystemInset;
-        workCenterX = (left + right) / 2f + panX;
+        workCenterX = (dp(224) + getWidth()) / 2f + panX;
         workCenterY = (top + bottom) / 2f + panY;
 
         drawTopBar(canvas);
         if(propertyEditor!=null){paint.setStyle(Paint.Style.FILL);paint.setColor(PANEL);canvas.drawRect(right,topBar(),getWidth(),getHeight(),paint);paint.setColor(DIVIDER);canvas.drawRect(right,topBar(),right+dp(1),getHeight(),paint);}
         modelTreeRows=ModelTree.rows(project,collapsedBodies);
         drawLeftPanel(canvas, left, top, bottom);
-        if(propertiesVisible() && propertyEditor==null)drawProperties(canvas, right, top, bottom);
+
         canvas.save();
         canvas.clipRect(left, top, right, bottom);
         drawGrid(canvas, left, top, right, bottom);
         if (mode.equals("Rysunek")) {
             drawTechnicalViews(canvas, left, top, right, bottom);
         } else {
-            if (showSolid || !inSketch()) drawNativeSolid(canvas, (left + right) / 2f + panX, (top + bottom) / 2f + panY);
+            if (showSolid || !inSketch()) drawNativeSolid(canvas, workCenterX, workCenterY);
             if (!inSketch() || !sketchPlaneChosen) drawDatums(canvas);
-            if(inSketch()||showExtrusionSketch){if(sketchVisible)drawSketch(canvas,left,right);}
+            if(inSketch()){if(sketchVisible)drawSketch(canvas,left,right);}
             else drawVisibleTreeSketches(canvas);
             if (mode.equals("Zmierz")) drawDimensions(canvas, left, top, right, bottom);
         }
         if(!mode.equals("Rysunek")) drawAxis(canvas, right - dp(70), bottom - dp(60));
         drawExtrusionManipulator(canvas,left,top,right,bottom);
         drawFieldHandle(canvas,left,top,right,bottom);
-        if(!propertiesVisible()&&!operationMessage.isEmpty()&&messageFresh())drawViewportMessage(canvas,left,right,bottom);
+        if(!operationMessage.isEmpty()&&messageFresh())drawViewportMessage(canvas,left,right,bottom);
         drawSelectionBar(canvas,left,top,right);
         if(inSketch()&&!mode.equals("Rysunek")){drawProjectionEdges(canvas);drawConstraintStatus(canvas,left,bottom);}
         canvas.restore();
@@ -963,7 +975,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     /** Display toggles are always "on" in some variant; they do not mark their group as the active tool. */
-    private static final java.util.Set<String> DISPLAY_STATES=new java.util.HashSet<>(java.util.Arrays.asList("Cieniowanie","Krawędzie","Przezroczystość","Rzut prostokątny","Nawisy","Ukryj bryłę","Wymiary"));
+    private static final java.util.Set<String> DISPLAY_STATES=new java.util.HashSet<>(java.util.Arrays.asList("Cieniowanie","Bryła","Bryła z liniami niewidocznymi","Krawędzie","Przezroczystość","Rzut prostokątny","Nawisy","Ukryj bryłę","Wymiary"));
     private boolean groupActive(ToolbarCatalog.Group group) {
         for(String command:group.commands())if(!DISPLAY_STATES.contains(command)&&isToolActive(command))return true;
         return false;
@@ -1215,6 +1227,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
     private void editTreeSketch(ModelTree.Row row) {
         if(SketchTransactions.active(project)){finishSketchWork();if(SketchTransactions.active(project))return;}
+        editingSketchBody=row.body;
+        editingSketchPlacement=row.entities.isEmpty()?SketchPlacement.identity():SketchPlacement.of(project,row.entities.iterator().next(),row.body);
         if(project.sketchId.equals(row.sketchId)){enterSketchEditor();return;}
         if(commitModelChange(()->{
             preserveExtrudedBase();commitActiveFeature();
@@ -1256,13 +1270,18 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             // Prefer the highlighted sketch when several overlap.
             rows.sort((a,b)->Boolean.compare(!a.key.equals(selectedTreeKey),!b.key.equals(selectedTreeKey)));
             for(ModelTree.Row row:rows)if(row.sketch()&&(!model.hiddenSketchParts.contains(row.key)||row.key.equals(selectedTreeKey))) {
-                project=ModelTree.display(model,row);SketchPrimitive entity=findSketchAt(x,y);
-                if(entity!=null){hitRow=row;hitId=entity.id;break;}
+                displayingTreeSketch=true;
+                for(String id:row.entities) {
+                    project=ModelTree.display(model,row,id);SketchPrimitive entity=findSketchAt(x,y);
+                    if(entity!=null){hitRow=row;hitId=entity.id;break;}
+                }
+                if(hitRow!=null)break;
             }
         }catch(IllegalArgumentException ignored){return false;}
-        finally{project=model;}
+        finally{project=model;displayingTreeSketch=false;}
         if(hitRow==null)return false;
         selectedTreeKey=hitRow.key;editTreeSketch(hitRow);
+        editingSketchPlacement=SketchPlacement.of(project,hitId,hitRow.body);
         if(!inSketch()){invalidate();return true;}
         for(SketchPrimitive entity:project.sketch)if(entity.id.equals(hitId)){selectedSketchId=entity.id;showSketchEntityEditor(entity);break;}
         operationMessage="Edycja szkicu: "+hitRow.name+". Zakończ zatwierdza zmiany.";
@@ -1270,116 +1289,86 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private void drawVisibleTreeSketches(Canvas canvas) {
-        CadProject model=project;boolean previousHighlight=highlightSketch;
+        CadProject current=project,model=featurePreview!=null&&featurePreviewDocument!=null?featurePreviewDocument:project;boolean previousHighlight=highlightSketch;
         try {
             for(ModelTree.Row row:ModelTree.rows(model,java.util.Collections.emptySet()))if(row.sketch()&&(!model.hiddenSketchParts.contains(row.key)||row.key.equals(selectedTreeKey))) {
-                project=ModelTree.display(model,row);highlightSketch=row.key.equals(selectedTreeKey);
-                for(SketchPrimitive entity:project.sketch)drawSketchEntity(canvas,entity);
-            }
-        }finally {project=model;highlightSketch=previousHighlight;}
-    }
-
-    private void drawProperties(Canvas canvas, float right, float top, float bottom) {
-        paint.setColor(PANEL);
-        canvas.drawRect(right, topBar(), getWidth(), getHeight(), paint);
-        paint.setColor(DIVIDER);canvas.drawRect(right, topBar(), right+dp(1), getHeight(), paint);
-        canvas.save();canvas.translate(0,-propertiesShift());
-        try { drawPropertiesContent(canvas,right,bottom+propertiesShift()); } finally { canvas.restore(); }
-    }
-
-    /** The properties content keeps its original coordinates and is drawn shifted below the 64 dp bar. */
-    private float propertiesShift() { return dp(108) - topBar(); }
-
-    private void drawPropertiesContent(Canvas canvas, float right, float bottom) {
-        text(canvas, "WŁAŚCIWOŚCI", right + dp(18), dp(137), 12, MUTED, true);
-        if(!inSketch()&&!project.hasSolid()) {
-            text(canvas,"Pusty dokument",right+dp(18),dp(185),18,INK,true);
-            text(canvas,"Wybierz Szkic w górnym menu.",right+dp(18),dp(240),11,MUTED,false);
-            text(canvas,"Wskaż płaszczyznę, narysuj",right+dp(18),dp(264),11,MUTED,false);
-            text(canvas,"profil i wybierz Wyciągnij.",right+dp(18),dp(288),11,MUTED,false);
-            drawPanelMessage(canvas,right,dp(380));return;
-        }
-        if(inSketch()) {
-            text(canvas, sketchPlaneChosen ? "Szkic · "+sketchPlane : "Wybierz płaszczyznę",
-                right+dp(18),dp(185),16,INK,true);
-            if(!sketchPlaneChosen) {
-                text(canvas,"Dotknij płaskiej ściany bryły",right+dp(18),dp(230),11,MUTED,false);
-                pill(canvas,right+dp(18),dp(374),dp(202),dp(48),"Płaszczyzna XY",GRID,INK);
-                pill(canvas,right+dp(18),dp(432),dp(202),dp(48),"Płaszczyzna XZ",GRID,INK);
-                pill(canvas,right+dp(18),dp(490),dp(202),dp(48),"Płaszczyzna YZ",GRID,INK);
-                if(!datumsOf(Datum.PLANE).isEmpty())pill(canvas,right+dp(18),dp(548),dp(202),dp(48),"Konstrukcyjna…",GRID,INK);
-            } else {
-                if(mode.equals("Szkic")&&(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn"))) {
-                    labelValue(canvas,right,project.splineDraft?"Punkty splajnu":"Punkty polilinii",String.valueOf(project.polylineDraft.size()),dp(230));
-                    text(canvas,"Wskazuj kolejne punkty palcem.",right+dp(18),dp(330),11,MUTED,false);
-                    pill(canvas,right+dp(18),dp(374),dp(202),dp(48),project.splineDraft?"Zapisz splajn":"Zamknij obwód",ACCENT,Color.WHITE);
-                    pill(canvas,right+dp(18),dp(432),dp(202),dp(48),project.splineDraft?"Zapisz splajn":"Zapisz otwarty łańcuch",GRID,INK);
-                    pill(canvas,right+dp(18),dp(490),dp(202),dp(48),"Cofnij ostatni punkt",GRID,INK);
-                    pill(canvas,right+dp(18),dp(548),dp(202),dp(48),project.splineDraft?"Anuluj splajn":"Anuluj polilinię",GRID,INK);
-                    drawPanelMessage(canvas,right,dp(620));return;
+                displayingTreeSketch=true;highlightSketch=row.key.equals(selectedTreeKey);
+                for(String id:row.entities) {
+                    project=ModelTree.display(model,row,id);
+                    for(SketchPrimitive entity:project.sketch)drawSketchEntity(canvas,entity);
                 }
-                labelValue(canvas,right,"Narzędzie",coincidenceMode?constraintKind.equals("fixed")?"Unieruchom punkt":constraintKind.equals("horizontal")?"Poziomo":constraintKind.equals("vertical")?"Pionowo":"Połącz punkty":dimensionMode?"Wymiar sterujący":trimMode?"Przytnij fragment":mode.equals("Edytuj szkic")?"Zaznacz / przesuń":sketchTool,dp(220));
-                labelValue(canvas,right,"Elementy szkicu",String.valueOf(project.sketch.size()),dp(295));
-                text(canvas,"Przyciąganie: punkty, środki,",right+dp(18),dp(400),11,ACCENT,true);
-                text(canvas,"przecięcia i linie pomocnicze",right+dp(18),dp(422),11,ACCENT,false);
-                text(canvas,coincidenceMode?constraintKind.equals("coincident")?"Wskaż dwa punkty różnych":constraintKind.equals("fixed")?"Dotknij punktu do zablokowania.":"Dotknij odcinka lub boku konturu.":dimensionMode?"Dotknij elementu szkicu.":trimMode?"Dotknij zbędnego fragmentu":"Rysuj przeciągnięciem palca.",right+dp(18),dp(460),11,MUTED,false);
-                text(canvas,coincidenceMode?constraintKind.equals("coincident")?"elementów. Pierwszy zostaje,":"Więzy zostaną zapisane.":dimensionMode?"Ustaw wymiar w prawym panelu.":trimMode?"pomiędzy przecięciami.":"Edytuj: zaznacz, potem przesuń",right+dp(18),dp(482),11,MUTED,false);
-                text(canvas,coincidenceMode?constraintKind.equals("coincident")?"drugi zostanie dołączony.":"Usuwanie: Geometria → więzy.":dimensionMode?"Blokada zachowuje rozmiar.":trimMode?"Cofnij przywraca cały element.":"element lub jego uchwyt.",right+dp(18),dp(504),11,MUTED,false);
-                text(canvas,showSolid?"Bryła widoczna":"Bryła ukryta",right+dp(18),dp(544),11,MUTED,false);
             }
-            drawPanelMessage(canvas,right,dp(610));return;
-        }
-        text(canvas, mode.equals("Szkic") ? "Płaszczyzna szkicu"
-            : (mode.equals("Edytuj szkic") ? "Edycja szkicu"
-            : (project.importedMeshSource != null ? "Siatka STL" : project.importedStep ? "Zaimportowany STEP"
-            : (Revolve.is(project.featureBase)?"Obrót profilu":project.sketchExtruded ? "Wyciągnięcie szkicu" : "Wyciągnięcie 1"))),
-            right + dp(18), dp(191), 18, INK, true);
-        double shownDepth = project.featureOperation.equals("none") ? modelDepth : Math.abs(project.featureDepth);
-        if(project.importedMeshSource != null) {
-            labelValue(canvas,right,"Trójkąty",String.valueOf(nativeMesh.length/13),dp(226));
-            labelValue(canvas,right,"Typ modelu","Siatka STL",dp(290));
-        } else {
-        if(Revolve.is(project.featureBase)&&project.featureOperation.equals("none"))labelValue(canvas,right,"Kąt obrotu",String.format(java.util.Locale.US,"%.3f°",project.featureBase[6]),dp(226));
-        else labelValue(canvas, right, project.featureOperation.equals("cut") ? "Głębokość wycięcia"
-            : project.featureOperation.equals("add") ? "Wysokość dodania" : "Głębokość",
-            formatMm(shownDepth), dp(226));
-        String operationLabel = project.featureOperation.equals("cut") ? "Wytnij materiał"
-            : project.featureOperation.equals("add") ? "Dodaj materiał" : "Nowa bryła";
-        labelValue(canvas, right, "Operacja", operationLabel, dp(290));
-        }
-        if (mode.equals("Szkic")) {
-            text(canvas, sketchPlane, right + dp(18), dp(354), 12,
-                sketchPlaneChosen ? ACCENT : MUTED, true);
-            pill(canvas, right + dp(18), dp(374), dp(202), dp(48), "Płaszczyzna XY", Color.rgb(226, 232, 236), INK);
-            pill(canvas, right + dp(18), dp(432), dp(202), dp(48), "Płaszczyzna XZ", Color.rgb(226, 232, 236), INK);
-            pill(canvas, right + dp(18), dp(490), dp(202), dp(48), "Płaszczyzna YZ", Color.rgb(226, 232, 236), INK);
-            boolean datums=!datumsOf(Datum.PLANE).isEmpty();
-            if(datums)pill(canvas, right + dp(18), dp(548), dp(202), dp(48), "Konstrukcyjna…", Color.rgb(226, 232, 236), INK);
-            text(canvas, "lub dotknij płaskiej ściany bryły", right + dp(18), dp(datums?620:562), 10, MUTED, false);
-        } else if (mode.equals("Edytuj szkic")) {
-            text(canvas, selectedSketchId == null ? "Dotknij elementu szkicu" : "Wybrano element szkicu",
-                right + dp(18), dp(374), 12, selectedSketchId == null ? MUTED : ACCENT, true);
-            text(canvas, "Współrzędne można wpisać numerycznie.", right + dp(18), dp(400), 10, MUTED, false);
-        } else if (mode.equals("Zmierz")) {
-            text(canvas,"Zmierz: krawędź lub dwa punkty",right+dp(18),dp(374),11,MUTED,true);
-            text(canvas,"Ponownie wybierz ikonę Zmierz",right+dp(18),dp(398),11,MUTED,false);
-        } else {
-            labelValue(canvas, right, "Tryb", mode, dp(366));
-        }
-        if (!operationMessage.isEmpty()) drawPanelMessage(canvas,right,dp(614));
-        text(canvas, "RDZEŃ GEOMETRII", right + dp(18), bottom - dp(106), 11, MUTED, true);
-        text(canvas, kernelStatus, right + dp(18), bottom - dp(82), 12,
-            nativePrism.length == 24 ? ACCENT : Color.rgb(205, 65, 65), true);
-        text(canvas, modelInfo, right + dp(18), bottom - dp(60), 10, MUTED, false);
-        text(canvas, stepStatus, right + dp(18), bottom - dp(38), 10, MUTED, false);
+        }finally {project=current;highlightSketch=previousHighlight;displayingTreeSketch=false;}
     }
 
-    private void drawPanelMessage(Canvas canvas,float right,float y) {
-        android.text.TextPaint messagePaint=new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
-        messagePaint.setTextSize(dp(12));messagePaint.setColor(INK);
-        android.text.StaticLayout layout=android.text.StaticLayout.Builder.obtain(operationMessage,0,
-            operationMessage.length(),messagePaint,(int)dp(212)).build();
-        canvas.save();canvas.translate(right+dp(18),y);layout.draw(canvas);canvas.restore();
+    private void removeContextPanel() {
+        if(contextEditor!=null&&contextEditor.getParent() instanceof android.view.ViewGroup)
+            ((android.view.ViewGroup)contextEditor.getParent()).removeView(contextEditor);
+        contextEditor=null;contextPanelKey="";
+    }
+    private void contextText(LinearLayout parent,String text,boolean heading) {
+        android.widget.TextView label=new android.widget.TextView(getContext());label.setText(text);
+        label.setTextColor(heading?INK:MUTED);label.setTextSize(heading?16:14);
+        label.setLineSpacing(dp(3),1);if(heading)label.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        parent.addView(label,PanelStyle.spaced(getContext(),heading?16:8));
+    }
+    private void contextAction(LinearLayout parent,String label,boolean primary,Runnable action) {
+        android.widget.Button button=new android.widget.Button(getContext());button.setText(label);
+        if(primary)PanelStyle.primary(button);else PanelStyle.secondary(button);
+        button.setOnClickListener(v->{action.run();contextPanelKey="";invalidate();});
+        parent.addView(button,PanelStyle.spaced(getContext(),8));
+    }
+    /** Default tool contexts use the same native controls as parameter forms. */
+    private void scheduleContextPanel() {
+        String key=propertyEditor!=null||!propertiesVisible()?"":mode+"|"+sketchTool+"|"+sketchPlaneChosen+"|"+project.sketchId+"|"+project.sketch.size()+"|"+project.polylineDraft.size()+"|"+project.threePointDraft.size()+"|"+arcDraft.size()+"|"+coincidenceMode+"|"+constraintKind+"|"+trimMode+"|"+dimensionMode+"|"+projectionMode+"|"+displayMode+"|"+(sectionPlane!=null);
+        if(key.equals(contextPanelKey)||contextPanelPosted)return;
+        contextPanelPosted=true;post(()->{contextPanelPosted=false;if(!isAttachedToWindow()||!(getParent() instanceof android.widget.FrameLayout))return;
+            removeContextPanel();if(propertyEditor!=null||!propertiesVisible())return;
+            Context c=getContext();LinearLayout body=new LinearLayout(c);body.setOrientation(LinearLayout.VERTICAL);
+            body.setPadding((int)dp(14),(int)dp(6),(int)dp(14),(int)dp(14));body.setBackgroundColor(PANEL);
+            body.addView(PanelStyle.header(c,inSketch()?sketchPlaneChosen?"Szkic · "+sketchPlane:"Płaszczyzna szkicu":mode,()->{
+                if(inSketch())showSketchSessionActions();else {mode="Wybierz";invalidate();}
+            }));
+            LinearLayout contents=new LinearLayout(c);contents.setOrientation(LinearLayout.VERTICAL);
+            android.widget.ScrollView scroll=new android.widget.ScrollView(c);scroll.addView(contents);body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+            LinearLayout footer=new LinearLayout(c);footer.setOrientation(LinearLayout.VERTICAL);body.addView(footer);
+            if(inSketch()) {
+                if(!sketchPlaneChosen) {
+                    contextText(contents,"Wybierz płaszczyznę lub dotknij płaskiej ściany bryły.",false);
+                    for(String plane:new String[]{"XY","XZ","YZ"})contextAction(contents,"Płaszczyzna "+plane,false,()->chooseSketchPlane(plane));
+                    if(!datumsOf(Datum.PLANE).isEmpty())contextAction(contents,"Płaszczyzna konstrukcyjna…",false,()->showDatumPlanePicker());
+                } else {
+                    String tool=projectionMode?"Rzutowanie krawędzi":coincidenceMode?"Więzy · "+constraintKind:dimensionMode?"Wymiar":trimMode?"Przytnij":mode.equals("Edytuj szkic")?"Wybór i edycja":sketchTool;
+                    contextText(contents,tool,true);
+                    String hint=projectionMode?"Dotknij krawędzi bryły.":coincidenceMode?"Wskaż geometrię, której dotyczy więz.":dimensionMode?"Dotknij elementu lub wartości wymiaru.":trimMode?"Dotknij fragmentu między przecięciami.":mode.equals("Edytuj szkic")?"Dotknij elementu, aby go edytować. Przeciągnij uchwyt, aby zmienić kształt.":"Narysuj profil w obszarze roboczym.";
+                    contextText(contents,hint,false);
+                    if(!project.polylineDraft.isEmpty()) {
+                        contextText(contents,"Punkty: "+project.polylineDraft.size(),false);
+                        contextAction(contents,project.splineDraft?"Zapisz splajn":"Zamknij obwód",true,()->finishPolyline(!project.splineDraft));
+                        if(!project.splineDraft)contextAction(contents,"Zapisz otwarty łańcuch",false,()->finishPolyline(false));
+                        contextAction(contents,"Cofnij punkt",false,()->removePolylinePoint());
+                        contextAction(contents,"Anuluj rysowanie",false,()->cancelPolyline());
+                    } else if(!arcDraft.isEmpty())contextAction(contents,"Opcje łuku…",false,()->showArcDraftActions(null));
+                    else if(!project.threePointDraft.isEmpty())contextAction(contents,"Opcje konstrukcji…",false,()->showThreePointActions(null));
+                    contextText(contents,"Elementy: "+project.sketch.size(),false);
+                    if(project.hasSolid())addPreviewControls(contents);
+                    contextAction(footer,"Zakończ szkic",true,()->{if(SketchTransactions.active(project))finishSketchWork();else activateTopTool("Zakończ");});
+                }
+                contextAction(footer,"Anuluj szkic",false,()->{if(SketchTransactions.active(project))cancelSketchWork();else {mode="Wybierz";sketchPlaneChosen=false;invalidate();}});
+            } else if(mode.equals("Zmierz")) {
+                contextText(contents,measuredEdgeText.isEmpty()?"Wskaż geometrię do pomiaru.":measuredEdgeText,false);
+                contextAction(contents,"Rodzaj pomiaru…",false,()->showMeasurementPanel());
+                contextAction(footer,"Zakończ pomiar",true,()->{mode="Wybierz";invalidate();});
+            } else if(mode.equals("Rysunek")) {
+                contextAction(contents,"Ustawienia arkusza…",false,()->showDrawingOptions());
+                contextAction(contents,"Dane rysunkowe…",false,()->showDrawingMetadataEditor());
+                contextAction(footer,"Powrót do modelu",true,()->{mode="Wybierz";invalidate();});
+            }
+            contextEditor=new android.widget.ScrollView(c);contextEditor.setFillViewport(true);contextEditor.addView(body);
+            android.widget.FrameLayout.LayoutParams p=new android.widget.FrameLayout.LayoutParams((int)dp(PANEL_DP),Math.max(0,(int)(panelBottom()-viewTop())));
+            p.gravity=android.view.Gravity.TOP|android.view.Gravity.RIGHT;p.topMargin=(int)viewTop();
+            ((android.widget.FrameLayout)getParent()).addView(contextEditor,p);contextPanelKey=key;
+        });
     }
 
     /** "Rzutuj": exact model edges onto the sketch plane, all in-plane edges or picked one by one. */
@@ -1456,6 +1445,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             names.add("Gwint");icons.add("Gwint");actions.add(()->{restore.run();beginThreadTool();});
         }
         if(origin!=null&&(origin>=0||origin==-1&&project.featureBase!=null&&!project.importedStep)){names.add("Edytuj operację");icons.add("Edytuj");actions.add(()->{restore.run();editFaceOrigin(face);});}
+        if(BodyGraph.bodies(project).size()>1){names.add("Połącz bryły");icons.add("Połącz");actions.add(()->{restore.run();activateTopTool("Połącz bryły");});}
         names.add("Właściwości");icons.add("Właściwości bryły");actions.add(()->{project.selectedBody=body;showBodyProperties();});
         String label=(planar?"Ściana płaska":cylinder!=null?"Ściana walcowa · Ø"+formatMm(cylinder.radius*2):"Ściana")+" · "+BodyGraph.name(project,body);
         float chipH=dp(40),gap=dp(6),pad=dp(10);paint.setTextSize(dp(12));paint.setTypeface(android.graphics.Typeface.DEFAULT);
@@ -1585,7 +1575,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     private void requestSection() {
         if(sectionPlane==null||nativeMesh==null||project.importedMeshSource!=null||!project.hasSolid())return;
         final double[] plane=sectionPlane.clone(),source=nativeMesh;final double[] base,features;
-        try{base=evaluationBase()==null?null:evaluationBase().clone();features=kernelFeatures();}catch(IllegalArgumentException error){operationMessage="Przekrój: "+error.getMessage();return;}
+        CadProject draft=project;
+        try{if(SketchTransactions.active(project))project=SketchTransactions.baseline(project);base=evaluationBase()==null?null:evaluationBase().clone();features=kernelFeatures();}catch(IllegalArgumentException error){operationMessage="Przekrój: "+error.getMessage();return;}finally{project=draft;}
         final double w=project.width,h=project.height,d=project.depth,r=project.importedStep?0:project.filletRadius;
         final String step=project.importedStep?importedSourceFile().getAbsolutePath():null;
         sectionSource=source;
@@ -1606,7 +1597,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(face!=null)choices.add("Płaszczyzna zaznaczonej ściany");
         android.widget.Spinner plane=new android.widget.Spinner(getContext());plane.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,choices));form.addView(plane);
         int current=sectionPlane==null?0:Math.abs(sectionPlane[3])>.5?0:Math.abs(sectionPlane[4])>.5?1:2;plane.setSelection(current);
-        double[] centre={meshCenterX,meshCenterY,meshCenterZ};
+        double[] centre={modelCenterX,modelCenterY,modelCenterZ};
         EditText offset=labeledCoordinate(form,"Położenie płaszczyzny [mm] (X, Y lub Z; dla ściany: odsunięcie)",sectionPlane!=null&&current<3?sectionPlane[current]:centre[current]);
         if(face!=null&&sectionPlane==null){plane.setSelection(3);setLengthText(offset,0);}
         final int[] shownPlane={plane.getSelectedItemPosition()};
@@ -1628,9 +1619,64 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             }).show();
     }
 
+    private void refreshSectionPreview() {
+        if(sectionWorker!=null)sectionWorker.cancel();sectionResult=null;sectionSource=null;
+        if(propertyEditor!=null&&lastPreviewQuery!=null) {
+            java.util.concurrent.Callable<double[]> query=lastPreviewQuery;java.util.function.Consumer<double[]> display=lastPreviewDisplay;
+            invalidateGeometryPreview();submitGeometryPreview(propertyEditor,query,display);
+        } else if(sectionPlane!=null)requestSection();
+        invalidate();
+    }
+    private void sectionAxis(int axis) {
+        double[] next={modelCenterX,modelCenterY,modelCenterZ,0,0,0};
+        if(axis<3)next[3+axis]=1;
+        else {
+            double[] o=sketchToWorld(0,0),u=sketchToWorld(1,0),v=sketchToWorld(0,1);
+            for(int i=0;i<3;i++){u[i]-=o[i];v[i]-=o[i];next[i]=o[i];}
+            next[3]=u[1]*v[2]-u[2]*v[1];next[4]=u[2]*v[0]-u[0]*v[2];next[5]=u[0]*v[1]-u[1]*v[0];
+            double length=Math.sqrt(next[3]*next[3]+next[4]*next[4]+next[5]*next[5]);for(int i=3;i<6;i++)next[i]/=length;
+        }
+        sectionPlane=next;refreshSectionPreview();
+    }
+    private void showViewPopup(View anchor,Runnable updated) {
+        View menuAnchor=anchor;
+        if(anchor instanceof android.widget.ScrollView&&((android.widget.ScrollView)anchor).getChildCount()>0) {
+            View body=((android.widget.ScrollView)anchor).getChildAt(0);
+            if(body instanceof android.view.ViewGroup&&((android.view.ViewGroup)body).getChildCount()>0)menuAnchor=((android.view.ViewGroup)body).getChildAt(0);
+        }
+        android.widget.PopupMenu menu=new android.widget.PopupMenu(getContext(),menuAnchor,android.view.Gravity.END);
+        menu.getMenu().add(0,0,0,"Bryła");menu.getMenu().add(0,1,1,"Bryła z liniami niewidocznymi");
+        menu.getMenu().add(0,2,2,"Przekrój prostopadły do X");menu.getMenu().add(0,3,3,"Przekrój prostopadły do Y");menu.getMenu().add(0,4,4,"Przekrój prostopadły do Z");
+        if(inSketch())menu.getMenu().add(0,5,5,"Przekrój w płaszczyźnie szkicu");
+        if(sectionPlane!=null){menu.getMenu().add(0,6,6,"Odwróć przekrój");menu.getMenu().add(0,7,7,"Wyłącz przekrój");}
+        menu.setOnMenuItemClickListener(item->{int id=item.getItemId();
+            if(id<2){displayMode=id==0?DISPLAY_SHADED:DISPLAY_HIDDEN;invalidate();}
+            else if(id<6)sectionAxis(id-2);
+            else if(id==6){double[] p=sectionPlane.clone();for(int i=3;i<6;i++)p[i]=-p[i];sectionPlane=p;refreshSectionPreview();}
+            else {sectionPlane=null;refreshSectionPreview();}
+            updated.run();return true;});menu.show();
+    }
+    private void addPreviewControls(LinearLayout parent) {
+        Context c=getContext();LinearLayout group=new LinearLayout(c);group.setTag("preview-controls");group.setOrientation(LinearLayout.VERTICAL);
+        parent.addView(group,PanelStyle.spaced(c,14));
+        android.widget.Button view=new android.widget.Button(c);PanelStyle.secondary(view);group.addView(view,PanelStyle.spaced(c,0));
+        android.widget.TextView label=new android.widget.TextView(c);label.setTextColor(MUTED);label.setTextSize(13);group.addView(label,PanelStyle.spaced(c,8));
+        android.widget.SeekBar offset=new android.widget.SeekBar(c);offset.setMax(1000);offset.setMinimumHeight((int)dp(44));PanelStyle.form(offset);group.addView(offset);
+        final double[][] origin={null};final double range=Math.max(20,modelRadius*1.2);
+        Runnable update=()->{view.setText((displayMode==DISPLAY_HIDDEN?"Bryła + niewidoczne linie":"Bryła")+(sectionPlane==null?" · Widok ▾":" · Przekrój ▾"));
+            label.setVisibility(sectionPlane==null?View.GONE:View.VISIBLE);offset.setVisibility(label.getVisibility());
+            origin[0]=sectionPlane==null?null:sectionPlane.clone();offset.setProgress(500);label.setText("Przesuń płaszczyznę przekroju");};
+        view.setOnClickListener(v->showViewPopup(view,update));
+        offset.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(android.widget.SeekBar bar,int progress,boolean user){if(!user||origin[0]==null)return;double shift=(progress-500)/500.0*range;double[] p=origin[0].clone();for(int i=0;i<3;i++)p[i]+=p[3+i]*shift;sectionPlane=p;label.setText("Odsunięcie: "+formatMm(shift));removeCallbacks(sectionRefresh);postDelayed(sectionRefresh,100);}
+            public void onStartTrackingTouch(android.widget.SeekBar bar){}public void onStopTrackingTouch(android.widget.SeekBar bar){removeCallbacks(sectionRefresh);refreshSectionPreview();}});
+        previewControlsRefresh=update;update.run();
+    }
+    private final Runnable sectionRefresh=()->refreshSectionPreview();
+
     /** Edge (wireframe) and transparent styles: all face boundaries, hidden ones dashed. */
     private void drawSeeThroughSolid(Canvas canvas) {
-        boolean transparent=displayMode==DISPLAY_TRANSPARENT;
+        boolean transparent=displayMode==DISPLAY_TRANSPARENT,hidden=displayMode==DISPLAY_HIDDEN;
         List<ProjectedTriangle> all=new ArrayList<>(backTriangles.size()+projectedTriangles.size());all.addAll(backTriangles);all.addAll(projectedTriangles);
         all.sort((a,b)->Float.compare(a.depth,b.depth));
         int vertexValues=all.size()*6;
@@ -1638,9 +1684,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         int position=0,colorIndex=0;
         for(ProjectedTriangle triangle:all) {
             boolean picked=highlighted(triangle);
-            if(!transparent&&!picked)continue;
+            if(!transparent&&!picked&&!hidden)continue;
             int base=picked?Color.rgb(255,190,70):meshFaceColor(triangle);
-            int color=(base&0x00FFFFFF)|((picked?(transparent?150:110):70)<<24);
+            int color=hidden?base:(base&0x00FFFFFF)|((picked?(transparent?150:110):70)<<24);
             for(int i=0;i<3;i++){surfaceVertices[position++]=triangle.sx[i];surfaceVertices[position++]=triangle.sy[i];surfaceColors[colorIndex++]=color;}
         }
         boolean antiAlias=paint.isAntiAlias();paint.setAntiAlias(false);paint.setStyle(Paint.Style.FILL);paint.setColor(Color.WHITE);
@@ -1657,10 +1703,20 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             paint.setStrokeWidth(dp(triangle.faceId==selectedFace?2.6f:1.35f));
             paint.setColor(triangle.faceId==selectedFace?Color.rgb(225,120,10):ACCENT);
             for(int edge=0;edge<3;edge++)if(isVisibleCadEdge(triangle,edge)) {
-                int next=(edge+1)%3;canvas.drawLine(triangle.sx[edge],triangle.sy[edge],triangle.sx[next],triangle.sy[next],paint);
+                int next=(edge+1)%3;
+                if(hidden) {
+                    double cursor=0;List<double[]> intervals=HiddenLineVisibility.segments(triangle.sx[edge],triangle.sy[edge],triangle.q[edge],triangle.sx[next],triangle.sy[next],triangle.q[next],depthSurfaces);
+                    for(double[] range:intervals){if(range[0]>cursor){paint.setPathEffect(dashed);drawEdgeInterval(canvas,triangle,edge,next,cursor,range[0]);}paint.setPathEffect(null);drawEdgeInterval(canvas,triangle,edge,next,range[0],range[1]);cursor=range[1];}
+                    if(cursor<1){paint.setPathEffect(dashed);drawEdgeInterval(canvas,triangle,edge,next,cursor,1);}paint.setPathEffect(null);
+                } else canvas.drawLine(triangle.sx[edge],triangle.sy[edge],triangle.sx[next],triangle.sy[next],paint);
             }
         }
         paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawEdgeInterval(Canvas c,ProjectedTriangle t,int a,int b,double from,double to) {
+        float dx=t.sx[b]-t.sx[a],dy=t.sy[b]-t.sy[a];
+        c.drawLine(t.sx[a]+dx*(float)from,t.sy[a]+dy*(float)from,t.sx[a]+dx*(float)to,t.sy[a]+dy*(float)to,paint);
     }
 
     private void drawSketch(Canvas canvas, float left, float right) {
@@ -1693,7 +1749,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             double[] start=project.polylineDraft.get(0);PointF p=projectSketchPoint(start[0],start[1]);
             text(canvas,"Początek",p.x+dp(10),p.y-dp(10),10,ACCENT,true);
         }
-        List<SketchPrimitive> displayedSketch=dragSolvedPreview==null?project.sketch:dragSolvedPreview;
+        List<SketchPrimitive> displayedSketch=new ArrayList<>(dragSolvedPreview==null?project.sketch:dragSolvedPreview);
+        displayedSketch.removeIf(entity->!sketchEntityVisible(entity));
         for (SketchPrimitive entity : displayedSketch) {
             SketchPrimitive shown=dragSolvedPreview==null&&dragPreview!=null&&dragPreview.id.equals(entity.id)?dragPreview:entity;
             drawSketchEntity(canvas,shown);
@@ -2195,9 +2252,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private double[] projectSketchDepth(double u, double v) {
-        double x = project.sketchOriginX + u * project.sketchUx + v * project.sketchVx;
-        double y = project.sketchOriginY + u * project.sketchUy + v * project.sketchVy;
-        double z = project.sketchOriginZ + u * project.sketchUz + v * project.sketchVz;
+        double[] world=sketchToWorld(u,v);
+        double x=world[0],y=world[1],z=world[2];
         double yaw = Math.toRadians(cameraYaw), pitch = Math.toRadians(cameraPitch);
         double cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
         double cpitch = Math.cos(pitch), spitch = Math.sin(pitch);
@@ -2406,6 +2462,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         SketchPrimitive best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
         for (SketchPrimitive entity : project.sketch) {
+            if(!sketchEntityVisible(entity))continue;
             PointF first = projectSketchPoint(entity.x1, entity.y1);
             PointF second = projectSketchPoint(entity.x2, entity.y2);
             float x1 = first.x, y1 = first.y, x2 = second.x, y2 = second.y;
@@ -3002,8 +3059,18 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             showSolvedGhost(SketchConstraints.edit(project.sketch,project.coincidences,entity.id,SketchDimensions.apply(entity,a,circle?0:parseCoordinate(second),lock.isChecked())));}catch(IllegalArgumentException ignored){}invalidate();});
     }
 
+    private final java.util.Map<EditText,java.lang.ref.WeakReference<android.widget.TextView>> fieldLabels=new java.util.WeakHashMap<>();
+    private android.widget.TextView fieldLabel(EditText input){java.lang.ref.WeakReference<android.widget.TextView> ref=fieldLabels.get(input);return ref==null?null:ref.get();}
+    private void fieldVisible(EditText input,boolean visible) {
+        input.setVisibility(visible?View.VISIBLE:View.GONE);input.setEnabled(visible);
+        android.widget.TextView label=fieldLabel(input);if(label!=null)label.setVisibility(input.getVisibility());
+        if(input.getParent() instanceof android.view.ViewGroup) {
+            android.view.ViewGroup parent=(android.view.ViewGroup)input.getParent();int i=parent.indexOfChild(input);
+            if(i+1<parent.getChildCount()&&parent.getChildAt(i+1) instanceof android.widget.SeekBar)parent.getChildAt(i+1).setVisibility(input.getVisibility());
+        }
+    }
     private EditText labeledCoordinate(LinearLayout form,String label,double value) {
-        android.widget.TextView heading=new android.widget.TextView(getContext());heading.setText(Units.label(label,project.units));form.addView(heading);EditText input=coordinateInput(label,value);form.addView(input);return input;
+        android.widget.TextView heading=new android.widget.TextView(getContext());heading.setText(Units.label(label,project.units));form.addView(heading);EditText input=coordinateInput(label,value);form.addView(input);fieldLabels.put(input,new java.lang.ref.WeakReference<>(heading));return input;
     }
 
     /** Tag of inputs whose text is a length in project units (stored geometry stays in mm). */
@@ -3245,6 +3312,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private void chooseSketchPlane(String plane) {
+        editingSketchPlacement=SketchPlacement.identity();editingSketchBody=0;
         // A newly picked model face is a new geometric reference even if its
         // displayed face number happens to match the previous sketch plane.
         // Mesh face IDs are not stable after B-Rep rebuilds.
@@ -3435,7 +3503,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         final double width=modelWidth,height=modelHeight;
         final String source=project.importedStep?importedSourceFile().getAbsolutePath():null;
         return () -> {
-            double[] result=NativeCadEngine.evaluateFeatures(width,height,depth,radius,savedBase,savedFeatures,null,source);
+            double[] plane=sectionPlane;
+            double[] result=plane==null?NativeCadEngine.evaluateFeatures(width,height,depth,radius,savedBase,savedFeatures,null,source):new CadModelResult(NativeCadEngine.sectionModel(width,height,depth,radius,savedBase,savedFeatures,source,plane)).mesh;
             // Read on the evaluating thread: kernel diagnostics are thread-local.
             previewFailureReason=result.length==0?NativeCadEngine.lastFailure().reason:null;
             return result;
@@ -3461,21 +3530,12 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(geometryPreviewWorker!=null)geometryPreviewWorker.cancel();
     }
 
-    /** Zooms out (never in) until the previewed result fits the free part of the viewport. */
-    private void keepInView(double[] mesh) {
-        float left=leftWidth()+dp(8),right=viewportRight()-dp(8),top=viewTop()+dp(8),bottom=getHeight()-dp(72)-bottomSystemInset;
-        if(right-left<dp(80)||bottom-top<dp(80))return;
-        int triangles=mesh.length/13,step=Math.max(1,triangles/1500);
-        for(int attempt=0;attempt<12;attempt++) {
-            boolean outside=false;
-            for(int t=0;t<triangles&&!outside;t+=step)for(int v=0;v<3;v++){int o=t*13+v*3;double[] p=projectWorldPoint(mesh[o],mesh[o+1],mesh[o+2]);if(p[2]<=0||p[0]<left||p[0]>right||p[1]<top||p[1]>bottom){outside=true;break;}}
-            if(!outside)return;
-            zoom=Math.max(.02f,zoom*.82f);
-        }
-    }
     private void submitGeometryPreview(android.widget.ScrollView owner,java.util.concurrent.Callable<double[]> query,
             java.util.function.Consumer<double[]> display) {
         if(owner==null||propertyEditor!=owner||previewViewDetached)return;
+        lastPreviewQuery=query;lastPreviewDisplay=display;
+        LinearLayout contents=owner.findViewWithTag("panel-content");
+        if(contents!=null&&contents.findViewWithTag("preview-controls")==null&&(project.hasSolid()||mode.equals("Profile wyciągnięcia")))addPreviewControls(contents);
         if(geometryPreviewWorker==null) {
             android.os.Handler ui=new android.os.Handler(android.os.Looper.getMainLooper());
             geometryPreviewWorker=new GeometryPreviewWorker(task->ui.post(task));
@@ -3485,7 +3545,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             // An invalid/intermediate solid must never replace the last valid
             // preview: it would otherwise make the model flash/disappear.
             boolean valid=error==null&&CadMesh.isValid(mesh,false);
-            if(valid){featurePreview=mesh;keepInView(mesh);}
+            previewFailureReason=error!=null?error.getMessage():valid?null:previewFailureReason;
+            if(valid){featurePreview=mesh;featurePreviewDocument=query instanceof ModelPreviewQuery?((ModelPreviewQuery)query).document:null;}
             display.accept(valid?mesh:new double[0]);invalidate();
         });
     }
@@ -3647,6 +3708,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             android.widget.CheckBox symmetric,double[] origin,double[] axis,Runnable preview) {
         if(propertyEditor==null)return;
         extrusionDimension=dimension;extrusionReverse=reverse;extrusionSymmetric=symmetric;
+        extrusionWorldScale=1;
         extrusionOrigin=origin;extrusionAxis=axis;extrusionPreview=preview;
         double length=Math.sqrt(axis[0]*axis[0]+axis[1]*axis[1]+axis[2]*axis[2]);
         if(!Double.isFinite(length)||length<1e-10){extrusionDimension=null;return;}
@@ -3664,11 +3726,22 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         return FeatureDirection.signed(parseCoordinate(extrusionDimension),extrusionReverse.isChecked(),extrusionSymmetric.isChecked());
     }
 
+    private void bindSourceExtrusion(String profile,int body,EditText input,android.widget.CheckBox reverse,
+            android.widget.CheckBox symmetric,double[] origin,double[] axis,Runnable preview) {
+        double[] m=SketchPlacement.of(project,profile,body),o=SketchPlacement.point(m,origin[0],origin[1],origin[2]);
+        double[] tip=SketchPlacement.point(m,origin[0]+axis[0],origin[1]+axis[1],origin[2]+axis[2]);
+        double original=Math.sqrt(axis[0]*axis[0]+axis[1]*axis[1]+axis[2]*axis[2]);
+        double[] direction={tip[0]-o[0],tip[1]-o[1],tip[2]-o[2]};
+        double length=Math.sqrt(direction[0]*direction[0]+direction[1]*direction[1]+direction[2]*direction[2]);
+        bindExtrusionManipulator(input,reverse,symmetric,o,direction,preview);
+        extrusionWorldScale=original>1e-10?length/original:1;
+    }
+
     private void drawExtrusionManipulator(Canvas canvas,float left,float top,float right,float bottom) {
         extrusionHandle=null;extrusionValueBounds.setEmpty();
         if(extrusionDimension==null)return;
         try {
-            double depth=extrusionSignedDepth(),factor=extrusionSymmetric.isChecked()?.5:1;
+            double depth=extrusionSignedDepth(),factor=(extrusionSymmetric.isChecked()?.5:1)*extrusionWorldScale;
             double[] a=projectWorldPoint(extrusionOrigin[0],extrusionOrigin[1],extrusionOrigin[2]);
             double[] b=projectWorldPoint(extrusionOrigin[0]+extrusionAxis[0]*depth*factor,
                 extrusionOrigin[1]+extrusionAxis[1]*depth*factor,extrusionOrigin[2]+extrusionAxis[2]*depth*factor);
@@ -3752,7 +3825,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
     private double extrusionParameter(float x,float y) {
         return AxisDrag.parameter(extrusionOrigin,extrusionAxis,new double[]{meshCenterX,meshCenterY,meshCenterZ},
-            cameraYaw,cameraPitch,dp(3.2f)*zoom,workCenterX,workCenterY,x,y,viewDistance());
+            cameraYaw,cameraPitch,dp(3.2f)*zoom,workCenterX,workCenterY,x,y,viewDistance())/extrusionWorldScale;
     }
 
     private void setExtrusionDepth(double depth) {
@@ -4214,7 +4287,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         android.widget.TextView info=new android.widget.TextView(getContext());info.setText(edited==null?"Wystąpienie jest powiązaną kopią: zmiany źródła są przenoszone. Położenie: przesunięcie i obrót.":"Zmiana położenia wystąpienia „"+edited.name+"” względem bieżącego: przesunięcie i obrót.");form.addView(info);
         EditText dx=labeledCoordinate(form,"Przesunięcie X [mm]",edited==null?Math.max(20,modelWidth*1.2):0),dy=labeledCoordinate(form,"Przesunięcie Y [mm]",0),dz=labeledCoordinate(form,"Przesunięcie Z [mm]",0);
         android.widget.Spinner axis=choice(form,"Oś obrotu",java.util.Arrays.asList("Z","X","Y"),0);
-        EditText angle=labeledCoordinate(form,"Kąt obrotu [°]",0),px=labeledCoordinate(form,"Punkt osi X [mm]",meshCenterX),py=labeledCoordinate(form,"Punkt osi Y [mm]",meshCenterY),pz=labeledCoordinate(form,"Punkt osi Z [mm]",meshCenterZ);
+        EditText angle=labeledCoordinate(form,"Kąt obrotu [°]",0),px=labeledCoordinate(form,"Punkt osi X [mm]",modelCenterX),py=labeledCoordinate(form,"Punkt osi Y [mm]",modelCenterY),pz=labeledCoordinate(form,"Punkt osi Z [mm]",modelCenterZ);
         android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
         java.util.function.Supplier<CadProject> candidate=()-> {
             CadProject next=copyProject(project);int a=axis.getSelectedItemPosition();double[] ax=a==0?new double[]{0,0,1}:a==1?new double[]{1,0,0}:new double[]{0,1,0};
@@ -4845,13 +4918,18 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         try{CadProject next=CadProject.fromJson(new org.json.JSONObject(source.toJson().toString()));if(graph)BodyGraph.begin(next);return next;}
         catch(org.json.JSONException error){throw new IllegalArgumentException("Nie można skopiować dokumentu: "+error.getMessage());}
     }
+    private static final class ModelPreviewQuery implements java.util.concurrent.Callable<double[]> {
+        final CadProject document;final java.util.concurrent.Callable<double[]> query;
+        ModelPreviewQuery(CadProject document,java.util.concurrent.Callable<double[]> query){this.document=document;this.query=query;}
+        public double[] call()throws Exception{return query.call();}
+    }
     private java.util.concurrent.Callable<double[]> candidateQuery(CadProject next) {
-        CadProject current=project;try {project=next;return meshPreviewQuery(evaluationBase(),packedFeatures(),next.importedStep?0:next.filletRadius,next.depth);}finally {project=current;}
+        CadProject current=project;try {project=next;return new ModelPreviewQuery(next,meshPreviewQuery(evaluationBase(),packedFeatures(),next.importedStep?0:next.filletRadius,next.depth));}finally {project=current;}
     }
     private void showExtrusionSelection() {
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         android.widget.TextView selected=new android.widget.TextView(getContext());form.addView(selected);
-        android.widget.Spinner operation=new android.widget.Spinner(getContext());operation.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,new String[]{"Dodaj — nowa bryła","Połącz z bryłą","Wytnij","Część wspólna"}));form.addView(operation);
+        android.widget.Spinner operation=new android.widget.Spinner(getContext());operation.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,new String[]{"Automatycznie · Połącz / Wytnij","Nowa bryła · osobny obiekt","Połącz z bryłą","Wytnij","Część wspólna"}));form.addView(operation);
         List<Integer> bodies=new ArrayList<>(BodyGraph.bodies(project));if(bodies.isEmpty())bodies.add(1);
         android.widget.Spinner target=new android.widget.Spinner(getContext());List<String> labels=new ArrayList<>();for(Integer id:bodies)labels.add(BodyGraph.name(project,id));target.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,labels));form.addView(target);
         int selectedBody=bodies.indexOf(project.selectedBody);if(selectedBody>=0)target.setSelection(selectedBody);
@@ -4860,15 +4938,20 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         android.widget.CheckBox reverse=directionCheck(1),symmetric=symmetricCheck(false,reverse),both=new android.widget.CheckBox(getContext());both.setText("Dwa kierunki · niezależne długości");form.addView(reverse);form.addView(symmetric);form.addView(both);android.widget.TextView secondLabel=new android.widget.TextView(getContext());secondLabel.setText("Drugi kierunek [mm]");form.addView(secondLabel);form.addView(second);second.setEnabled(false);
         android.widget.TextView status=new android.widget.TextView(getContext());status.setText("Dotknij wnętrza jednego lub kilku profili. Pomarańczowy oznacza wybrany obszar.");form.addView(status);
         android.widget.Button toFace=new android.widget.Button(getContext());toFace.setText("Do powierzchni…");toFace.setAllCaps(false);form.addView(toFace);
+        final CadProject[] resolved={null};final String[] resolvedBaseline={null},resolvedSpec={null};
+        java.util.function.Supplier<String> spec=()->extrusionSelections.toString()+"|"+operation.getSelectedItemPosition()+"|"+first.getText()+"|"+second.getText()+"|"+reverse.isChecked()+"|"+both.isChecked()+"|"+symmetric.isChecked()+"|"+target.getSelectedItemPosition();
         new PropertyBuilder().setTitle("Wyciąganie · wybór na szkicu").setView(form).setNegativeButton("Anuluj",(d,w)->{mode="Wybierz";extrusionSelections.clear();}).setPositiveButton("Zastosuj",(d,w)->{
-            try {String baseline=project.toJson().toString();CadProject next=extrusionCandidate(new ArrayList<>(extrusionSelections),new String[]{"new","add","cut","common"}[operation.getSelectedItemPosition()],parseCoordinate(first),both.isChecked()?parseCoordinate(second):0,reverse.isChecked(),symmetric.isChecked(),bodies.get(target.getSelectedItemPosition()));commitProjectAsync(next,baseline,"Wyciągnięto profile: "+extrusionSelections.size());}
+            try {String baseline=project.toJson().toString();CadProject next;
+                if(operation.getSelectedItemPosition()==0){if(resolved[0]==null||!spec.get().equals(resolvedSpec[0])||!baseline.equals(resolvedBaseline[0]))throw new IllegalArgumentException("Poczekaj na aktualny podgląd automatycznej operacji");next=resolved[0];}
+                else next=extrusionCandidate(new ArrayList<>(extrusionSelections),new String[]{"auto","new","add","cut","common"}[operation.getSelectedItemPosition()],parseCoordinate(first),both.isChecked()?parseCoordinate(second):0,reverse.isChecked(),symmetric.isChecked(),bodies.get(target.getSelectedItemPosition()));
+                commitProjectAsync(next,baseline,"Wyciągnięto profile: "+extrusionSelections.size());}
             catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
         }).show();
-        android.widget.ScrollView owner=propertyEditor;
+        android.widget.ScrollView owner=propertyEditor;final android.widget.Button confirm=panelConfirm;
         Runnable preview=()->{
-            if(propertyEditor!=owner)return;selected.setText("Wybrane profile: "+extrusionSelections.size());target.setEnabled(operation.getSelectedItemPosition()!=0);if(extrusionSelections.isEmpty()){invalidateGeometryPreview();featurePreview=null;extrusionDimension=null;extrusionHandle=null;invalidate();return;}
+            if(propertyEditor!=owner)return;resolved[0]=null;confirm.setEnabled(false);selected.setText("Wybrane profile: "+extrusionSelections.size());target.setVisibility(operation.getSelectedItemPosition()!=1&&project.hasSolid()&&bodies.size()>1?View.VISIBLE:View.GONE);second.setVisibility(both.isChecked()?View.VISIBLE:View.GONE);secondLabel.setVisibility(both.isChecked()?View.VISIBLE:View.GONE);toFace.setVisibility(project.hasSolid()?View.VISIBLE:View.GONE);if(extrusionSelections.isEmpty()){invalidateGeometryPreview();featurePreview=null;extrusionDimension=null;extrusionHandle=null;invalidate();return;}
             for(SketchPrimitive shape:project.sketch)if(extrusionSelections.contains(shape.id)){
-                double[] center=profileCenter(shape),origin=sketchToWorld(center[0],center[1]);double sign=operation.getSelectedItemPosition()==2?-1:1;
+                double[] center=profileCenter(shape),origin=sketchToWorld(center[0],center[1]);double sign=operation.getSelectedItemPosition()==3?-1:1;
                 // Principal XZ base extrusions follow native +Y, whereas placed features follow U×V.
                 if(!project.hasSolid()&&project.sketchPlane.equals("XZ"))sign=-sign;
                 double[] axis={sign*(project.sketchUy*project.sketchVz-project.sketchUz*project.sketchVy),sign*(project.sketchUz*project.sketchVx-project.sketchUx*project.sketchVz),sign*(project.sketchUx*project.sketchVy-project.sketchUy*project.sketchVx)};
@@ -4876,20 +4959,39 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 else {extrusionOrigin=origin;extrusionAxis=axis;}
                 break;
             }
-            try {CadProject next=extrusionCandidate(new ArrayList<>(extrusionSelections),new String[]{"new","add","cut","common"}[operation.getSelectedItemPosition()],parseCoordinate(first),both.isChecked()?parseCoordinate(second):0,reverse.isChecked(),symmetric.isChecked(),bodies.get(target.getSelectedItemPosition()));status.setText("Obliczanie podglądu…");submitGeometryPreview(owner,candidateQuery(next),mesh->status.setText(mesh.length>0?"Podgląd gotowy. Zastosuj tworzy jedną transakcję Cofnij.":previewFailure("Brak poprawnego wyniku; sprawdź zakres i cel operacji.")));}
-            catch(IllegalArgumentException error){status.setText(error.getMessage());}invalidate();
+            try {
+                boolean automatic=operation.getSelectedItemPosition()==0,hasBody=project.hasSolid();
+                String baseline=project.toJson().toString(),currentSpec=spec.get();
+                CadProject next=extrusionCandidate(new ArrayList<>(extrusionSelections),automatic?"new":new String[]{"auto","new","add","cut","common"}[operation.getSelectedItemPosition()],parseCoordinate(first),both.isChecked()?parseCoordinate(second):0,reverse.isChecked(),symmetric.isChecked(),bodies.get(target.getSelectedItemPosition()));
+                int start=next.committedFeatures.size()-extrusionSelections.size(),body=bodies.get(target.getSelectedItemPosition());
+                String source=next.importedStep?new File(projectRepository.importedStepFile().getParentFile(),next.importedStepSource).getAbsolutePath():null;
+                String[] recognized={automatic?"Nowa bryła":String.valueOf(operation.getSelectedItem())};
+                CadProject[] evaluatedResult={null};
+                status.setText("Obliczanie podglądu…");
+                submitGeometryPreview(owner,()->{
+                    CadProject evaluated=CadProject.fromJson(next.toJson());
+                    if(automatic&&hasBody)recognized[0]=AutoExtrusion.resolve(evaluated,start,body,source);
+                    double[] plane=sectionPlane;
+                    double[] mesh=plane==null?NativeCadEngine.evaluateFeatures(evaluated.width,evaluated.height,evaluated.depth,evaluated.importedStep?0:evaluated.filletRadius,evaluated.featureBase,AutoExtrusion.packed(evaluated),null,source):new CadModelResult(NativeCadEngine.sectionModel(evaluated.width,evaluated.height,evaluated.depth,evaluated.importedStep?0:evaluated.filletRadius,evaluated.featureBase,AutoExtrusion.packed(evaluated),source,plane)).mesh;
+                    evaluatedResult[0]=evaluated;
+                    if(mesh.length==0)throw NativeCadEngine.lastFailure();return mesh;
+                },mesh->{boolean ready=mesh.length>0&&spec.get().equals(currentSpec);
+                    if(ready){resolved[0]=evaluatedResult[0];featurePreviewDocument=evaluatedResult[0];resolvedSpec[0]=currentSpec;resolvedBaseline[0]=baseline;}
+                    confirm.setEnabled(ready);status.setText(ready?(automatic?"Rozpoznano: ":"Tryb: ")+recognized[0]+". Zastosuj zatwierdza podgląd.":previewFailure("Brak poprawnego wyniku; sprawdź kierunek i bryłę docelową."));
+                });
+            }catch(org.json.JSONException|IllegalArgumentException error){status.setText(error.getMessage());}invalidate();
         };
         extrusionSelectionChanged=preview;showExtrusionSketch=true;selected.setText("Wybrane profile: "+extrusionSelections.size());
         toFace.setOnClickListener(v->{
             if(!project.hasSolid()){status.setText("Brak bryły — wyciągnięcie do powierzchni wymaga istniejącej ściany");return;}
             extrusionFacePick=distance->{
                 symmetric.setChecked(false);both.setChecked(false);
-                first.setText(ExtrudeToFace.format(distance));reverse.setChecked(ExtrudeToFace.reverse(distance,operation.getSelectedItemPosition()==2));
+                first.setText(ExtrudeToFace.format(distance));reverse.setChecked(ExtrudeToFace.reverse(distance,operation.getSelectedItemPosition()==3));
                 status.setText("Głębokość do wskazanej ściany: "+ExtrudeToFace.format(distance)+" mm");operationMessage="Długość pobrana ze ściany: "+ExtrudeToFace.format(distance)+" mm";preview.run();
             };
             status.setText("Dotknij ściany bryły, do której ma sięgać wyciągnięcie. Jednym palcem obrócisz widok.");operationMessage="Wskaż ścianę docelową";invalidate();
         });
-        android.text.TextWatcher watcher=new android.text.TextWatcher(){public void beforeTextChanged(CharSequence t,int a,int c,int d){}public void onTextChanged(CharSequence t,int a,int b,int c){removeCallbacks(preview);postDelayed(preview,300);}public void afterTextChanged(android.text.Editable text){}};first.addTextChangedListener(watcher);second.addTextChangedListener(watcher);
+        android.text.TextWatcher watcher=new android.text.TextWatcher(){public void beforeTextChanged(CharSequence t,int a,int c,int d){}public void onTextChanged(CharSequence t,int a,int b,int c){resolved[0]=null;confirm.setEnabled(false);invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,300);}public void afterTextChanged(android.text.Editable text){}};first.addTextChangedListener(watcher);second.addTextChangedListener(watcher);
         symmetric.setOnCheckedChangeListener((button,checked)->{if(checked)both.setChecked(false);reverse.setEnabled(!checked);preview.run();});both.setOnCheckedChangeListener((button,checked)->{if(checked)symmetric.setChecked(false);second.setEnabled(checked);preview.run();});reverse.setOnCheckedChangeListener((button,checked)->preview.run());
         android.widget.AdapterView.OnItemSelectedListener changed=new android.widget.AdapterView.OnItemSelectedListener(){public void onItemSelected(android.widget.AdapterView<?> p,View v,int position,long id){preview.run();}public void onNothingSelected(android.widget.AdapterView<?> p){}};operation.setOnItemSelectedListener(changed);target.setOnItemSelectedListener(changed);
         post(preview);
@@ -4931,7 +5033,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             origin=new double[3];axis=new double[3];double flip=index<0?Math.signum(f[6])*Math.signum(oldRange[0]):1;
             for(int i=0;i<3;i++){origin[i]=f[7+i]+c[0]*f[10+i]+c[1]*f[13+i]+n[i]*cut*Math.signum(f[6])*oldRange[1];axis[i]=n[i]*cut*flip;}
         }
-        bindExtrusionManipulator(first,reverse,symmetric,origin,axis,preview);post(preview);
+        bindSourceExtrusion(index<0?project.featureBaseProfileId:index<project.committedProfileIds.size()?project.committedProfileIds.get(index):null,index<0?1:featureBody(project,index),first,reverse,symmetric,origin,axis,preview);post(preview);
     }
 
     private static double[] profileCenter(SketchPrimitive shape) {
@@ -4967,7 +5069,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         android.widget.CheckBox automatic=new android.widget.CheckBox(getContext());automatic.setText("Dobierz preset osobno do każdego otworu");automatic.setChecked(selected.size()>1);form.addView(automatic);
         double min=Double.POSITIVE_INFINITY;for(HoleThread.Cylinder hole:selected)min=Math.min(min,hole.max-hole.min);
         EditText depth=labeledCoordinate(form,"Głębokość gwintu [mm]",min);slider(form,depth,.5,Math.max(1,min),.5);
-        android.widget.CheckBox full=new android.widget.CheckBox(getContext());full.setText("Pełna długość każdego otworu");full.setChecked(true);form.addView(full);depth.setEnabled(false);full.setOnCheckedChangeListener((button,checked)->depth.setEnabled(!checked));
+        android.widget.CheckBox full=new android.widget.CheckBox(getContext());full.setText("Pełna długość każdego otworu");full.setChecked(true);form.addView(full);fieldVisible(depth,false);full.setOnCheckedChangeListener((button,checked)->fieldVisible(depth,!checked));
         android.widget.CheckBox left=new android.widget.CheckBox(getContext());left.setText("Gwint lewy");form.addView(left);
         android.widget.CheckBox otherEnd=new android.widget.CheckBox(getContext());otherEnd.setText("Od przeciwnego końca otworu");form.addView(otherEnd);
         android.content.DialogInterface.OnClickListener apply=(d,w)->{
@@ -5208,7 +5310,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
         }).show();
         attachLivePreview(form,candidate,status,"Podgląd szyku na bryle. Przeciągnij strzałkę odstępu lub Zastosuj.");
-        if(kind==FeaturePattern.LINEAR){double[] dir=frames.get(frame.getSelectedItemPosition());attachFieldHandle(new double[]{meshCenterX,meshCenterY,meshCenterZ},new double[]{dir[3],dir[4],dir[5]},fValue,.01,5000,"Odstęp");
+        if(kind==FeaturePattern.LINEAR){double[] dir=frames.get(frame.getSelectedItemPosition());attachFieldHandle(new double[]{modelCenterX,modelCenterY,modelCenterZ},new double[]{dir[3],dir[4],dir[5]},fValue,.01,5000,"Odstęp");
             // The arrow follows the chosen direction and the reverse switch.
             if(fieldHandle!=null)fieldHandle.axisSource=()->{double[] d=frames.get(frame.getSelectedItemPosition());double sign=fReverse.isChecked()?-1:1;return new double[]{d[3]*sign,d[4]*sign,d[5]*sign};};}
     }
@@ -5308,7 +5410,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(original!=null)head.setSelection((int)original[11]);form.addView(head);
         EditText headDiameter=labeledCoordinate(form,"Średnica pogłębienia [mm]",original!=null&&original[11]!=0?original[12]:11);
         EditText headValue=labeledCoordinate(form,"Głębokość pogłębienia [mm] / kąt stożka [°]",original!=null&&original[11]!=0?original[13]:6);
-        Runnable states=()->{depth.setEnabled(!through.isChecked());tip.setEnabled(!through.isChecked());boolean headed=head.getSelectedItemPosition()!=0;headDiameter.setEnabled(headed);headValue.setEnabled(headed);};
+        Runnable states=()->{fieldVisible(depth,!through.isChecked());fieldVisible(tip,!through.isChecked());boolean headed=head.getSelectedItemPosition()!=0;fieldVisible(headDiameter,headed);fieldVisible(headValue,headed);android.widget.TextView label=fieldLabel(headValue);if(label!=null)label.setText(head.getSelectedItemPosition()==HoleFeature.COUNTERSINK?"Kąt pogłębienia [°]":Units.label("Głębokość pogłębienia [mm]",project.units));};
         through.setOnCheckedChangeListener((b,c)->states.run());
         // The second head value is a length for a counterbore and an angle for a countersink.
         if(original!=null&&original[11]==HoleFeature.COUNTERSINK){headValue.setTag(null);headValue.setText(Units.input(original[13],"mm"));}
@@ -5772,7 +5874,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         List<Datum> shown=new ArrayList<>(project.datums);final Datum ghost=propertyEditor!=null?datumGhost:null;
         if(ghost!=null){shown.removeIf(x->x.id.equals(ghost.id));shown.add(ghost);}
         if(shown.isEmpty())return;
-        double size=Math.max(20,.6*Math.max(modelWidth,Math.max(modelHeight,modelDepth)));double[] c={meshCenterX,meshCenterY,meshCenterZ};
+        double size=Math.max(20,.6*Math.max(modelWidth,Math.max(modelHeight,modelDepth)));double[] c={modelCenterX,modelCenterY,modelCenterZ};
         paint.setStrokeWidth(dp(1.5f));
         for(Datum d:shown) {
             boolean isGhost=d==ghost;if(d.hidden&&!isGhost)continue;boolean selected=isGhost||selectedTreeKey.equals("datum:"+d.id);int color=isGhost?Color.rgb(39,174,96):selected?Color.rgb(230,126,34):Color.rgb(214,137,16);
@@ -5815,7 +5917,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         final List<Datum> splitPlanes=datumsOf(Datum.PLANE);for(Datum d:splitPlanes)choices.add("Konstrukcja: "+d.name+" (odsunięcie)");
         android.widget.Spinner plane=new android.widget.Spinner(getContext());plane.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,choices));form.addView(plane);
         int axis=original==null?0:Math.abs(original[5])>.5?0:Math.abs(original[6])>.5?1:2;plane.setSelection(original==null&&face!=null?3:axis);
-        double[] centre={meshCenterX,meshCenterY,meshCenterZ};
+        double[] centre={modelCenterX,modelCenterY,modelCenterZ};
         EditText offset=labeledCoordinate(form,"Położenie płaszczyzny [mm] (dla ściany: odsunięcie)",original!=null?original[2+axis]:face!=null?0:centre[0]);
         android.widget.CheckBox flip=new android.widget.CheckBox(getContext());flip.setText("Odwróć strony podziału");flip.setChecked(original!=null&&original[5+axis]<0);form.addView(flip);
         android.content.DialogInterface.OnClickListener apply=(d,w)->{
@@ -5941,7 +6043,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private void showFaceFeatureDialog(SketchPrimitive profile) {
-        new PropertyBuilder().setTitle("Wyciągnięcie · operacja").setItems(new String[]{"Dodaj — nowa bryła","Połącz z bryłą","Wytnij","Część wspólna"},(d,index)->chooseExtrusionBody(profile,new String[]{"new","add","cut","common"}[index])).setNegativeButton("Anuluj",null).show();showExtrusionSketch=true;
+        new PropertyBuilder().setTitle("Wyciągnięcie · operacja").setItems(new String[]{"Nowa bryła · osobny obiekt","Połącz z bryłą","Wytnij","Część wspólna"},(d,index)->chooseExtrusionBody(profile,new String[]{"new","add","cut","common"}[index])).setNegativeButton("Anuluj",null).show();showExtrusionSketch=true;
     }
     private void chooseExtrusionBody(SketchPrimitive profile,String operation) {
         List<Integer> bodies=new ArrayList<>(BodyGraph.bodies(project));
@@ -6040,7 +6142,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         double[] axis={sign*(project.sketchUy*project.sketchVz-project.sketchUz*project.sketchVy),
             sign*(project.sketchUz*project.sketchVx-project.sketchUx*project.sketchVz),
             sign*(project.sketchUx*project.sketchVy-project.sketchUy*project.sketchVx)};
-        bindExtrusionManipulator(input,reverse,symmetric,origin,axis,preview);showExtrusionSketch=true;
+        bindSourceExtrusion(profile.id,BodyGraph.profileBody(project,profile.id),input,reverse,symmetric,origin,axis,preview);showExtrusionSketch=true;
     }
 
     private android.widget.CheckBox directionCheck(double depth) {
@@ -6109,7 +6211,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         int plane=FeatureDirection.basePlane(base[5]);
         double[] origin=plane==1?new double[]{u,0,v}:plane==2?new double[]{0,u,v}:new double[]{u,v,0};
         double[] axis=plane==1?new double[]{0,1,0}:plane==2?new double[]{1,0,0}:new double[]{0,0,1};
-        bindExtrusionManipulator(input,reverse,symmetric,origin,axis,preview);showExtrusionSketch=true;
+        bindSourceExtrusion(profileId,1,input,reverse,symmetric,origin,axis,preview);showExtrusionSketch=true;
     }
 
     /**
@@ -6133,13 +6235,15 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             case "Lewy bok": cameraYaw = 90f; cameraPitch = 0f; break;
             default: cameraYaw = -45f; cameraPitch = (float)Math.toDegrees(Math.atan(1 / Math.sqrt(2))); break;
         }
-        fitView();
         operationMessage = "Widok: " + view + (orthographicView ? " · rzut prostokątny" : "");
     }
 
     /** Zoom and pan so that the whole model (or sketch) fits the free viewport. */
     private void fitView() {
-        panX = panY = 0;
+        meshCenterX=modelCenterX;meshCenterY=modelCenterY;meshCenterZ=modelCenterZ;
+        cameraDistance=Math.max(420.0,modelRadius*4.0);
+        panX=(leftWidth()+viewportRight())/2-(dp(224)+getWidth())/2;panY=0;
+        workCenterX=(dp(224)+getWidth())/2+panX;
         List<double[]> sketchPoints = fitSketchPoints();
         double radius = modelRadius;
         // With a solid, the view pivots on the mesh centre; a sketch-only document is panned to
@@ -6167,15 +6271,16 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 minX = Math.min(minX, screen[0]); maxX = Math.max(maxX, screen[0]);
                 minY = Math.min(minY, screen[1]); maxY = Math.max(maxY, screen[1]);
             }
-            panX = (float)(workCenterX - (minX + maxX) / 2);
+            panX += (float)(workCenterX - (minX + maxX) / 2);
             panY = (float)(workCenterY - (minY + maxY) / 2);
         }
     }
 
     private double[] sketchToWorld(double u, double v) {
-        return new double[]{project.sketchOriginX + u * project.sketchUx + v * project.sketchVx,
+        double[] world=new double[]{project.sketchOriginX + u * project.sketchUx + v * project.sketchVx,
             project.sketchOriginY + u * project.sketchUy + v * project.sketchVy,
             project.sketchOriginZ + u * project.sketchUz + v * project.sketchVz};
+        return !displayingTreeSketch&&(inSketch()||mode.equals("Profile wyciągnięcia"))?SketchPlacement.point(editingSketchPlacement,world[0],world[1],world[2]):world;
     }
 
     /** Extent points of the active sketch when it is what the user works on (sketch mode or no solid). */
@@ -6205,8 +6310,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
     private void updateMeshCenter() {
         if (nativeMesh.length < 13) {
-            meshCenterX = meshCenterY = meshCenterZ = 0.0;
-            modelRadius = 0; cameraDistance = 420.0;
+            modelCenterX=modelCenterY=modelCenterZ=0;modelRadius=0;
+            if(!cameraAnchorSet){meshCenterX=meshCenterY=meshCenterZ=0;cameraDistance=420.0;cameraAnchorSet=true;}
             return;
         }
         double xmin = Double.POSITIVE_INFINITY, ymin = Double.POSITIVE_INFINITY, zmin = Double.POSITIVE_INFINITY;
@@ -6221,11 +6326,11 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 zmin = Math.min(zmin, z); zmax = Math.max(zmax, z);
             }
         }
-        meshCenterX = (xmin + xmax) / 2.0;
-        meshCenterY = (ymin + ymax) / 2.0;
-        meshCenterZ = (zmin + zmax) / 2.0;
+        modelCenterX = (xmin + xmax) / 2.0;
+        modelCenterY = (ymin + ymax) / 2.0;
+        modelCenterZ = (zmin + zmax) / 2.0;
         modelRadius = 0.5 * Math.sqrt((xmax - xmin) * (xmax - xmin) + (ymax - ymin) * (ymax - ymin) + (zmax - zmin) * (zmax - zmin));
-        cameraDistance = Math.max(420.0, modelRadius * 4.0);
+        if(!cameraAnchorSet){meshCenterX=modelCenterX;meshCenterY=modelCenterY;meshCenterZ=modelCenterZ;cameraDistance=Math.max(420.0,modelRadius*4.0);cameraAnchorSet=true;}
     }
 
     private void showExportQuality() {
@@ -6734,7 +6839,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if (tool.equals("Obróć widok")) return inSketch()&&sketchOrbit;
         if (tool.equals("Rysunek")) return mode.equals("Rysunek");
         if (tool.equals("Przekrój")) return sectionPlane!=null;
-        if (tool.equals("Cieniowanie")) return displayMode==DISPLAY_SHADED;
+        if (tool.equals("Cieniowanie")||tool.equals("Bryła")) return displayMode==DISPLAY_SHADED;
+        if(tool.equals("Bryła z liniami niewidocznymi"))return displayMode==DISPLAY_HIDDEN;
         if (tool.equals("Krawędzie")) return displayMode==DISPLAY_EDGES;
         if (tool.equals("Przezroczystość")) return displayMode==DISPLAY_TRANSPARENT;
         if (tool.equals("Nawisy")) return overhangView;
@@ -6747,7 +6853,30 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             || tool.equals("Szkic") && mode.equals("Szkic") && !sketchPlaneChosen;
     }
 
+    /** View commands must not dismiss an operation, its preview or a sketch draft. */
+    private boolean viewCommand(String tool) {
+        switch(tool) {
+            case "Bryła":case "Cieniowanie":displayMode=DISPLAY_SHADED;operationMessage="Bryła";break;
+            case "Bryła z liniami niewidocznymi":displayMode=DISPLAY_HIDDEN;operationMessage="Bryła z liniami niewidocznymi (kreskowanymi)";break;
+            case "Krawędzie":displayMode=DISPLAY_EDGES;operationMessage="Krawędzie · linie ukryte kreskowane";break;
+            case "Przezroczystość":displayMode=DISPLAY_TRANSPARENT;operationMessage="Bryła przezroczysta";break;
+            case "Dopasuj":fitView();operationMessage="Dopasowano widok";break;
+            case "Izometryczny":case "Przód":case "Góra":case "Prawy bok":applyStandardView(tool);break;
+            case "Rzut prostokątny":orthographicView=!orthographicView;operationMessage=orthographicView?"Rzut prostokątny":"Perspektywa";break;
+            case "Wymiary":showSketchDimensions=!showSketchDimensions;break;
+            case "Ukryj bryłę":showSolid=!showSolid;break;
+            case "Widok na szkic":sketchOrbit=false;alignToCurrentSketchPlane();operationMessage="Widok prostopadły do szkicu";break;
+            case "Obróć widok":sketchOrbit=!sketchOrbit;operationMessage=sketchOrbit?"Obracanie widoku: przeciągnij jednym palcem. Rysowanie wstrzymane — wyłącz Obróć widok lub wybierz Widok na szkic.":"Wrócono do rysowania szkicu";break;
+            case "Przekrój":
+                if(propertyEditor!=null||inSketch())showViewPopup(propertyEditor!=null?propertyEditor:contextEditor!=null?contextEditor:this,()->{if(previewControlsRefresh!=null)previewControlsRefresh.run();invalidate();});else showSectionDialog();
+                return true;
+            default:return false;
+        }
+        if(previewControlsRefresh!=null)previewControlsRefresh.run();invalidate();return true;
+    }
+
     private void activateTopTool(String tool) {
+        if(viewCommand(tool))return;
         if(tool.equals("Gwint")){beginThreadTool();return;}
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
         if(tool.equals("Powłoka")){beginShellTool(-1);return;}
@@ -6773,7 +6902,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(tool.equals("Przesuń szkic")||tool.equals("Obróć szkic")||tool.equals("Skaluj szkic")){mode="Edytuj szkic";showSketchTransform(tool);invalidate();return;}
         if(tool.equals("Powiązania profilu")){showProfileDependencies();return;}
         if(tool.equals("Edytuj profil źródłowy")){editSourceProfile(selectedSourceProfile());return;}
-        if(tool.equals("Wymiary")) {showSketchDimensions=!showSketchDimensions;invalidate();return;}
+
         if(tool.equals("Więzy")) {
             mode="Edytuj szkic";showConstraintMenu();
             invalidate();return;
@@ -6870,33 +6999,14 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             finishSketchWork();return;
         }
         if(tool.equals("Anuluj szkic")){cancelSketchWork();return;}
-        if(tool.equals("Izometryczny")||tool.equals("Przód")||tool.equals("Góra")||tool.equals("Prawy bok")) {
-            applyStandardView(tool);invalidate();return;
-        }
-        if(tool.equals("Przekrój")){showSectionDialog();return;}
         if(tool.equals("Nawisy")){overhangView=!overhangView;if(overhangView)displayMode=DISPLAY_SHADED;operationMessage=overhangView?"Nawisy: na czerwono ściany bardziej poziome niż "+new java.math.BigDecimal(project.overhangAngle).stripTrailingZeros().toPlainString()+"° od pionu (kierunek druku +Z); ściany na stole pominięte. Kąt: Eksportuj → Jakość siatki.":"Wyłączono widok nawisów";invalidate();return;}
-        if(tool.equals("Cieniowanie")||tool.equals("Krawędzie")||tool.equals("Przezroczystość")) {
-            displayMode=tool.equals("Cieniowanie")?DISPLAY_SHADED:tool.equals("Krawędzie")?DISPLAY_EDGES:DISPLAY_TRANSPARENT;
-            operationMessage=tool.equals("Cieniowanie")?"Widok cieniowany":tool.equals("Krawędzie")?"Tryb krawędzi: ukryte krawędzie przerywane":"Tryb przezroczysty: widoczne ukryte krawędzie i ściany tylne";
-            invalidate();return;
-        }
-        if(tool.equals("Rzut prostokątny")) {
-            orthographicView=!orthographicView;fitView();
-            operationMessage=orthographicView?"Rzut prostokątny (bez perspektywy)":"Rzut perspektywiczny";invalidate();return;
-        }
-        if(tool.equals("Dopasuj") || tool.equals("Wyczyść widok")) {
+        if(tool.equals("Wyczyść widok")) {
             fitView();selectedFace=-1;selectedSketchId=null;measureA=measureB=null;
             measuredCurve=null;
             measuredEdgeText="";operationMessage="";
             if(tool.equals("Wyczyść widok")) {if(!SketchTransactions.active(project))mode="Wybierz";showSolid=true;}
             invalidate();return;
         }
-        if(tool.equals("Ukryj bryłę")) {showSolid=!showSolid;invalidate();return;}
-        if(tool.equals("Obróć widok")) {
-            sketchOrbit=!sketchOrbit;
-            operationMessage=sketchOrbit?"Obracanie widoku: przeciągnij jednym palcem. Rysowanie wstrzymane — wyłącz Obróć widok lub wybierz Widok na szkic.":"Rysowanie wznowione";invalidate();return;
-        }
-        if(tool.equals("Widok na szkic")) {sketchOrbit=false;alignToCurrentSketchPlane();fitView();operationMessage="Widok prostopadły do szkicu";invalidate();return;}
         if(tool.equals("Usuń")) {
             if(selectedSketchId!=null) deleteSketchEntity(selectedSketchId);
             else operationMessage="Zaznacz element narzędziem Edytuj, potem wybierz Usuń";
@@ -7217,12 +7327,17 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         List<HoleThread.Cylinder> previousHoles=holeCylinders;
         String previousInfo=modelInfo;TechnicalSheet previousSheet=technicalSheet;
         double w=modelWidth,h=modelHeight,d=modelDepth;
+        double[] previousCamera={meshCenterX,meshCenterY,meshCenterZ,cameraDistance};boolean previousAnchor=cameraAnchorSet;
+        int previousSketchBody=editingSketchBody;double[] previousPlacement=editingSketchPlacement;
         try {
+            cameraAnchorSet=false;editingSketchBody=0;editingSketchPlacement=SketchPlacement.identity();
             project=next;mode="Wybierz";
             modelWidth=next.width;modelHeight=next.height;modelDepth=next.depth;
             if(!updateNativeModel())throw new IllegalStateException("Nie można odtworzyć geometrii lub źródła projektu");
             projectRepository.save(next);
         }catch(RuntimeException error) {
+            meshCenterX=previousCamera[0];meshCenterY=previousCamera[1];meshCenterZ=previousCamera[2];cameraDistance=previousCamera[3];cameraAnchorSet=previousAnchor;
+            editingSketchBody=previousSketchBody;editingSketchPlacement=previousPlacement;
             project=previous;mode=previousMode;modelWidth=w;modelHeight=h;modelDepth=d;
             nativeMesh=previousMesh;nativePrism=previousPrism;faceBodies=previousFaceBodies;faceFeatures=previousFaceFeatures;holeCylinders=previousHoles;modelInfo=previousInfo;technicalSheet=previousSheet;updateMeshCenter();
             operationMessage="Nie można otworzyć projektu. Bieżący dokument pozostaje aktywny.";invalidate();return false;
@@ -7279,6 +7394,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(!project.polylineDraft.isEmpty())sketchTool=project.splineDraft?"Splajn":"Polilinia";
         if(!project.threePointDraft.isEmpty()){mode="Szkic";sketchTool=project.threePointTool;threePointPreview=null;}
         sketchPlane=project.sketchPlane;sketchPlaneChosen=true;
+        restoreSketchPlacement();
         alignToCurrentSketchPlane();isolateCoveredSketch();
         operationMessage="Przywrócono roboczą edycję szkicu. Zakończ zatwierdza, Anuluj przywraca poprzedni stan.";
     }
@@ -7331,10 +7447,12 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     /** After a sketch the model is shown again in 3D (the sketch view looks straight at the plane). */
     private void leaveSketchView() {
         highlightBody=0;highlightSketch=false;selectedTreeKey="";
-        if(project.hasSolid()){cameraYaw=-28f;cameraPitch=22f;fitView();}
+        editingSketchPlacement=SketchPlacement.identity();editingSketchBody=0;
+        if(project.hasSolid()){cameraYaw=-28f;cameraPitch=22f;}
     }
 
     private void enterSketchEditor() {
+        restoreSketchPlacement();
         trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;
         dimensionMode=false;
         coincidenceMode=false;coincidenceFirst=null;
@@ -7347,6 +7465,23 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         operationMessage = "Wybierz element lub przeciągnij uchwyt szkicu";
         isolateCoveredSketch();
         invalidate();
+    }
+
+    private boolean sketchEntityVisible(SketchPrimitive entity) {
+        if(displayingTreeSketch||editingSketchBody<=0)return true;
+        int body=BodyGraph.profileBody(project,entity.id);
+        if(body==0)return true;
+        if(body!=editingSketchBody)return false;
+        double[] placement=SketchPlacement.of(project,entity.id,body);
+        for(int i=0;i<placement.length;i++)if(Math.abs(placement[i]-editingSketchPlacement[i])>1e-7)return false;
+        return true;
+    }
+    private void restoreSketchPlacement() {
+        for(SketchPrimitive entity:project.sketch) {
+            int body=BodyGraph.profileBody(project,entity.id);
+            if(body>0&&(editingSketchBody<=0||editingSketchBody==body)){editingSketchBody=body;editingSketchPlacement=SketchPlacement.of(project,entity.id,body);return;}
+        }
+        editingSketchBody=0;editingSketchPlacement=SketchPlacement.identity();
     }
 
     private void isolateCoveredSketch() {
@@ -7395,7 +7530,14 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         modelSnapGeometry=null;
         String plane = project.sketchPlane;
         sketchPlane = plane;
-        if ("XY".equals(plane)) { cameraYaw = 0f; cameraPitch = 0f; }
+        if(!java.util.Arrays.equals(editingSketchPlacement,SketchPlacement.identity())) {
+            double[] o=sketchToWorld(0,0),u=sketchToWorld(1,0),v=sketchToWorld(0,1);
+            for(int i=0;i<3;i++){u[i]-=o[i];v[i]-=o[i];}
+            double nx=u[1]*v[2]-u[2]*v[1],ny=u[2]*v[0]-u[0]*v[2],nz=u[0]*v[1]-u[1]*v[0];
+            double yaw=Math.atan2(-nx,nz),rz=-nx*Math.sin(yaw)+nz*Math.cos(yaw);
+            cameraYaw=(float)Math.toDegrees(yaw);cameraPitch=(float)Math.toDegrees(Math.atan2(ny,rz));
+        }
+        else if ("XY".equals(plane)) { cameraYaw = 0f; cameraPitch = 0f; }
         else if ("XZ".equals(plane)) { cameraYaw = 0f; cameraPitch = 90f; }
         else if ("YZ".equals(plane)) { cameraYaw = 90f; cameraPitch = 0f; }
         else {

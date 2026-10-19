@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.82.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.84.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,16 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.84.0: wspólne natywne prawe panele ze stałymi akcjami, wyświetlanie i edycja szkiców
+źródłowych po przesunięciu/obrocie/skalowaniu bryły, automatyczne Połącz/Wytnij,
+stały zoom, bryła z liniami niewidocznymi i przekroje podczas edycji.
+Zakres i testy: docs/AUDIT-0.84.md.
+
+0.83.1: pełna szerokość historii pod oboma panelami, usunięty dolny szary pas.
+Audyt: docs/AUDIT-0.83.1.md.
+
+0.83.0: redesign paneli, grup narzędzi, menu Plik i drzewa modelu. Audyt: docs/AUDIT-0.83.md.
 
 0.82.0: audyt dotyku – menu drzewa, dosuwanie brył, klawiatura numeryczna. Audyt: docs/AUDIT-0.82.md.
 0.81.0: podgląd na żywo, suwaki, odsunięcie ściany (rekord -24), płaszczyzna od ściany. Audyt: docs/AUDIT-0.81.md.

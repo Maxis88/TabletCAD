@@ -35,6 +35,8 @@ public final class MainActivity extends Activity {
             Toast.makeText(this,"Poprzednie uruchomienie zakończyło się błędem. Raport: Android/data/pl.tabletcad.app/files/"+CrashReport.NAME,Toast.LENGTH_LONG).show();}
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setDecorFitsSystemWindows(false);
+        // IME insets shorten only the native panel; editing never pans/resizes the CAD camera.
+        getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
         workspace = new CadWorkspaceView(this, new CadWorkspaceView.FileRequestListener() {
             @Override public void requestExport(String format) { requestExportFile(format); }
             @Override public void requestOpenStep() {

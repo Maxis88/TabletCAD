@@ -170,7 +170,7 @@ public final class CadScenarioProbe {
         TabletFlowProbe.screenshot(activity,"scenario-03-hole-sketch");
         // 11. Cut through the whole body.
         tool(view,"Wyciągnij");
-        ui(()->{View panel=(View)field(view,"propertyEditor");check(panel!=null,"11 extrusion panel opens on face sketch ("+describe(view)+")");spinner(panel).setSelection(2);List<EditText> inputs=new ArrayList<>();WorkspaceUiProbe.editors(panel,inputs);inputs.get(0).setText("20");});
+        ui(()->{View panel=(View)field(view,"propertyEditor");check(panel!=null,"11 extrusion panel opens on face sketch ("+describe(view)+")");spinner(panel).setSelection(3);List<EditText> inputs=new ArrayList<>();WorkspaceUiProbe.editors(panel,inputs);inputs.get(0).setText("20");});
         Thread.sleep(400);boolean[] autoHole={false};ui(()->autoHole[0]=((Set<?>)field(view,"extrusionSelections")).size()==1);
         if(!autoHole[0]){float[] holeCentre=screen(view,25,30);TabletFlowProbe.tap(holeCentre[0],holeCentre[1]);}Thread.sleep(400);
         ui(()->{check(((Set<?>)field(view,"extrusionSelections")).size()==1,"11 tap selects the circle profile");apply[0]=WorkspaceUiProbe.button((View)field(view,"propertyEditor"),"Zastosuj");});

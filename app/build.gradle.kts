@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 94
-        versionName = "0.83.1-ui"
+        versionCode = 95
+        versionName = "0.84.0-context-panels"
     }
 
     externalNativeBuild {
