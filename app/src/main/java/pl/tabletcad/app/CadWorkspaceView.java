@@ -324,6 +324,10 @@ public final class CadWorkspaceView extends View {
     }
 
     /** Non-modal native property form: leaves the model and toolbar interactive. */
+    private static void collectFields(View view,List<EditText> out) {
+        if(view instanceof EditText){if(view.isEnabled())out.add((EditText)view);}
+        else if(view instanceof android.view.ViewGroup){android.view.ViewGroup g=(android.view.ViewGroup)view;for(int i=0;i<g.getChildCount();i++)collectFields(g.getChildAt(i),out);}
+    }
     private final class PropertyBuilder {
         private String title = "Parametry";
         private View content;
@@ -338,7 +342,8 @@ public final class CadWorkspaceView extends View {
         }
         PropertyBuilder setNegativeButton(String label, android.content.DialogInterface.OnClickListener action) {return button(label,action);}
         PropertyBuilder setNeutralButton(String label, android.content.DialogInterface.OnClickListener action) {return button(label,action);}
-        PropertyBuilder setPositiveButton(String label, android.content.DialogInterface.OnClickListener action) {return button(label,action);}
+        private int positive=-1;
+        PropertyBuilder setPositiveButton(String label, android.content.DialogInterface.OnClickListener action) {positive=labels.size();return button(label,action);}
         private PropertyBuilder button(String label, android.content.DialogInterface.OnClickListener action) {
             labels.add(label);actions.add(action);return this;
         }
@@ -355,11 +360,25 @@ public final class CadWorkspaceView extends View {
                 button.setText(items[i]);body.addView(button);
                 button.setOnClickListener(v->{closePropertyEditor();itemAction.onClick(null,index);invalidate();});
             }
+            android.widget.Button positiveButton=null;
             for(int i=0;i<labels.size();i++) {
                 final int index=i;android.widget.Button button=new android.widget.Button(getContext());
-                button.setText(labels.get(i));body.addView(button);
+                button.setText(labels.get(i));body.addView(button);if(i==positive)positiveButton=button;
                 button.setOnClickListener(v->{closePropertyEditor();
                     if(actions.get(index)!=null) actions.get(index).onClick(null,index);invalidate();});
+            }
+            // The keyboard's ✓ / Enter on the last field confirms the panel like its main button.
+            if(positiveButton!=null&&content!=null) {
+                List<EditText> fields=new ArrayList<>();collectFields(content,fields);final android.widget.Button confirm=positiveButton;
+                for(int i=0;i<fields.size();i++) {
+                    EditText field=fields.get(i);if((field.getInputType()&InputType.TYPE_TEXT_FLAG_MULTI_LINE)!=0)continue;
+                    if(i==fields.size()-1)field.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+                    field.setOnEditorActionListener((v,action,event)->{
+                        boolean enter=event!=null&&event.getKeyCode()==android.view.KeyEvent.KEYCODE_ENTER&&event.getAction()==android.view.KeyEvent.ACTION_DOWN;
+                        if(action!=android.view.inputmethod.EditorInfo.IME_ACTION_DONE&&!enter)return false;
+                        android.view.inputmethod.InputMethodManager keyboard=(android.view.inputmethod.InputMethodManager)getContext().getSystemService(Context.INPUT_METHOD_SERVICE);keyboard.hideSoftInputFromWindow(v.getWindowToken(),0);
+                        confirm.performClick();return true;});
+                }
             }
             propertyEditor=new android.widget.ScrollView(getContext());propertyEditor.setFillViewport(false);
             propertyEditor.addView(body);
@@ -3289,6 +3308,18 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(geometryPreviewWorker!=null)geometryPreviewWorker.cancel();
     }
 
+    /** Zooms out (never in) until the previewed result fits the free part of the viewport. */
+    private void keepInView(double[] mesh) {
+        float left=leftWidth()+dp(8),right=viewportRight()-dp(8),top=viewTop()+dp(8),bottom=getHeight()-dp(72)-bottomSystemInset;
+        if(right-left<dp(80)||bottom-top<dp(80))return;
+        int triangles=mesh.length/13,step=Math.max(1,triangles/1500);
+        for(int attempt=0;attempt<12;attempt++) {
+            boolean outside=false;
+            for(int t=0;t<triangles&&!outside;t+=step)for(int v=0;v<3;v++){int o=t*13+v*3;double[] p=projectWorldPoint(mesh[o],mesh[o+1],mesh[o+2]);if(p[2]<=0||p[0]<left||p[0]>right||p[1]<top||p[1]>bottom){outside=true;break;}}
+            if(!outside)return;
+            zoom=Math.max(.02f,zoom*.82f);
+        }
+    }
     private void submitGeometryPreview(android.widget.ScrollView owner,java.util.concurrent.Callable<double[]> query,
             java.util.function.Consumer<double[]> display) {
         if(owner==null||propertyEditor!=owner||previewViewDetached)return;
@@ -3301,7 +3332,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             // An invalid/intermediate solid must never replace the last valid
             // preview: it would otherwise make the model flash/disappear.
             boolean valid=error==null&&CadMesh.isValid(mesh,false);
-            if(valid)featurePreview=mesh;
+            if(valid){featurePreview=mesh;keepInView(mesh);}
             display.accept(valid?mesh:new double[0]);invalidate();
         });
     }
@@ -4535,7 +4566,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         extrusionSelections.clear();for(SketchPrimitive p:project.sketch)if(p.id.equals(selectedSketchId)&&p.closedProfile())extrusionSelections.add(p.id);
         boolean any=false;for(SketchPrimitive p:project.sketch)if(p.closedProfile())any=true;
         if(!any){operationMessage="Narysuj zamknięte profile zwykłej geometrii";invalidate();return;}
-        mode="Profile wyciągnięcia";alignToCurrentSketchPlane();showExtrusionSelection();invalidate();
+        // A single closed profile is selected automatically; the view is tilted so the depth arrow can be dragged.
+        if(extrusionSelections.isEmpty()){SketchPrimitive only=null;int count=0;for(SketchPrimitive p:project.sketch)if(p.closedProfile()){only=p;count++;}if(count==1)extrusionSelections.add(only.id);}
+        mode="Profile wyciągnięcia";alignToCurrentSketchPlane();cameraYaw-=30f;cameraPitch=cameraPitch>45f?cameraPitch-30f:cameraPitch+30f;showExtrusionSelection();invalidate();
     }
     private static boolean polygonContains(double[] points,double x,double y) {
         boolean inside=false;int n=points.length/2;
@@ -4617,6 +4650,13 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         field.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence a,int b,int c,int d){}public void onTextChanged(CharSequence a,int b,int c,int d){fromField.run();}public void afterTextChanged(android.text.Editable e){}});
         fromField.run();return bar;
     }
+    /** Axis-aligned bounds {xmin,ymin,zmin,xmax,ymax,zmax} of a body from the displayed mesh, or null. */
+    private double[] bodyBounds(int body) {
+        double[] b={Double.POSITIVE_INFINITY,Double.POSITIVE_INFINITY,Double.POSITIVE_INFINITY,Double.NEGATIVE_INFINITY,Double.NEGATIVE_INFINITY,Double.NEGATIVE_INFINITY};boolean any=false;
+        for(int offset=0;offset+12<nativeMesh.length;offset+=13){int face=(int)Math.round(nativeMesh[offset+12])-1;if(faceBodies.getOrDefault(face,1)!=body)continue;any=true;
+            for(int v=0;v<3;v++)for(int k=0;k<3;k++){double c=nativeMesh[offset+v*3+k];b[k]=Math.min(b[k],c);b[k+3]=Math.max(b[k+3],c);}}
+        return any?b:null;
+    }
     private double modelExtent(){return Math.max(50,Math.max(modelWidth,Math.max(modelHeight,modelDepth)));}
 
     /** Live B-Rep preview of a candidate document for a parameter dialog; every field, check box and spinner re-runs it. */
@@ -4661,6 +4701,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         android.widget.Spinner target=new android.widget.Spinner(getContext());List<String> labels=new ArrayList<>();for(Integer id:bodies)labels.add(BodyGraph.name(project,id));target.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,labels));form.addView(target);
         int selectedBody=bodies.indexOf(project.selectedBody);if(selectedBody>=0)target.setSelection(selectedBody);
         EditText first=labeledCoordinate(form,"Pierwszy kierunek [mm]",10),second=coordinateInput("Drugi kierunek [mm]",5);
+        slider(form,first,.5,Math.max(100,modelExtent()),.5);
         android.widget.CheckBox reverse=directionCheck(1),symmetric=symmetricCheck(false,reverse),both=new android.widget.CheckBox(getContext());both.setText("Dwa kierunki · niezależne długości");form.addView(reverse);form.addView(symmetric);form.addView(both);android.widget.TextView secondLabel=new android.widget.TextView(getContext());secondLabel.setText("Drugi kierunek [mm]");form.addView(secondLabel);form.addView(second);second.setEnabled(false);
         android.widget.TextView status=new android.widget.TextView(getContext());status.setText("Dotknij wnętrza jednego lub kilku profili. Pomarańczowy oznacza wybrany obszar.");form.addView(status);
         android.widget.Button toFace=new android.widget.Button(getContext());toFace.setText("Do powierzchni…");toFace.setAllCaps(false);form.addView(toFace);
@@ -5358,9 +5399,13 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(original!=null&&a0<0){for(int i=0;i<references.size()&&a0<0;i++){Datum d=references.get(i);if(Math.abs(Math.abs(d.direction[0]*original[6]+d.direction[1]*original[7]+d.direction[2]*original[8])-1)<1e-12)a0=3+i;}if(a0<0)a0=3+references.size();}
         axis.setSelection(Math.max(0,a0));
         double[] o=original!=null?original:new double[16];
+        double[] box=bodyBounds(ids.get(Math.max(0,body.getSelectedItemPosition())));
+        // New mirror: plane through the right face of the body; new linear pattern: copies side by side.
+        if(original==null&&box!=null&&kind==1)o[3]=box[3];
+        double defaultSpacing=box==null?20:Math.ceil(box[3]-box[0])+10;
         EditText px=labeledCoordinate(form,kind==1?"Punkt płaszczyzny X [mm]":"Punkt osi X [mm]",o[3]),py=labeledCoordinate(form,kind==1?"Punkt płaszczyzny Y [mm]":"Punkt osi Y [mm]",o[4]),pz=labeledCoordinate(form,kind==1?"Punkt płaszczyzny Z [mm]":"Punkt osi Z [mm]",o[5]);
         EditText count=kind==1?null:labeledCoordinate(form,"Liczba wystąpień (z oryginałem)",original!=null?original[9]:3);
-        EditText value=kind==1?null:labeledCoordinate(form,kind==2?"Odstęp [mm] (ujemny = przeciwny kierunek)":"Kąt całkowity [°]",original!=null?original[10]:kind==2?20:360);
+        EditText value=kind==1?null:labeledCoordinate(form,kind==2?"Odstęp [mm] (ujemny = przeciwny kierunek)":"Kąt całkowity [°]",original!=null?original[10]:kind==2?defaultSpacing:360);
         if(kind!=1){slider(form,count,2,50,1);if(kind==2)slider(form,value,-2*modelExtent(),2*modelExtent(),.5);else slider(form,value,1,360,1);}
         String title=kind==1?"Lustro bryły":kind==2?"Szyk liniowy bryły":"Szyk kołowy bryły";
         android.content.DialogInterface.OnClickListener apply=(d,w)->{
