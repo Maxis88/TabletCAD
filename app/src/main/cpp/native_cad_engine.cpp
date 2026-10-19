@@ -1151,6 +1151,33 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                     BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
                     updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
                 }
+                if(length==24&&record[0]==-25) {
+                    // Persistent mate: the target body is moved so its planar face lies on a face of another body
+                    // (contact: opposite normals, flush: equal normals) at the gap; re-solved on every rebuild.
+                    const double* c=record.data();const int other=static_cast<int>(c[2]);
+                    const double mn=c[7]*c[7]+c[8]*c[8]+c[9]*c[9],tn=c[14]*c[14]+c[15]*c[15]+c[16]*c[16];
+                    if(target==0||(c[1]!=1&&c[1]!=2)||c[2]!=std::floor(c[2])||other==target||std::abs(c[3])>5000||std::abs(mn-1)>1e-6||std::abs(tn-1)>1e-6||c[10]!=std::floor(c[10])||c[17]!=std::floor(c[17])){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    for(int k=18;k<24;k++)if(c[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    if(!bodies.contains(other)){kernelFailAt(tag,"Bryła, do której dosunięto ścianę, nie istnieje");return {};}
+                    std::string error;
+                    const TopoDS_Face moving=shellFace(bodies[target],c+4,origins,error,"dosuwanej");if(moving.IsNull()){kernelFailAt(tag,error.c_str());return {};}
+                    const TopoDS_Face fixed=shellFace(bodies[other],c+11,origins,error,"docelowej");if(fixed.IsNull()){kernelFailAt(tag,error.c_str());return {};}
+                    const gp_Pln mp=BRepAdaptor_Surface(moving).Plane(),tp=BRepAdaptor_Surface(fixed).Plane();
+                    const gp_Dir m(c[7],c[8],c[9]),t(c[14],c[15],c[16]);const gp_Dir want=c[1]==2?t:t.Reversed();
+                    gp_Pnt p(c[4],c[5],c[6]);const gp_Vec mpn(mp.Axis().Direction());p.Translate(mpn*(-gp_Vec(mp.Location(),p).Dot(mpn)));
+                    gp_Trsf rotation;const double angle=m.Angle(want);
+                    if(angle>1e-12) {
+                        gp_Vec axis=gp_Vec(m).Crossed(gp_Vec(want));
+                        if(axis.Magnitude()<1e-9)axis=gp_Vec(m).Crossed(std::abs(m.X())<.9?gp_Vec(1,0,0):gp_Vec(0,1,0));
+                        rotation.SetRotation(gp_Ax1(p,gp_Dir(axis)),angle);
+                    }
+                    const double distance=gp_Vec(tp.Location(),p).Dot(gp_Vec(t));gp_Trsf translation;translation.SetTranslation(gp_Vec(t)*(-(distance-c[3])));
+                    BRepBuilderAPI_Transform moved(bodies[target],translation.Multiplied(rotation),true);
+                    if(!moved.IsDone()||moved.Shape().IsNull()){kernelFailAt(tag,"Nie można dosunąć bryły");return {};}
+                    bodies[target]=moved.Shape();
+                    BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
+                    updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
+                }
                 if(length==16&&record[0]==-15) {
                     // Body Boolean: the tool body is another document body, consumed unless kept.
                     const double* c=record.data();const int tool=static_cast<int>(c[2]);

@@ -15,3 +15,12 @@ instrumentacyjnych przeszły; uruchomienie na urządzeniu jest wymagane przed sc
   120×70×25 każdy otwór zostaje 10 mm od swoich krawędzi i przechodzi na wylot (objętości
   analityczne).
 - `STATUS_WYMAGAN_CAD.md`: lista braków zaktualizowana do stanu 0.84.
+- **Trwałe dosunięcie brył** (rekord −25): dosunięcie płaskiej ściany zwykłej bryły do ściany
+  innej bryły (styk lub wyrównanie, z odstępem) jest zapisywane jako operacja przeliczana przy
+  każdej zmianie modelu — bryła podąża za ścianą, do której ją dosunięto (np. po pogrubieniu
+  płyty). Edycja odstępu i rodzaju z historii, podgląd na żywo; ściana, której nie da się
+  odnaleźć, jest zgłaszana. Dosunięcie walców (współosiowość) i wystąpień złożenia pozostaje
+  zapisem położenia. Test: `MateKernelProbe` (nowe sprawdzenia: podążanie za szerszą i grubszą
+  płytą, odstęp, zapis, referencje, utrata ściany).
+- **Ikony zamiast znaków Unicode** w elementach interfejsu: strzałki zwijania, cofnij/ponów,
+  „więcej” w drzewie, dom w kostce nawigacyjnej, zamykanie panelu.

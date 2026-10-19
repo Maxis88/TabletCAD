@@ -34,7 +34,7 @@ public final class FeatureHistory {
         double[] f=p.committedFeatures.get(index);int body;
         if(BodyGraph.createdBody(f)>0)body=BodyGraph.createdBody(f);else if(p.featureBodyTargets.get(index)==0)body=p.featureBodyOutputs.get(index);else return users;
         for(int j=index+1;j<p.featureBodyTargets.size();j++)
-            if(p.featureBodyTargets.get(j)==body||(BodyCombine.is(p.committedFeatures.get(j))&&BodyCombine.tool(p.committedFeatures.get(j))==body))users.add(j);
+            if(p.featureBodyTargets.get(j)==body||(BodyCombine.is(p.committedFeatures.get(j))&&BodyCombine.tool(p.committedFeatures.get(j))==body)||(MateFeature.is(p.committedFeatures.get(j))&&MateFeature.other(p.committedFeatures.get(j))==body))users.add(j);
         return users;
     }
     public static void setSuppressed(CadProject p,int index,boolean suppressed) {
@@ -51,6 +51,7 @@ public final class FeatureHistory {
         double[] r=f.clone();
         if(FeaturePattern.is(f)){for(int i=0;i<(int)f[2];i++)r[FeaturePattern.PREFIX+i]=map.applyAsInt((int)f[FeaturePattern.PREFIX+i]);return r;}
         if(HoleFeature.is(f)||FaceOffset.is(f)){if(f[8]>=0&&f[8]<Integer.MAX_VALUE/4)r[8]=map.applyAsInt((int)f[8]);return r;}
+        if(MateFeature.is(f)){for(int at:new int[]{10,17})if(f[at]>=0&&f[at]<Integer.MAX_VALUE/4)r[at]=map.applyAsInt((int)f[at]);return r;}
         if(ShellFeature.is(f)||DraftFeature.is(f)) {
             for(int i=0;i<(int)f[1];i++){int at=ShellFeature.PREFIX+i*ShellFeature.FACE+6;if(f[at]>=0&&f[at]<Integer.MAX_VALUE/4)r[at]=map.applyAsInt((int)f[at]);}
             return r;
@@ -62,6 +63,7 @@ public final class FeatureHistory {
         List<Integer> r=new ArrayList<>();
         if(FeaturePattern.is(f))for(int s:FeaturePattern.sources(f))r.add(s);
         else if(HoleFeature.is(f)||FaceOffset.is(f)){if(f[8]>=0&&f[8]<Integer.MAX_VALUE/4)r.add((int)f[8]);}
+        else if(MateFeature.is(f)){for(int at:new int[]{10,17})if(f[at]>=0&&f[at]<Integer.MAX_VALUE/4)r.add((int)f[at]);}
         else if(ShellFeature.is(f)||DraftFeature.is(f))for(int i=0;i<(int)f[1];i++){double o=f[ShellFeature.PREFIX+i*ShellFeature.FACE+6];if(o>=0&&o<Integer.MAX_VALUE/4)r.add((int)o);}
         return r;
     }

@@ -38,6 +38,7 @@ public final class FeatureRemoval {
             if(FeaturePattern.is(f)){for(int s:FeaturePattern.sources(f))if(gone.contains(s)){plan.consequences.add("Operacja nr "+(i+1)+" ("+FeaturePattern.label(f)+") przestanie powielać usuwane operacje");break;}}
             if(ShellFeature.is(f))for(ShellFeature.Face face:ShellFeature.faces(f))if(gone.contains(face.origin)){plan.consequences.add("Powłoka nr "+(i+1)+" utraci wskazaną ścianę – trzeba ją wskazać ponownie");break;}
             if(DraftFeature.is(f))for(int k=0;k<(int)f[1];k++)if(gone.contains((int)f[DraftFeature.PREFIX+k*DraftFeature.FACE+6])){plan.consequences.add("Pochylenie nr "+(i+1)+" utraci wskazaną ścianę – trzeba ją wskazać ponownie");break;}
+            if(MateFeature.is(f)&&(gone.contains((int)f[10])||gone.contains((int)f[17])))plan.consequences.add("Dosunięcie nr "+(i+1)+" traci wskazaną ścianę – zostanie sprawdzone przy przeliczeniu");
             if(FaceOffset.is(f)&&gone.contains((int)f[8]))plan.consequences.add("Odsunięcie ściany nr "+(i+1)+" traci wskazaną ścianę – zostanie sprawdzone przy przeliczeniu");
             if(HoleFeature.is(f)&&gone.contains((int)f[8]))plan.consequences.add("Otwór nr "+(i+1)+" leży na ścianie usuwanej operacji – zostanie sprawdzony przy przeliczeniu");
             if(EdgeFillet.is(f)||EdgeChamfer.is(f))plan.consequences.add("Operacja nr "+(i+1)+" odnosi się do krawędzi; zostanie sprawdzona przy przeliczeniu");
@@ -45,7 +46,7 @@ public final class FeatureRemoval {
         // A removed body creator must not leave later operations without their target.
         for(int i:gone)if(i<p.featureBodyTargets.size()&&(p.featureBodyTargets.get(i)==0||BodyGraph.createdBody(p.committedFeatures.get(i))>0)) {
             int body=BodyGraph.createdBody(p.committedFeatures.get(i))>0?BodyGraph.createdBody(p.committedFeatures.get(i)):p.featureBodyOutputs.get(i);
-            for(int j=0;j<p.featureBodyTargets.size();j++)if(!gone.contains(j)&&j!=i&&(p.featureBodyTargets.get(j)==body||(BodyCombine.is(p.committedFeatures.get(j))&&BodyCombine.tool(p.committedFeatures.get(j))==body)))
+            for(int j=0;j<p.featureBodyTargets.size();j++)if(!gone.contains(j)&&j!=i&&(p.featureBodyTargets.get(j)==body||(BodyCombine.is(p.committedFeatures.get(j))&&BodyCombine.tool(p.committedFeatures.get(j))==body)||(MateFeature.is(p.committedFeatures.get(j))&&MateFeature.other(p.committedFeatures.get(j))==body)))
                 throw new IllegalArgumentException("Operacja tworzy bryłę „"+BodyGraph.name(p,body)+"”, której używa operacja nr "+(j+1)+". Usuń najpierw operacje tej bryły.");
         }
         return plan;
@@ -77,6 +78,9 @@ public final class FeatureRemoval {
         }
         if(HoleFeature.is(f)||FaceOffset.is(f)) {
             double[] r=f.clone();r[8]=f[8]==removed?Integer.MAX_VALUE/2:f[8]>removed?f[8]-1:f[8];return r;
+        }
+        if(MateFeature.is(f)) {
+            double[] r=f.clone();for(int at:new int[]{10,17})r[at]=f[at]==removed?Integer.MAX_VALUE/2:f[at]>removed?f[at]-1:f[at];return r;
         }
         if(ShellFeature.is(f)||DraftFeature.is(f)) {
             double[] r=f.clone();
