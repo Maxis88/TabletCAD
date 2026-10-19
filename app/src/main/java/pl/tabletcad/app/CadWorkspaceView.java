@@ -7293,7 +7293,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             if (commitModelChange(() -> project=candidate)) {
                 mode="Wybierz";showSolid=true;selectedSketchId=null;selectedFace=-1;
                 trimMode=dimensionMode=coincidenceMode=false;closePropertyEditor();
-                operationMessage="Zatwierdzono szkic i przebudowano bryłę";
+                operationMessage="Zatwierdzono szkic i przebudowano bryłę";leaveSketchView();
             }
         }catch(RuntimeException error) {
             operationMessage="Nie zatwierdzono: "+error.getMessage()+". Popraw szkic albo anuluj edycję.";
@@ -7308,7 +7308,12 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         arcDraft.clear();threePointPreview=null;polylinePreview=null;selectedSketchId=null;selectedFace=-1;
         trimMode=dimensionMode=coincidenceMode=false;mode="Wybierz";showSolid=true;
         closePropertyEditor();
-        operationMessage="Anulowano edycję szkicu; przywrócono poprzednią geometrię";invalidate();
+        operationMessage="Anulowano edycję szkicu; przywrócono poprzednią geometrię";leaveSketchView();invalidate();
+    }
+    /** After a sketch the model is shown again in 3D (the sketch view looks straight at the plane). */
+    private void leaveSketchView() {
+        highlightBody=0;highlightSketch=false;selectedTreeKey="";
+        if(project.hasSolid()){cameraYaw=-28f;cameraPitch=22f;fitView();}
     }
 
     private void enterSketchEditor() {
