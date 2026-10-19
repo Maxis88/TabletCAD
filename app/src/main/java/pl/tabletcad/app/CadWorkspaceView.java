@@ -383,7 +383,7 @@ public final class CadWorkspaceView extends View {
             }
             android.widget.Button positiveButton=null;
             // A menu of items closes with ✕; a separate "Zamknij" without an action would only repeat it.
-            if(items!=null&&positive<0&&negative>=0&&actions.get(negative)==null&&labels.size()==1)negative=-2;
+            if(items!=null&&positive<0&&negative>=0&&actions.get(negative)==null&&labels.size()==1&&labels.get(negative).equals("Zamknij"))negative=-2;
             // Additional actions (Do powierzchni…, Usuń, Edytuj profil…) full width, then Anuluj | main action side by side.
             for(int i=0;i<labels.size();i++)if(i!=positive&&i!=negative&&negative!=-2)body.addView(action(i),PanelStyle.spaced(c,8));
             if(positive>=0||negative>=0) {
