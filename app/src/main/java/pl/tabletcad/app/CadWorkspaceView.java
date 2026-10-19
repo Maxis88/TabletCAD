@@ -617,6 +617,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     @Override public boolean onTouchEvent(MotionEvent event) {
         if(handleDimensionTouch(event))return true;
         if(handleExtrusionTouch(event))return true;
+        if(handleFieldHandleTouch(event))return true;
         if(event.getPointerCount()>1 || event.getActionMasked()==MotionEvent.ACTION_CANCEL) {
             sketching=false;sketchRect=null;snapMarker=null;
             polylineTouch=false;polylinePreview=null;
@@ -826,6 +827,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }
         if(!mode.equals("Rysunek")) drawAxis(canvas, right - dp(70), bottom - dp(60));
         drawExtrusionManipulator(canvas,left,top,right,bottom);
+        drawFieldHandle(canvas,left,top,right,bottom);
         if(!propertiesVisible()&&!operationMessage.isEmpty())drawViewportMessage(canvas,left,right,bottom);
         if(inSketch()&&!mode.equals("Rysunek")){drawProjectionEdges(canvas);drawConstraintStatus(canvas,left,bottom);}
         canvas.restore();
@@ -3304,6 +3306,58 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }catch(IllegalArgumentException ignored){ /* Invalid typed values keep the model unchanged. */ }
     }
 
+    /** On-model drag arrow bound to a length field of the open dialog (hole depth, shell thickness, pattern spacing). */
+    private static final class FieldHandle {
+        final android.widget.ScrollView owner;final double[] origin,axis;final EditText field;final double minimum,maximum;final String label;
+        PointF tip;boolean active;double startValue,startParameter;
+        FieldHandle(android.widget.ScrollView owner,double[] origin,double[] axis,EditText field,double minimum,double maximum,String label){this.owner=owner;this.origin=origin.clone();this.axis=axis.clone();this.field=field;this.minimum=minimum;this.maximum=maximum;this.label=label;}
+    }
+    private FieldHandle fieldHandle;
+    private void attachFieldHandle(double[] origin,double[] axis,EditText field,double minimum,double maximum,String label) {
+        double l=Math.sqrt(axis[0]*axis[0]+axis[1]*axis[1]+axis[2]*axis[2]);if(propertyEditor==null||l<1e-9||field==null){fieldHandle=null;return;}
+        fieldHandle=new FieldHandle(propertyEditor,origin,new double[]{axis[0]/l,axis[1]/l,axis[2]/l},field,minimum,maximum,label);invalidate();
+    }
+    private double fieldValue(FieldHandle h){try{return parseCoordinate(h.field);}catch(IllegalArgumentException e){return Double.NaN;}}
+    private void drawFieldHandle(Canvas canvas,float left,float top,float right,float bottom) {
+        FieldHandle h=fieldHandle;if(h==null)return;
+        if(propertyEditor!=h.owner||!h.field.isEnabled()){if(propertyEditor!=h.owner)fieldHandle=null;else h.tip=null;return;}
+        double value=fieldValue(h);if(!Double.isFinite(value)){h.tip=null;return;}
+        double[] a=projectWorldPoint(h.origin[0],h.origin[1],h.origin[2]),b=projectWorldPoint(h.origin[0]+h.axis[0]*value,h.origin[1]+h.axis[1]*value,h.origin[2]+h.axis[2]*value);
+        if(a[2]<=0||b[2]<=0){h.tip=null;return;}
+        double dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);
+        if(length<dp(1)){double[] c=projectWorldPoint(h.origin[0]+h.axis[0],h.origin[1]+h.axis[1],h.origin[2]+h.axis[2]);dx=c[0]-a[0];dy=c[1]-a[1];length=Math.hypot(dx,dy);if(length<1e-6){h.tip=null;return;}}
+        double ux=dx/length,uy=dy/length,shown=Math.max(length,dp(28));
+        float hx=(float)(a[0]+ux*shown),hy=(float)(a[1]+uy*shown);
+        if(hx<left||hx>right||hy<top||hy>bottom){h.tip=null;return;}
+        h.tip=new PointF(hx,hy);
+        int color=Color.rgb(230,126,34);paint.setStyle(Paint.Style.FILL);paint.setColor(color);paint.setStrokeWidth(dp(3));
+        canvas.drawLine((float)a[0],(float)a[1],hx,hy,paint);canvas.drawCircle((float)a[0],(float)a[1],dp(4),paint);
+        android.graphics.Path head=new android.graphics.Path();head.moveTo((float)(hx+ux*dp(8)),(float)(hy+uy*dp(8)));
+        head.lineTo((float)(hx-ux*dp(9)-uy*dp(9)),(float)(hy-uy*dp(9)+ux*dp(9)));head.lineTo((float)(hx-ux*dp(9)+uy*dp(9)),(float)(hy-uy*dp(9)-ux*dp(9)));head.close();canvas.drawPath(head,paint);
+        String text=h.label+" "+formatMm(value);paint.setTextSize(12*getResources().getDisplayMetrics().scaledDensity);paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);float w=paint.measureText(text)+dp(16);
+        float x=Math.max(left+dp(6),Math.min(right-w-dp(6),hx+dp(14))),y=Math.max(top+dp(6),Math.min(bottom-dp(34),hy-dp(34)));
+        paint.setColor(Color.argb(235,38,50,56));canvas.drawRoundRect(new RectF(x,y,x+w,y+dp(26)),dp(8),dp(8),paint);text(canvas,text,x+w/2,y+dp(18),12,Color.WHITE,true,Paint.Align.CENTER);
+    }
+    private double fieldParameter(FieldHandle h,float x,float y) {
+        return AxisDrag.parameter(h.origin,h.axis,new double[]{meshCenterX,meshCenterY,meshCenterZ},cameraYaw,cameraPitch,dp(3.2f)*zoom,workCenterX,workCenterY,x,y,viewDistance());
+    }
+    private boolean handleFieldHandleTouch(MotionEvent event) {
+        FieldHandle h=fieldHandle;if(h==null)return false;if(propertyEditor!=h.owner){fieldHandle=null;return false;}int action=event.getActionMasked();
+        if(action==MotionEvent.ACTION_DOWN) {
+            if(h.tip==null||Math.hypot(event.getX()-h.tip.x,event.getY()-h.tip.y)>dp(28))return false;
+            double parameter=fieldParameter(h,event.getX(),event.getY()),value=fieldValue(h);
+            if(!Double.isFinite(parameter)||!Double.isFinite(value)){operationMessage="Obróć widok, aby odsłonić kierunek uchwytu.";invalidate();return true;}
+            h.startParameter=parameter;h.startValue=value;h.active=true;return true;
+        }
+        if(!h.active)return false;
+        if(event.getPointerCount()>1||action==MotionEvent.ACTION_CANCEL){setLengthText(h.field,h.startValue);h.active=false;invalidate();return true;}
+        if(action==MotionEvent.ACTION_MOVE) {
+            double parameter=fieldParameter(h,event.getX(),event.getY());
+            if(Double.isFinite(parameter)){double value=Math.max(h.minimum,Math.min(h.maximum,h.startValue+parameter-h.startParameter));value=Math.rint(value*100)/100;setLengthText(h.field,value);invalidate();}
+        }
+        if(action==MotionEvent.ACTION_UP)h.active=false;
+        return true;
+    }
     private double extrusionParameter(float x,float y) {
         return AxisDrag.parameter(extrusionOrigin,extrusionAxis,new double[]{meshCenterX,meshCenterY,meshCenterZ},
             cameraYaw,cameraPitch,dp(3.2f)*zoom,workCenterX,workCenterY,x,y,viewDistance());
@@ -4036,6 +4090,37 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }catch(org.json.JSONException error){throw new IllegalArgumentException(error);}
         finally {project=current;}
     }
+    /** Live B-Rep preview of a candidate document for a parameter dialog; every field, check box and spinner re-runs it. */
+    private void attachLivePreview(View form,java.util.function.Supplier<CadProject> candidate,android.widget.TextView status,String ready) {
+        android.widget.ScrollView owner=propertyEditor;if(owner==null)return;
+        Runnable preview=()-> {
+            if(propertyEditor!=owner)return;
+            try {
+                status.setText("Obliczanie podglądu…");
+                submitGeometryPreview(owner,candidateQuery(candidate.get()),mesh->status.setText(mesh.length==0?previewFailure("Brak poprawnej bryły dla tych parametrów. Dokument pozostaje bez zmian."):ready));
+            }catch(IllegalArgumentException error){status.setText(error.getMessage());}
+            invalidate();
+        };
+        watchFields(form,()->{invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,220);});
+        preview.run();
+    }
+    private void watchFields(View view,Runnable changed) {
+        if(view instanceof EditText)((EditText)view).addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int n){}
+            public void onTextChanged(CharSequence s,int a,int b,int c){changed.run();}public void afterTextChanged(android.text.Editable s){}});
+        else if(view instanceof android.widget.CompoundButton)view.setOnClickListener(v->changed.run());
+        else if(view instanceof android.widget.Spinner) {
+            android.widget.Spinner spinner=(android.widget.Spinner)view;android.widget.AdapterView.OnItemSelectedListener previous=spinner.getOnItemSelectedListener();
+            spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
+                public void onItemSelected(android.widget.AdapterView<?> parent,View v,int position,long id){if(previous!=null)previous.onItemSelected(parent,v,position,id);changed.run();}
+                public void onNothingSelected(android.widget.AdapterView<?> parent){if(previous!=null)previous.onNothingSelected(parent);}});
+        }
+        else if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++)watchFields(group.getChildAt(i),changed);}
+    }
+    private static CadProject copyProject(CadProject source){return copyProject(source,true);}
+    private static CadProject copyProject(CadProject source,boolean graph) {
+        try{CadProject next=CadProject.fromJson(new org.json.JSONObject(source.toJson().toString()));if(graph)BodyGraph.begin(next);return next;}
+        catch(org.json.JSONException error){throw new IllegalArgumentException("Nie można skopiować dokumentu: "+error.getMessage());}
+    }
     private java.util.concurrent.Callable<double[]> candidateQuery(CadProject next) {
         CadProject current=project;try {project=next;return meshPreviewQuery(evaluationBase(),packedFeatures(),next.importedStep?0:next.filletRadius,next.depth);}finally {project=current;}
     }
@@ -4317,33 +4402,41 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         final android.widget.CheckBox flipAxis=new android.widget.CheckBox(getContext());
         if(kind==FeaturePattern.CIRCULAR){flipAxis.setText("Przeciwny kierunek obrotu");form.addView(flipAxis);}
         String title=(kind==FeaturePattern.MIRROR?"Lustro":kind==FeaturePattern.LINEAR?"Szyk liniowy":"Szyk kołowy")+" · "+sources.length+(sources.length==1?" operacja":" operacje");
+        android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
+        java.util.function.Supplier<CadProject> candidate=()-> {
+            double[] selected=frames.get(frame.getSelectedItemPosition()).clone();
+            double[] origin={selected[0],selected[1],selected[2]},direction={selected[3],selected[4],selected[5]};
+            int n=0;double v=0;
+            if(kind==FeaturePattern.MIRROR) {
+                double shift=parseCoordinate(fOffset),l=Math.sqrt(direction[0]*direction[0]+direction[1]*direction[1]+direction[2]*direction[2]);
+                for(int i=0;i<3;i++)origin[i]+=direction[i]/l*shift;
+            } else {
+                double countValue=parseCoordinate(fCount);if(countValue!=Math.floor(countValue))throw new IllegalArgumentException("Liczba wystąpień musi być całkowita");n=(int)countValue;
+                v=parseCoordinate(fValue);
+                if(kind==FeaturePattern.LINEAR){if(fReverse.isChecked())v=-Math.abs(v);else v=Math.abs(v);}
+                else {
+                    // The typed point defines the axis unless the axis of a picked cylinder is used.
+                    if(!choices.get(frame.getSelectedItemPosition()).startsWith("Oś zaznaczonej")){origin[0]=parseCoordinate(fx);origin[1]=parseCoordinate(fy);origin[2]=parseCoordinate(fz);}
+                    if(flipAxis.isChecked())for(int i=0;i<3;i++)direction[i]=-direction[i];
+                }
+            }
+            double[] record=FeaturePattern.create(kind,sources,origin,direction,n,v);
+            CadProject next=copyProject(project);
+            int body=featureBody(next,sources[0]);
+            if(editIndex>=0)next.committedFeatures.set(editIndex,record);
+            else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
+            FeaturePattern.validateSources(next.committedFeatures,editIndex>=0?editIndex:next.committedFeatures.size()-1);
+            return next;
+        };
         new PropertyBuilder().setTitle(title).setView(form).setNegativeButton("Anuluj",null).setPositiveButton(editIndex>=0?"Zastosuj":"Utwórz",(d,w)->{
             try {
-                double[] selected=frames.get(frame.getSelectedItemPosition()).clone();
-                double[] origin={selected[0],selected[1],selected[2]},direction={selected[3],selected[4],selected[5]};
-                int n=0;double v=0;
-                if(kind==FeaturePattern.MIRROR) {
-                    double shift=parseCoordinate(fOffset),l=Math.sqrt(direction[0]*direction[0]+direction[1]*direction[1]+direction[2]*direction[2]);
-                    for(int i=0;i<3;i++)origin[i]+=direction[i]/l*shift;
-                } else {
-                    double countValue=parseCoordinate(fCount);if(countValue!=Math.floor(countValue))throw new IllegalArgumentException("Liczba wystąpień musi być całkowita");n=(int)countValue;
-                    v=parseCoordinate(fValue);
-                    if(kind==FeaturePattern.LINEAR){if(fReverse.isChecked())v=-Math.abs(v);else v=Math.abs(v);}
-                    else {
-                        // The typed point defines the axis unless the axis of a picked cylinder is used.
-                        if(!choices.get(frame.getSelectedItemPosition()).startsWith("Oś zaznaczonej")){origin[0]=parseCoordinate(fx);origin[1]=parseCoordinate(fy);origin[2]=parseCoordinate(fz);}
-                        if(flipAxis.isChecked())for(int i=0;i<3;i++)direction[i]=-direction[i];
-                    }
-                }
-                double[] record=FeaturePattern.create(kind,sources,origin,direction,n,v);
-                String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
-                int body=featureBody(next,sources[0]);
-                if(editIndex>=0)next.committedFeatures.set(editIndex,record);
-                else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
-                FeaturePattern.validateSources(next.committedFeatures,editIndex>=0?editIndex:next.committedFeatures.size()-1);
+                String baseline=project.toJson().toString();CadProject next=candidate.get();
+                double[] record=next.committedFeatures.get(editIndex>=0?editIndex:next.committedFeatures.size()-1);
                 commitProjectAsync(next,baseline,(editIndex>=0?"Zaktualizowano: ":"Utworzono: ")+FeaturePattern.describe(record));
             }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
         }).show();
+        attachLivePreview(form,candidate,status,"Podgląd szyku na bryle. Przeciągnij strzałkę odstępu lub Zastosuj.");
+        if(kind==FeaturePattern.LINEAR){double[] dir=frames.get(frame.getSelectedItemPosition());attachFieldHandle(new double[]{meshCenterX,meshCenterY,meshCenterZ},new double[]{dir[3],dir[4],dir[5]},fValue,.01,5000,"Odstęp");}
     }
     private void showPatternEditor(int index) {
         double[] f=project.committedFeatures.get(index);
@@ -4415,6 +4508,18 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         android.widget.TextView info=new android.widget.TextView(getContext());
         info.setText("Środek leży na wskazanej ścianie i przesuwa się razem z nią przy zmianie parametrów. Dotknij innej płaskiej ściany, aby ją zmienić.");form.addView(info);
         EditText x=labeledCoordinate(form,"Środek X [mm]",holeReference[0]),y=labeledCoordinate(form,"Środek Y [mm]",holeReference[1]),z=labeledCoordinate(form,"Środek Z [mm]",holeReference[2]);
+        // Exact distances from the nearest straight face edge (A) and a perpendicular one (B).
+        HolePlacement placement=null;
+        try{String src=project.importedStep?importedSourceFile().getAbsolutePath():null;placement=HolePlacement.find(new double[]{holeReference[0],holeReference[1],holeReference[2]},new double[]{holeReference[3],holeReference[4],holeReference[5]},
+            NativeCadEngine.edgeMeasurements(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),src));}catch(IllegalArgumentException ignored){placement=null;}
+        final HolePlacement place=placement;final EditText fromA=place==null?null:labeledCoordinate(form,"Odległość od krawędzi A (najbliższej) [mm]",place.distanceA),
+            fromB=place==null||!place.hasB()?null:labeledCoordinate(form,"Odległość od krawędzi B (prostopadłej) [mm]",place.distanceB);
+        if(place!=null) {
+            final boolean[] syncing={false};
+            Runnable fromEdges=()->{if(syncing[0])return;try{double[] q=place.at(parseCoordinate(fromA),fromB==null?0:parseCoordinate(fromB));syncing[0]=true;setLengthText(x,q[0]);setLengthText(y,q[1]);setLengthText(z,q[2]);}catch(IllegalArgumentException ignored){}finally{syncing[0]=false;}};
+            android.text.TextWatcher watcher=new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int n){}public void onTextChanged(CharSequence s,int a,int b,int c){fromEdges.run();}public void afterTextChanged(android.text.Editable s){}};
+            fromA.addTextChangedListener(watcher);if(fromB!=null)fromB.addTextChangedListener(watcher);
+        }
         EditText diameter=labeledCoordinate(form,"Średnica [mm]",original!=null?original[9]:6.5);if(holeEditIndex>=0)bound(diameter,"hole:"+holeEditIndex+":d");
         android.widget.CheckBox through=new android.widget.CheckBox(getContext());through.setText("Na wylot (przez całą bryłę)");through.setChecked(original==null||original[1]==1);form.addView(through);
         EditText depth=labeledCoordinate(form,"Głębokość [mm]",original!=null&&original[1]==0?original[10]:10);if(holeEditIndex>=0)bound(depth,"hole:"+holeEditIndex+":h");
@@ -4439,24 +4544,33 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 states.run();}
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent){}});
         states.run();
+        android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
+        final int editIndex=holeEditIndex;final double[] reference=holeReference.clone();
+        java.util.function.Supplier<CadProject> candidate=()-> {
+            int kind=head.getSelectedItemPosition();
+            double[] point={parseCoordinate(x),parseCoordinate(y),parseCoordinate(z)};
+            double headSecond=kind==HoleFeature.COUNTERSINK?Units.parseNumber(headValue.getText().toString()):kind==HoleFeature.COUNTERBORE?parseCoordinate(headValue):0;
+            double[] record=HoleFeature.create(point,new double[]{reference[3],reference[4],reference[5]},(int)reference[6],parseCoordinate(diameter),through.isChecked(),
+                through.isChecked()?0:parseCoordinate(depth),kind,kind==0?0:parseCoordinate(headDiameter),headSecond,through.isChecked()?0:parseCoordinate(tip));
+            CadProject next=copyProject(project);
+            int body=selectedFace>=0?faceBodies.getOrDefault(selectedFace,1):project.selectedBody>0?project.selectedBody:1;
+            if(editIndex>=0)next.committedFeatures.set(editIndex,record);
+            else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
+            int at=editIndex>=0?editIndex:next.committedFeatures.size()-1;bindField(next,"hole:"+at+":d",diameter);if(through.isChecked())next.parameterBindings.remove("hole:"+at+":h");else bindField(next,"hole:"+at+":h",depth);
+            return next;
+        };
         new PropertyBuilder().setTitle(holeEditIndex>=0?"Edytuj otwór":"Otwór").setView(form)
             .setNegativeButton("Anuluj",(d,w)->{mode="Wybierz";holeReference=null;holeEditIndex=-1;})
             .setPositiveButton(holeEditIndex>=0?"Zastosuj":"Utwórz otwór",(d,w)->{
                 try {
-                    int kind=head.getSelectedItemPosition();
-                    double[] point={parseCoordinate(x),parseCoordinate(y),parseCoordinate(z)};
-                    double headSecond=kind==HoleFeature.COUNTERSINK?Units.parseNumber(headValue.getText().toString()):kind==HoleFeature.COUNTERBORE?parseCoordinate(headValue):0;
-                    double[] record=HoleFeature.create(point,new double[]{holeReference[3],holeReference[4],holeReference[5]},(int)holeReference[6],parseCoordinate(diameter),through.isChecked(),
-                        through.isChecked()?0:parseCoordinate(depth),kind,kind==0?0:parseCoordinate(headDiameter),headSecond,through.isChecked()?0:parseCoordinate(tip));
-                    String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
-                    int body=selectedFace>=0?faceBodies.getOrDefault(selectedFace,1):project.selectedBody>0?project.selectedBody:1;
-                    if(holeEditIndex>=0)next.committedFeatures.set(holeEditIndex,record);
-                    else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
-                    int at=holeEditIndex>=0?holeEditIndex:next.committedFeatures.size()-1;bindField(next,"hole:"+at+":d",diameter);if(through.isChecked())next.parameterBindings.remove("hole:"+at+":h");else bindField(next,"hole:"+at+":h",depth);
-                    int edited=holeEditIndex;holeEditIndex=-1;holeReference=null;
-                    commitProjectAsync(next,baseline,(edited>=0?"Zaktualizowano: ":"Utworzono: ")+HoleFeature.describe(record));
+                    String baseline=project.toJson().toString();CadProject next=candidate.get();
+                    double[] record=next.committedFeatures.get(editIndex>=0?editIndex:next.committedFeatures.size()-1);
+                    holeEditIndex=-1;holeReference=null;
+                    commitProjectAsync(next,baseline,(editIndex>=0?"Zaktualizowano: ":"Utworzono: ")+HoleFeature.describe(record));
                 }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
             }).show();
+        attachLivePreview(form,candidate,status,"Podgląd otworu na bryle. Przeciągnij strzałkę głębokości lub Zastosuj.");
+        attachFieldHandle(new double[]{reference[0],reference[1],reference[2]},new double[]{-reference[3],-reference[4],-reference[5]},depth,.1,5000,"Głębokość");
     }
 
     // ---- Draft (taper) of planar faces ----
@@ -4707,35 +4821,46 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         info.setText(shellSelections.isEmpty()?"Dotknij płaskich ścian, które mają zostać otwarte. Bez wskazanych ścian bryła zostanie wydrążona z zamkniętą pustką.":"Usuwane ściany: "+shellSelections.size()+". Ponowne dotknięcie usuwa wybór.");form.addView(info);
         EditText thickness=labeledCoordinate(form,"Grubość ścianki [mm]",original!=null?original[2]:2);
         android.widget.CheckBox outside=new android.widget.CheckBox(getContext());outside.setText("Grubość na zewnątrz bryły");outside.setChecked(original!=null&&original[3]==1);form.addView(outside);
+        android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
+        final int editIndex=shellEditIndex;
+        java.util.function.Supplier<CadProject> candidate=()-> {
+            double[] record=ShellFeature.create(new ArrayList<>(shellSelections.values()),parseCoordinate(thickness),outside.isChecked());
+            CadProject next=copyProject(project);
+            int body=1;
+            if(!shellSelections.isEmpty()){Integer first=shellSelections.keySet().iterator().next();body=faceBodies.getOrDefault(first,1);for(Integer face:shellSelections.keySet())if(faceBodies.getOrDefault(face,1)!=body)throw new IllegalArgumentException("Wskazane ściany należą do różnych brył");}
+            else body=project.selectedBody>0?project.selectedBody:1;
+            if(editIndex>=0){next.committedFeatures.set(editIndex,record);if(!shellSelections.isEmpty()&&featureBody(next,editIndex)!=body)throw new IllegalArgumentException("Ściany należą do innej bryły niż edytowana powłoka");}
+            else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
+            return next;
+        };
         new PropertyBuilder().setTitle(shellEditIndex>=0?"Powłoka · wskaż ściany ponownie":"Powłoka").setView(form)
             .setNegativeButton("Anuluj",(d,w)->{mode="Wybierz";shellSelections.clear();shellEditIndex=-1;})
             .setPositiveButton(shellEditIndex>=0?"Zastosuj":"Utwórz powłokę",(d,w)->{
                 try {
-                    double[] record=ShellFeature.create(new ArrayList<>(shellSelections.values()),parseCoordinate(thickness),outside.isChecked());
-                    String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
-                    int body=1;
-                    if(!shellSelections.isEmpty()){Integer first=shellSelections.keySet().iterator().next();body=faceBodies.getOrDefault(first,1);for(Integer face:shellSelections.keySet())if(faceBodies.getOrDefault(face,1)!=body)throw new IllegalArgumentException("Wskazane ściany należą do różnych brył");}
-                    else body=project.selectedBody>0?project.selectedBody:1;
-                    if(shellEditIndex>=0){next.committedFeatures.set(shellEditIndex,record);if(!shellSelections.isEmpty()&&featureBody(next,shellEditIndex)!=body)throw new IllegalArgumentException("Ściany należą do innej bryły niż edytowana powłoka");}
-                    else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
+                    String baseline=project.toJson().toString();CadProject next=candidate.get();
+                    double[] record=next.committedFeatures.get(editIndex>=0?editIndex:next.committedFeatures.size()-1);
                     shellEditIndex=-1;commitProjectAsync(next,baseline,(original!=null?"Zaktualizowano: ":"Utworzono: ")+ShellFeature.describe(record));
                 }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
             }).show();
+        attachLivePreview(form,candidate,status,"Podgląd powłoki. Przeciągnij strzałkę grubości, dotknij kolejnych ścian lub Zastosuj.");
+        if(!shellSelections.isEmpty()){ShellFeature.Face face=shellSelections.values().iterator().next();attachFieldHandle(face.point,new double[]{-face.normal[0],-face.normal[1],-face.normal[2]},thickness,.05,500,"Grubość");}
     }
     private void showShellEditor(int index) {
         double[] f=project.committedFeatures.get(index);LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         android.widget.TextView info=new android.widget.TextView(getContext());info.setText(ShellFeature.describe(f));form.addView(info);
         EditText thickness=labeledCoordinate(form,"Grubość ścianki [mm]",f[2]);
         android.widget.CheckBox outside=new android.widget.CheckBox(getContext());outside.setText("Grubość na zewnątrz bryły");outside.setChecked(f[3]==1);form.addView(outside);
+        android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
+        java.util.function.Supplier<CadProject> candidate=()->{CadProject next=copyProject(project,false);next.committedFeatures.set(index,ShellFeature.withThickness(f,parseCoordinate(thickness),outside.isChecked()));return next;};
         new PropertyBuilder().setTitle("Edytuj powłokę").setView(form).setNegativeButton("Anuluj",null)
             .setNeutralButton("Wskaż ściany ponownie",(d,w)->beginShellTool(index))
             .setPositiveButton("Zastosuj",(d,w)->{
                 try {
-                    double[] updated=ShellFeature.withThickness(f,parseCoordinate(thickness),outside.isChecked());
-                    String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));next.committedFeatures.set(index,updated);
-                    commitProjectAsync(next,baseline,"Zaktualizowano: "+ShellFeature.describe(updated));
+                    String baseline=project.toJson().toString();CadProject next=candidate.get();
+                    commitProjectAsync(next,baseline,"Zaktualizowano: "+ShellFeature.describe(next.committedFeatures.get(index)));
                 }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
             }).show();
+        attachLivePreview(form,candidate,status,"Podgląd zmienionej grubości ścianek.");
     }
 
     private void showFaceFeatureDialog(SketchPrimitive profile) {

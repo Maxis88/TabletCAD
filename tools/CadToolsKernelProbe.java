@@ -101,6 +101,13 @@ public final class CadToolsKernelProbe {
         CadProject bottom=withFrame(xy(0));EdgeProjection.Result every=EdgeProjection.project(bottom,ed,em,all);
         check(every.skipped>=4&&every.reason.length()>0,"vertical edges are skipped, not projected to points ("+every.skipped+")");check(every.created.size()==5,"top and bottom outlines coincide in the projection ("+every.created.size()+")");
         CadProject dup=withFrame(xy(20));dup.sketch.addAll(res.created);check(EdgeProjection.project(dup,ed,em,ids).created.isEmpty(),"repeated projection adds no duplicates");
+        // Hole placement dimensioned from the top-face edges of the plate.
+        CadProject hp=plate();double[] props=NativeCadEngine.edgeMeasurements(100,60,20,0,hp.featureBase,packed(hp),null);
+        HolePlacement place=HolePlacement.find(new double[]{20,15,20},new double[]{0,0,1},props);
+        check(place!=null&&place.hasB(),"top face offers two perpendicular reference edges");close("distance from edge A (y = 0)",place.distanceA,15,1e-12);close("distance from edge B (x = 0)",place.distanceB,20,1e-12);
+        double[] at=place.at(25,10);close("placed X",at[0],10,1e-12);close("placed Y",at[1],25,1e-12);close("placed Z stays on the face",at[2],20,1e-12);
+        double[] hr=HoleFeature.create(at,new double[]{0,0,1},-1,6.5,true,0,0,0,0,0);add(hp,hr,"",1);close("hole Ø6.5 at the dimensioned position",volume(hp),plate-Math.PI*3.25*3.25*20,1e-6);
+        check(HolePlacement.find(new double[]{50,30,20},new double[]{0,0,1},new double[0])==null,"no straight edge → no edge dimensions offered");
         System.out.println("PASS CadToolsKernelProbe: "+checks+" checks");
     }
     static CadProject withFrame(double[] f){CadProject p=new CadProject();p.sketchOriginX=f[0];p.sketchOriginY=f[1];p.sketchOriginZ=f[2];p.sketchUx=f[3];p.sketchUy=f[4];p.sketchUz=f[5];p.sketchVx=f[6];p.sketchVy=f[7];p.sketchVz=f[8];return p;}
