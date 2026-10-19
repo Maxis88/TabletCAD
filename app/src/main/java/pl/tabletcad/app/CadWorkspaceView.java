@@ -6807,12 +6807,16 @@ if (isInsideViewport(e.getX(), e.getY())) {
     /** Navigation cube in the viewport corner: turns with the camera; a face sets that view, ⌂ the isometric one. */
     private void drawViewCube(Canvas canvas,float x,float y) {
         if(inSketch()&&sketchPlaneChosen){viewCubeX=-1;drawAxis(canvas,x-dp(4),y+dp(10));return;}
-        float half=dp(21);viewCubeX=x;viewCubeY=y;viewCubeHalf=half;
+        float half=dp(24);viewCubeX=x;viewCubeY=y;viewCubeHalf=half;
         for(ViewCube.Projected f:ViewCube.visible(cameraYaw,cameraPitch,x,y,half)) {
             android.graphics.Path path=new android.graphics.Path();path.moveTo(f.polygon[0],f.polygon[1]);for(int i=1;i<4;i++)path.lineTo(f.polygon[2*i],f.polygon[2*i+1]);path.close();
-            int shade=(int)Math.round(206+40*f.facing);paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(235,Math.min(255,shade),Math.min(255,shade+4),Math.min(255,shade+6)));canvas.drawPath(path,paint);
-            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(Color.rgb(150,163,174));canvas.drawPath(path,paint);paint.setStyle(Paint.Style.FILL);
-            if(f.facing>.45)text(canvas,f.face.label,f.cx,f.cy+dp(3),7.5f,Color.rgb(52,66,78),true,Paint.Align.CENTER);
+            int shade=(int)Math.round(178+52*f.facing);paint.setStyle(Paint.Style.FILL);paint.setColor(Color.rgb(Math.min(255,shade-6),Math.min(255,shade+2),Math.min(255,shade+8)));canvas.drawPath(path,paint);
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1.2f));paint.setColor(Color.rgb(96,112,126));canvas.drawPath(path,paint);
+            if(f.facing>.95){// face-on: the outer band turns to the neighbouring face
+                float k=.55f;android.graphics.Path inner=new android.graphics.Path();for(int i=0;i<4;i++){float px=f.cx+(f.polygon[2*i]-f.cx)*k,py=f.cy+(f.polygon[2*i+1]-f.cy)*k;if(i==0)inner.moveTo(px,py);else inner.lineTo(px,py);}inner.close();
+                paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(2),dp(2)},0));paint.setColor(Color.rgb(140,154,166));canvas.drawPath(inner,paint);paint.setPathEffect(null);}
+            paint.setStyle(Paint.Style.FILL);
+            if(f.facing>.45)text(canvas,f.face.label,f.cx,f.cy+dp(3.5f),8.5f,Color.rgb(36,48,58),true,Paint.Align.CENTER);
         }
         // Axis triad from the cube's back-left-bottom corner.
         double[] o=ViewCube.project(cameraYaw,cameraPitch,new double[]{-1,-1,-1});float ox=(float)(x+o[0]*half),oy=(float)(y+o[1]*half);

@@ -22,6 +22,11 @@ public final class ViewCubeHostTest {
         check(top.cy<100,"top face is drawn above the centre (screen Y down)");
         double[] x=ViewCube.project(-45,iso,new double[]{1,0,0});check(x[0]>0,"+X points to the right in the default view");
         check(ViewCube.hit(-45,iso,100,100,20,10,10)==null,"tap outside the cube is not consumed");
+        // Face-on view: the outer band of the face leads to the neighbouring faces.
+        check("Prawy bok".equals(ViewCube.hit(0,0,100,100,20,117,100)),"front view: right edge band turns to the right side");
+        check("Góra".equals(ViewCube.hit(0,0,100,100,20,100,83)),"front view: top edge band turns to the top");
+        check("Lewy bok".equals(ViewCube.hit(0,0,100,100,20,83,100)),"front view: left edge band turns to the left side");
+        check("Przód".equals(ViewCube.hit(0,90,100,100,20,100,117)),"top view: bottom edge band turns to the front");
         System.out.println("PASS ViewCubeHostTest: "+checks+" checks");
     }
 }
