@@ -49,6 +49,8 @@ public final class MainActivity extends Activity {
         root.addView(workspace);
         setContentView(root);
         if(savedInstanceState==null)workspace.post(()->{if(workspace.isAttachedToWindow())workspace.showStartupProjects();});
+        // Back gesture: closes menus and panels first, then leaves the active tool; only then the app goes to the background.
+        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,()->{if(!workspace.handleBack())moveTaskToBack(true);});
         WindowInsetsController insetsController =
             getWindow().getDecorView().getWindowInsetsController();
         if (insetsController != null) {

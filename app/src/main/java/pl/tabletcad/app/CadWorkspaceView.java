@@ -66,7 +66,7 @@ public final class CadWorkspaceView extends View {
     private static final int CHROME_TEXT = Color.rgb(196, 206, 214);
     private static final int DIVIDER = Color.rgb(214, 222, 228);
     /** Layout tokens: one 64 dp top bar (project + tools + files), collapsible model tree. */
-    private static final float TOP_BAR_DP = 64f, TOOLBAR_X_DP = 224f;
+    private static final float TOP_BAR_DP = 64f, TOOLBAR_X_DP = 224f, PANEL_DP = 272f;
     private boolean treeCollapsed;
     private float topBar() { return dp(TOP_BAR_DP); }
     private String appVersion;
@@ -248,7 +248,7 @@ public final class CadWorkspaceView extends View {
         return propertyEditor != null || inSketch() || mode.equals("Zmierz") || mode.equals("Rysunek");
     }
 
-    private float viewportRight() { return getWidth() - (propertiesVisible() ? dp(252) : 0); }
+    private float viewportRight() { return getWidth() - (propertyEditor!=null ? dp(PANEL_DP) : propertiesVisible() ? dp(252) : 0); }
 
     private float maxTimelineScroll() {
         return Math.max(0, leftWidth() + dp(116) + CadTimeline.entries(project).size() * dp(64) - viewportRight());
@@ -303,6 +303,7 @@ public final class CadWorkspaceView extends View {
     }
 
     private void closePropertyEditor() {
+        panelDismiss=null;
         showExtrusionSketch=false;extrusionSelectionChanged=null;extrusionFacePick=null;
         invalidateGeometryPreview();
         removeCallbacks(extrusionPreviewTask);extrusionPreviewScheduled=false;
@@ -335,37 +336,49 @@ public final class CadWorkspaceView extends View {
         private android.content.DialogInterface.OnClickListener itemAction;
         private final List<String> labels = new ArrayList<>();
         private final List<android.content.DialogInterface.OnClickListener> actions = new ArrayList<>();
+        private int positive=-1,negative=-1;
         PropertyBuilder setTitle(String value) {title=value;return this;}
         PropertyBuilder setView(View value) {content=value;return this;}
         PropertyBuilder setItems(String[] values, android.content.DialogInterface.OnClickListener action) {
             items=values;itemAction=action;return this;
         }
-        PropertyBuilder setNegativeButton(String label, android.content.DialogInterface.OnClickListener action) {return button(label,action);}
+        PropertyBuilder setNegativeButton(String label, android.content.DialogInterface.OnClickListener action) {negative=labels.size();return button(label,action);}
         PropertyBuilder setNeutralButton(String label, android.content.DialogInterface.OnClickListener action) {return button(label,action);}
-        private int positive=-1;
         PropertyBuilder setPositiveButton(String label, android.content.DialogInterface.OnClickListener action) {positive=labels.size();return button(label,action);}
         private PropertyBuilder button(String label, android.content.DialogInterface.OnClickListener action) {
             labels.add(label);actions.add(action);return this;
         }
+        private android.widget.Button action(int index) {
+            android.widget.Button button=new android.widget.Button(getContext());button.setText(labels.get(index));
+            if(index==positive)PanelStyle.primary(button);else if(PanelStyle.destructive(labels.get(index)))PanelStyle.danger(button);else PanelStyle.secondary(button);
+            button.setOnClickListener(v->{closePropertyEditor();
+                if(actions.get(index)!=null) actions.get(index).onClick(null,index);invalidate();});
+            return button;
+        }
         void show() {
             closePropertyEditor();
             if (!(getParent() instanceof android.widget.FrameLayout)) return;
-            LinearLayout body=new LinearLayout(getContext());body.setOrientation(LinearLayout.VERTICAL);
-            body.setPadding((int)dp(12),(int)dp(12),(int)dp(12),(int)dp(20));body.setBackgroundColor(PANEL);
-            android.widget.TextView heading=new android.widget.TextView(getContext());
-            heading.setText(title);heading.setTextColor(INK);heading.setTextSize(17);body.addView(heading);
-            if(content!=null) body.addView(content);
+            Context c=getContext();
+            LinearLayout body=new LinearLayout(c);body.setOrientation(LinearLayout.VERTICAL);
+            body.setPadding((int)dp(14),(int)dp(6),(int)dp(14),(int)dp(18));body.setBackgroundColor(PANEL);
+            // Header: title and ✕ (same as the dismissive action, or simply closing the panel).
+            final int dismiss=negative;
+            Runnable close=()->{closePropertyEditor();if(dismiss>=0&&actions.get(dismiss)!=null)actions.get(dismiss).onClick(null,dismiss);invalidate();};
+            body.addView(PanelStyle.header(c,title,close));
+            if(content!=null){PanelStyle.form(content);body.addView(content,PanelStyle.spaced(c,4));}
             if(items!=null) for(int i=0;i<items.length;i++) {
-                final int index=i;android.widget.Button button=new android.widget.Button(getContext());
-                button.setText(items[i]);body.addView(button);
+                final int index=i;android.widget.Button button=new android.widget.Button(c);
+                button.setText(items[i]);PanelStyle.row(button);body.addView(button,PanelStyle.spaced(c,i==0?8:6));
                 button.setOnClickListener(v->{closePropertyEditor();itemAction.onClick(null,index);invalidate();});
             }
             android.widget.Button positiveButton=null;
-            for(int i=0;i<labels.size();i++) {
-                final int index=i;android.widget.Button button=new android.widget.Button(getContext());
-                button.setText(labels.get(i));body.addView(button);if(i==positive)positiveButton=button;
-                button.setOnClickListener(v->{closePropertyEditor();
-                    if(actions.get(index)!=null) actions.get(index).onClick(null,index);invalidate();});
+            // Additional actions (Do powierzchni…, Usuń, Edytuj profil…) full width, then Anuluj | main action side by side.
+            for(int i=0;i<labels.size();i++)if(i!=positive&&i!=negative)body.addView(action(i),PanelStyle.spaced(c,8));
+            if(positive>=0||negative>=0) {
+                LinearLayout footer=new LinearLayout(c);footer.setOrientation(LinearLayout.HORIZONTAL);
+                if(negative>=0){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1);if(positive>=0)p.rightMargin=(int)dp(8);footer.addView(action(negative),p);}
+                if(positive>=0){positiveButton=action(positive);footer.addView(positiveButton,new LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,negative>=0?1.25f:1));}
+                body.addView(footer,PanelStyle.spaced(c,12));
             }
             // The keyboard's ✓ / Enter on the last field confirms the panel like its main button.
             if(positiveButton!=null&&content!=null) {
@@ -380,15 +393,30 @@ public final class CadWorkspaceView extends View {
                         confirm.performClick();return true;});
                 }
             }
-            propertyEditor=new android.widget.ScrollView(getContext());propertyEditor.setFillViewport(false);
-            propertyEditor.addView(body);
-            body.measure(View.MeasureSpec.makeMeasureSpec((int)dp(252),View.MeasureSpec.EXACTLY),
+            propertyEditor=new android.widget.ScrollView(c);propertyEditor.setFillViewport(false);
+            propertyEditor.addView(body);propertyEditor.setElevation(dp(6));
+            body.measure(View.MeasureSpec.makeMeasureSpec((int)dp(PANEL_DP),View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
             android.widget.FrameLayout.LayoutParams layout=new android.widget.FrameLayout.LayoutParams(
-                (int)dp(252),Math.min(body.getMeasuredHeight(),Math.max((int)dp(100),getHeight()-(int)viewTop()-bottomSystemInset)));
+                (int)dp(PANEL_DP),Math.min(body.getMeasuredHeight(),Math.max((int)dp(100),getHeight()-(int)viewTop()-bottomSystemInset)));
             layout.gravity=android.view.Gravity.TOP|android.view.Gravity.RIGHT;layout.topMargin=(int)viewTop();
             ((android.widget.FrameLayout)getParent()).addView(propertyEditor,layout);
+            panelDismiss=close;
         }
+    }
+    /** Dismiss action of the open panel (✕, Anuluj or the system back gesture). */
+    private Runnable panelDismiss;
+    /**
+     * System back: closes the tool menu, then the open panel (like Anuluj), then leaves the active tool.
+     * Returns false when there is nothing to close, so the activity can handle back itself.
+     */
+    public boolean handleBack() {
+        if(toolbarPopup!=null){dismissToolPopup();return true;}
+        if(propertyEditor!=null){Runnable close=panelDismiss;if(close!=null)close.run();else closePropertyEditor();invalidate();return true;}
+        if(inSketch()){operationMessage="Szkic jest otwarty: Zakończ zatwierdza zmiany, Anuluj szkic je odrzuca";invalidate();return true;}
+        if(!mode.equals("Wybierz")){mode="Wybierz";clearViewportSelection();operationMessage="";invalidate();return true;}
+        if(selectedFace>=0){clearViewportSelection();invalidate();return true;}
+        return false;
     }
 
     public CadWorkspaceView(Context context, FileRequestListener fileRequestListener) {
@@ -507,7 +535,7 @@ public final class CadWorkspaceView extends View {
                     return true;
                 }
                 if (e.getY() <= topBar() && e.getX() >= getWidth() - dp(330)) {
-                    if (fileRequestListener != null) fileRequestListener.requestOpenStep();
+                    showFileMenu();
                     return true;
                 }
                 if(e.getY()<=topBar()&&e.getX()<toolbarX()) {
@@ -525,6 +553,7 @@ public final class CadWorkspaceView extends View {
                     treeCollapsed=!treeCollapsed;dismissToolPopup();invalidate();return true;
                 }
                 if(e.getX()<leftWidth()&&e.getY()>=treeTop()) {treeTap(e.getX(),e.getY());return true;}
+                if(selectionChipTap(e.getX(),e.getY()))return true;
 
                 
 if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234)) {
@@ -867,7 +896,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(!mode.equals("Rysunek")) drawAxis(canvas, right - dp(70), bottom - dp(60));
         drawExtrusionManipulator(canvas,left,top,right,bottom);
         drawFieldHandle(canvas,left,top,right,bottom);
-        if(!propertiesVisible()&&!operationMessage.isEmpty())drawViewportMessage(canvas,left,right,bottom);
+        if(!propertiesVisible()&&!operationMessage.isEmpty()&&messageFresh())drawViewportMessage(canvas,left,right,bottom);
+        drawSelectionBar(canvas,left,top,right);
         if(inSketch()&&!mode.equals("Rysunek")){drawProjectionEdges(canvas);drawConstraintStatus(canvas,left,bottom);}
         canvas.restore();
         drawTimeline(canvas);
@@ -888,7 +918,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         text(canvas, "v" + appVersion(), toolbarX() - dp(12), dp(50), 10, Color.rgb(132, 146, 158), false, Paint.Align.RIGHT);
         paint.setColor(CHROME_RAISED);
         canvas.drawRect(toolbarX() - dp(1), dp(12), toolbarX(), topBar() - dp(12), paint);
-        pill(canvas, getWidth() - dp(312), dp(13), dp(124), dp(38), "Otwórz plik", CHROME_RAISED, Color.WHITE);
+        pill(canvas, getWidth() - dp(312), dp(13), dp(124), dp(38), "Plik  ▾", CHROME_RAISED, Color.WHITE);
         pill(canvas, getWidth() - dp(172), dp(13), dp(152), dp(38), "Eksportuj", ACCENT, Color.WHITE);
         float itemWidth = topToolWidth();
         ToolbarCatalog.Group[] groups = ToolbarCatalog.groups(sketch);
@@ -952,6 +982,19 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         button.setContentDescription(label);return button;
     }
 
+    private static final java.util.Set<String> NEEDS_SOLID=new java.util.HashSet<>(java.util.Arrays.asList(
+        "Otwór","Gwint","Powłoka","Zaokrąglij","Fazuj","Pochyl ściany","Odsuń ścianę","Głębokość","Usuń cechę","Połącz bryły","Odejmij bryły","Część wspólna brył","Podziel bryłę",
+        "Przesuń bryłę","Obróć bryłę","Skaluj bryłę","Połóż na stole","Lustro bryły","Szyk liniowy bryły","Szyk kołowy bryły","Lustro operacji","Szyk liniowy operacji","Szyk kołowy operacji",
+        "Nowy komponent","Wstaw wystąpienie","Kolizje","Lista części","Zmierz kąt","Pole ściany","Właściwości bryły","Odległość brył","Nawisy","Rysunek","Przejście","Przeciągnij","Przekrój"));
+    private static final java.util.Set<String> NEEDS_TWO_BODIES=new java.util.HashSet<>(java.util.Arrays.asList("Połącz bryły","Odejmij bryły","Część wspólna brył","Dosuń ściany","Kolizje","Odległość brył"));
+    /** Reason why a command cannot start in the current document (shown dimmed in its menu), or null. */
+    private String commandUnavailable(String command) {
+        if(inSketch())return null;
+        if(NEEDS_SOLID.contains(command)&&(!project.hasSolid()||project.importedMeshSource!=null))return project.importedMeshSource!=null?"siatka STL/OBJ bez geometrii B-Rep":"najpierw utwórz bryłę";
+        if(NEEDS_TWO_BODIES.contains(command)&&BodyGraph.bodies(project).size()<2)return "potrzebne co najmniej dwie bryły";
+        if(command.equals("Gwint")&&holeCylinders.isEmpty())return "brak otworu walcowego";
+        return null;
+    }
     /** Runs a toolbar command; when it neither opened a panel nor changed the mode, its message is shown as a toast. */
     private void runToolWithFeedback(String command,boolean quiet) {
         String message=operationMessage;String before=mode;android.widget.ScrollView editor=propertyEditor;
@@ -978,6 +1021,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             if(commandIndex++%columns==0){row=new LinearLayout(getContext());row.setOrientation(LinearLayout.HORIZONTAL);body.addView(row);}
             String label=command.equals("Ukryj bryłę")&&!showSolid?"Pokaż bryłę":command;
             View button=toolbarButton(label,command,false,isToolActive(command),true);
+            String why=commandUnavailable(command);if(why!=null){button.setAlpha(.38f);button.setContentDescription(label+" – niedostępne: "+why);}
             button.setOnClickListener(v->{dismissToolPopup();
                 if(inSketch()==role&&ToolbarCatalog.allows(role,command))runToolWithFeedback(command,group.title.equals("Widok"));
             });
@@ -1339,6 +1383,60 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         paint.setTextSize(11*getResources().getDisplayMetrics().scaledDensity);paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);float w=paint.measureText(label)+dp(24);
         paint.setColor(color);canvas.drawRoundRect(new RectF(left+dp(12),bottom-dp(40),left+dp(12)+w,bottom-dp(14)),dp(9),dp(9),paint);
         text(canvas,label,left+dp(12)+w/2,bottom-dp(23),11,Color.WHITE,true,Paint.Align.CENTER);
+    }
+    /** Quick actions for the selected face, shown as chips at the top of the viewport. */
+    private final List<RectF> selectionChipRects=new ArrayList<>();private final List<Runnable> selectionChipActions=new ArrayList<>();
+    private boolean selectionBarVisible() {
+        return !inSketch()&&mode.equals("Wybierz")&&propertyEditor==null&&selectedFace>=0&&project.hasSolid()&&project.importedMeshSource==null&&!showingSection();
+    }
+    private void drawSelectionBar(Canvas canvas,float left,float top,float right) {
+        selectionChipRects.clear();selectionChipActions.clear();
+        if(!selectionBarVisible())return;
+        final int face=selectedFace;boolean planar=isFacePlanar(face);int body=faceBodies.getOrDefault(face,1);Integer origin=faceFeatures.get(face);
+        HoleThread.Cylinder cylinder=selectedCylinder();
+        List<String> names=new ArrayList<>(),icons=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
+        final double px=selectedPointX,py=selectedPointY,pz=selectedPointZ,nx=selectedNormalX,ny=selectedNormalY,nz=selectedNormalZ;
+        Runnable restore=()->{selectedFace=face;selectedPointX=px;selectedPointY=py;selectedPointZ=pz;selectedNormalX=nx;selectedNormalY=ny;selectedNormalZ=nz;project.selectedBody=body;};
+        if(planar) {
+            names.add("Szkic na ścianie");icons.add("Szkic");actions.add(()->{activateTopTool("Szkic");if(mode.equals("Szkic")&&!sketchPlaneChosen){restore.run();chooseSketchPlane("Ściana "+(face+1));}});
+            names.add("Odsuń ścianę");icons.add("Odsuń ścianę");actions.add(()->{restore.run();beginFaceOffsetTool();});
+            names.add("Otwór");icons.add("Otwór");actions.add(()->{restore.run();beginHoleTool();});
+            names.add("Płaszczyzna");icons.add("Płaszczyzna odsunięta");actions.add(()->{restore.run();showDatumEditor(DATUM_COMMANDS[0],null,null);});
+        } else if(cylinder!=null) {
+            names.add("Gwint");icons.add("Gwint");actions.add(()->{restore.run();beginThreadTool();});
+        }
+        if(origin!=null&&(origin>=0||origin==-1&&project.featureBase!=null&&!project.importedStep)){names.add("Edytuj operację");icons.add("Edytuj");actions.add(()->{restore.run();editFaceOrigin(face);});}
+        names.add("Właściwości");icons.add("Właściwości bryły");actions.add(()->{project.selectedBody=body;showBodyProperties();});
+        String label=(planar?"Ściana płaska":cylinder!=null?"Ściana walcowa · Ø"+formatMm(cylinder.radius*2):"Ściana")+" · "+BodyGraph.name(project,body);
+        float chipH=dp(40),gap=dp(6),pad=dp(10);paint.setTextSize(dp(12));paint.setTypeface(android.graphics.Typeface.DEFAULT);
+        float labelW=paint.measureText(label)+dp(20),total=labelW;float[] widths=new float[names.size()];
+        for(int i=0;i<names.size();i++){widths[i]=paint.measureText(names.get(i))+dp(44);total+=gap+widths[i];}
+        float x=Math.max(left+dp(8),(left+right)/2-total/2-pad),y=top+dp(10);
+        RectF bar=new RectF(x,y,Math.min(right-dp(8),x+total+2*pad),y+chipH+dp(10));
+        paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(240,20,26,33));canvas.drawRoundRect(bar,dp(14),dp(14),paint);
+        float cx=x+pad;text(canvas,label,cx+dp(4),y+dp(30),12,CHROME_TEXT,false);cx+=labelW;
+        for(int i=0;i<names.size();i++) {
+            RectF chip=new RectF(cx+gap,y+dp(5),cx+gap+widths[i],y+dp(5)+chipH);if(chip.right>bar.right)break;
+            paint.setColor(CHROME_RAISED);canvas.drawRoundRect(chip,dp(10),dp(10),paint);
+            canvas.save();canvas.translate(chip.left+dp(18),chip.centerY());canvas.scale(.6f,.6f);drawToolIcon(canvas,icons.get(i),0,0,Color.rgb(210,220,228));canvas.restore();
+            text(canvas,names.get(i),chip.left+dp(34),chip.centerY()+dp(4.5f),12,Color.WHITE,false);
+            selectionChipRects.add(chip);selectionChipActions.add(actions.get(i));cx=chip.right;
+        }
+    }
+    private boolean selectionChipTap(float x,float y) {
+        if(!selectionBarVisible())return false;
+        for(int i=0;i<selectionChipRects.size();i++)if(selectionChipRects.get(i).contains(x,y)){performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);selectionChipActions.get(i).run();invalidate();return true;}
+        return false;
+    }
+    private String shownMessage="";private long shownMessageAt;
+    /** Status bubbles fade out after a few seconds (failures stay longer; running operations stay until done). */
+    private boolean messageFresh() {
+        long now=android.os.SystemClock.uptimeMillis();
+        if(!operationMessage.equals(shownMessage)){shownMessage=operationMessage;shownMessageAt=now;}
+        String lower=operationMessage.toLowerCase(java.util.Locale.ROOT);boolean failure=lower.startsWith("nie ")||lower.contains("błąd");
+        long life=modelOperationPending?Long.MAX_VALUE/4:failure?9000:5000;
+        if(now-shownMessageAt<life){postInvalidateDelayed(Math.min(life-(now-shownMessageAt)+20,30000));return true;}
+        return false;
     }
     private void drawViewportMessage(Canvas canvas,float left,float right,float bottom) {
         android.text.TextPaint messagePaint=new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
@@ -6884,6 +6982,15 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             }).show();
     }
 
+    /** File menu (top bar): open/import, export, projects, copies and the trash. */
+    private void showFileMenu() {
+        closePropertyEditor();dismissToolPopup();
+        new PropertyBuilder().setTitle("Plik")
+            .setItems(new String[]{"Importuj plik (STEP, STL, OBJ, DXF)…","Eksportuj…","Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt"},(d,which)-> {
+                if(which==0){if(fileRequestListener!=null)fileRequestListener.requestOpenStep();}
+                else if(which==1)showExportPicker();else if(which==2)showNewProject();else if(which==3)showProjectLibrary();else if(which==4)showProjectCopy();else showProjectTrash();
+            }).setNegativeButton("Zamknij",null).show();
+    }
     private void showProjectMenu() {
         closePropertyEditor();
         new PropertyBuilder().setTitle("Projekt · "+project.name+" · TabletCAD v"+appVersion())
