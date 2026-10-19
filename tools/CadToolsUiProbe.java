@@ -28,6 +28,18 @@ public final class CadToolsUiProbe {
         check(ToolbarCatalog.allows(true,"Rzutuj")&&ToolbarCatalog.allows(true,"Elipsa"),"projection and ellipse are sketch commands");
         call(view,"activateTopTool",new Class<?>[]{String.class},"Rzutuj");
         check(String.valueOf(field(view,"operationMessage")).contains("B-Rep")||String.valueOf(field(view,"operationMessage")).contains("płaszczyzn"),"projection without a solid is refused with a reason: "+field(view,"operationMessage"));
-        System.out.println("ALL 0.74 UI TESTS PASSED");
+        // 0.75: offset construction plane from the toolbar, listed in the tree, used as a sketch plane.
+        call(view,"activateTopTool",new Class<?>[]{String.class},"Zakończ");
+        call(view,"activateTopTool",new Class<?>[]{String.class},"Płaszczyzna odsunięta");
+        View panel=(View)field(view,"propertyEditor");check(panel!=null,"offset plane opens a contextual panel");
+        List<EditText> fields=new ArrayList<>();WorkspaceUiProbe.editors(panel,fields);fields.get(fields.size()-1).setText("12,5");
+        WorkspaceUiProbe.button(panel,"Utwórz").performClick();
+        CadProject q=(CadProject)field(view,"project");check(q.datums.size()==1&&Math.abs(q.datums.get(0).origin[2]-12.5)<1e-12,"offset plane 12,5 mm above XY is stored: "+field(view,"operationMessage"));
+        view.draw(new Canvas(bitmap));
+        boolean listed=false;for(ModelTree.Row r:ModelTree.rows(q,new HashSet<>()))listed|=r.datum();check(listed,"construction plane is listed in the model tree");
+        call(view,"sketchOnDatum",new Class<?>[]{Datum.class},q.datums.get(0));
+        q=(CadProject)field(view,"project");check(Math.abs(q.sketchOriginZ-12.5)<1e-12&&Math.abs(q.sketchUx-1)<1e-12,"sketch frame lies on the construction plane");
+        call(view,"undo",new Class<?>[0]);
+        System.out.println("ALL 0.74/0.75 UI TESTS PASSED");
     }
 }

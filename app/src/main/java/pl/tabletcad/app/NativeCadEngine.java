@@ -89,6 +89,13 @@ public final class NativeCadEngine {
         return LOADED ? nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,2) : new double[0];
     }
 
+    /** Exact per-face analysis, stride 12: face (1-based), body, area, type (0 plane, 1 cylinder, 2 cone,
+     *  3 sphere, 4 torus, 5 other), point xyz, direction xyz, radius, creating operation. */
+    public static double[] faceAnalysis(double width,double height,double depth,double radius,
+            double[] base,double[] features,String sourceStep) {
+        return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,10):new double[0];
+    }
+
     /** Exact OCCT volume, area, centroid XYZ, solid count and face count (mm units). */
     public static double[] bodyProperties(double width,double height,double depth,double radius,
             double[] base,double[] features,String sourceStep) {

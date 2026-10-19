@@ -7,10 +7,14 @@ import pl.tabletcad.app.model.*;
 /** A sketch part is an explicit set of source entity UUIDs used by one body. */
 public final class ModelTree {
     private ModelTree() {}
+    /** Pseudo body id of the construction geometry group. */
+    public static final int CONSTRUCTION=-1;
     public static final class Row {
-        public final int body;public final String sketchId,name,key;public final JSONObject snapshot;public final Set<String> entities;
-        Row(int body,String id,String name,JSONObject snapshot,Set<String> ids){this.body=body;this.sketchId=id;this.name=name;this.snapshot=snapshot;this.entities=ids;key=body+":"+(id==null?"body":id);}
+        public final int body;public final String sketchId,name,key,datum;public final JSONObject snapshot;public final Set<String> entities;
+        Row(int body,String id,String name,JSONObject snapshot,Set<String> ids){this(body,id,name,snapshot,ids,null);}
+        Row(int body,String id,String name,JSONObject snapshot,Set<String> ids,String datum){this.body=body;this.sketchId=id;this.name=name;this.snapshot=snapshot;this.entities=ids;this.datum=datum;key=datum!=null?"datum:"+datum:body+":"+(id==null?"body":id);}
         public boolean sketch(){return snapshot!=null;}
+        public boolean datum(){return datum!=null;}
     }
     private static Set<Integer> uses(CadProject p,String id) {
         Set<Integer> result=new LinkedHashSet<>();if(id.equals(p.featureBaseProfileId))result.add(1);
@@ -32,7 +36,12 @@ public final class ModelTree {
                 int body=entry.getKey();if(body==0&&entry.getValue().isEmpty())continue;
                 result.add(new Row(body,null,body==0?"Szkice nieprzypisane":BodyGraph.name(p,body),null,new LinkedHashSet<>()));
                 if(!collapsed.contains(body))result.addAll(entry.getValue());
-            }return result;
+            }
+            if(!p.datums.isEmpty()) {
+                result.add(new Row(CONSTRUCTION,null,"Konstrukcja",null,new LinkedHashSet<>()));
+                if(!collapsed.contains(CONSTRUCTION))for(Datum d:p.datums)result.add(new Row(CONSTRUCTION,null,d.name,null,new LinkedHashSet<>(),d.id));
+            }
+            return result;
         }catch(JSONException error){throw new IllegalArgumentException("Nie można odczytać drzewa szkiców",error);}
     }
     public static CadProject display(CadProject model,Row row) {

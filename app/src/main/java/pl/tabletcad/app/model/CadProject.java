@@ -38,6 +38,8 @@ public final class CadProject {
     /** Named user parameters and the model values driven by them (see UserParameters). */
     public final List<pl.tabletcad.app.UserParameters.Parameter> parameters=new ArrayList<>();
     public final java.util.Map<String,String> parameterBindings=new java.util.LinkedHashMap<>();
+    /** Construction planes, axes and points (see Datum). */
+    public final List<Datum> datums=new ArrayList<>();
 
     public final String id;
     public String name;
@@ -135,6 +137,7 @@ public final class CadProject {
         root.put("displayDecimals", displayDecimals);
         if(!parameters.isEmpty())root.put("parameters",pl.tabletcad.app.UserParameters.toJson(this));
         if(!parameterBindings.isEmpty())root.put("parameterBindings",new JSONObject(parameterBindings));
+        if(!datums.isEmpty()){JSONArray construction=new JSONArray();for(Datum d:datums)construction.put(d.toJson());root.put("construction",construction);}
         root.put("sketchPlane", sketchPlane);
         root.put("sketchId", sketchId);
         JSONArray saved = new JSONArray();
@@ -195,6 +198,8 @@ public final class CadProject {
         if(!pl.tabletcad.app.Units.valid(project.units))throw new JSONException("Nieznana jednostka projektu: "+project.units);
         project.displayDecimals=root.optInt("displayDecimals",3);
         pl.tabletcad.app.UserParameters.read(project,root);
+        JSONArray construction=root.optJSONArray("construction");java.util.Set<String> datumIds=new java.util.HashSet<>();
+        if(construction!=null)for(int i=0;i<construction.length();i++){Datum d=Datum.fromJson(construction.getJSONObject(i));if(!datumIds.add(d.id))throw new JSONException("Powtórzony element konstrukcyjny");project.datums.add(d);}
         try{pl.tabletcad.app.Units.validateDecimals(project.displayDecimals);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
         if (root.has("materialDensityKgM3")) {
             Object density = root.get("materialDensityKgM3");

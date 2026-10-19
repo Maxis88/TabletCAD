@@ -77,6 +77,54 @@ public final class CadExchange {
         for(int i=0;i<triangles.size();i++) triangle(mesh,i*13,triangles.get(i),i+1);
         return mesh;
     }
+    /**
+     * Wavefront OBJ geometry (v / f; polygons fan-triangulated, v/vt/vn and negative indices).
+     * Materials, textures, normals and groups are ignored; the result is a triangle mesh like STL.
+     */
+    public static double[] readObj(InputStream input) throws IOException {
+        String text=new String(bytes(input),StandardCharsets.UTF_8);
+        List<double[]> vertices=new ArrayList<>();List<double[]> triangles=new ArrayList<>();int degenerate=0;
+        int lineNumber=0;
+        for(String raw:text.split("\\r?\\n|\\r")) {
+            lineNumber++;String line=raw.trim();int hash=line.indexOf('#');if(hash>=0)line=line.substring(0,hash).trim();if(line.isEmpty())continue;
+            String[] parts=line.split("\\s+");
+            if(parts[0].equals("v")) {
+                if(parts.length<4)throw new IOException("OBJ: niepełny wierzchołek w wierszu "+lineNumber);
+                if(vertices.size()>=1000000)throw new IOException("OBJ: limit 1000000 wierzchołków");
+                vertices.add(new double[]{number(parts[1]),number(parts[2]),number(parts[3])});
+            } else if(parts[0].equals("f")) {
+                if(parts.length<4)throw new IOException("OBJ: ściana z mniej niż 3 wierzchołkami w wierszu "+lineNumber);
+                int[] index=new int[parts.length-1];
+                for(int i=1;i<parts.length;i++) {
+                    String head=parts[i].split("/")[0];int value;
+                    try{value=Integer.parseInt(head);}catch(NumberFormatException e){throw new IOException("OBJ: niepoprawny indeks w wierszu "+lineNumber);}
+                    int resolved=value>0?value-1:vertices.size()+value;
+                    if(value==0||resolved<0||resolved>=vertices.size())throw new IOException("OBJ: indeks poza listą wierzchołków w wierszu "+lineNumber);
+                    index[i-1]=resolved;
+                }
+                for(int i=1;i+1<index.length;i++) {
+                    double[] a=vertices.get(index[0]),b=vertices.get(index[i]),c=vertices.get(index[i+1]);
+                    double[] p={a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2]};
+                    double ax=p[3]-p[0],ay=p[4]-p[1],az=p[5]-p[2],bx=p[6]-p[0],by=p[7]-p[1],bz=p[8]-p[2];
+                    double nx=ay*bz-az*by,ny=az*bx-ax*bz,nz=ax*by-ay*bx;
+                    if(!(Math.sqrt(nx*nx+ny*ny+nz*nz)>1e-15)){degenerate++;continue;}
+                    if(triangles.size()>=250000)throw new IOException("OBJ: limit 250000 trójkątów");
+                    triangles.add(p);
+                }
+            }
+        }
+        if(triangles.isEmpty())throw new IOException(degenerate>0?"OBJ zawiera tylko zerowe trójkąty":"OBJ nie zawiera ścian (f)");
+        double[] mesh=new double[triangles.size()*13];
+        for(int i=0;i<triangles.size();i++)triangle(mesh,i*13,triangles.get(i),i+1);
+        return mesh;
+    }
+    /** Binary STL of a mesh (stride 13: three vertices, normal, face). */
+    public static void writeBinaryStl(double[] mesh,OutputStream output)throws IOException {
+        int count=mesh.length/13;ByteBuffer buffer=ByteBuffer.allocate(84+50*count).order(ByteOrder.LITTLE_ENDIAN);
+        byte[] title="TabletCAD binary STL".getBytes(StandardCharsets.US_ASCII);buffer.put(title);buffer.position(80);buffer.putInt(count);
+        for(int i=0;i<count;i++){int o=i*13;buffer.putFloat((float)mesh[o+9]).putFloat((float)mesh[o+10]).putFloat((float)mesh[o+11]);for(int j=0;j<9;j++)buffer.putFloat((float)mesh[o+j]);buffer.putShort((short)0);}
+        output.write(buffer.array());
+    }
     public static List<SketchPrimitive> readDxf(InputStream input) throws IOException {
         String[] lines=new String(bytes(input),StandardCharsets.UTF_8).split("\\r?\\n");
         List<String[]> pairs=new ArrayList<>();

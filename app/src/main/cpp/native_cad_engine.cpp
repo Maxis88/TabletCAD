@@ -1291,7 +1291,7 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         jdouble radius, jdoubleArray javaBase, jdoubleArray javaFeatures, jstring javaExportPath,
         jstring javaSourceStep, jint queryMode) {
     kernelReset();
-    if((queryMode<0||queryMode>3)&&queryMode!=6&&queryMode!=8&&queryMode!=9)return env->NewDoubleArray(0);
+    if((queryMode<0||queryMode>3)&&queryMode!=6&&queryMode!=8&&queryMode!=9&&queryMode!=10)return env->NewDoubleArray(0);
     if(queryMode==9&&!g_sectionActive){kernelFailAt(-2,"Brak płaszczyzny przekroju");return env->NewDoubleArray(0);}
     if (javaFeatures == nullptr || width <= 0 || height <= 0 || depth <= 0) {
         kernelFailAt(-1,"Niepoprawne wymiary bryły bazowej");
@@ -1445,6 +1445,30 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
             if(queryMode==8&&!cylinders.empty()){info.push_back(-8);info.push_back(static_cast<double>(cylinders.size()/15));info.push_back(0);info.insert(info.end(),cylinders.begin(),cylinders.end());}
             if(queryMode==8){std::vector<double> mesh=tessellatedTriangles(shape);if(mesh.empty()){kernelFailAt(-2,"Triangulacja bryły nie powiodła się");return env->NewDoubleArray(0);}std::vector<double> combined;combined.reserve(1+mesh.size()+info.size());combined.push_back(static_cast<double>(mesh.size()));combined.insert(combined.end(),mesh.begin(),mesh.end());combined.insert(combined.end(),info.begin(),info.end());info=std::move(combined);}
             jdoubleArray result=env->NewDoubleArray(static_cast<jsize>(info.size()));if(result&&!info.empty())env->SetDoubleArrayRegion(result,0,static_cast<jsize>(info.size()),info.data());return result;
+        }
+        if(queryMode==10) {
+            // Exact per-face analysis: face, body, area, type (0 plane, 1 cylinder, 2 cone, 3 sphere, 4 torus, 5 other),
+            // point xyz, direction xyz (outward plane normal / surface axis), radius, creating operation.
+            std::vector<double> out;int face=0;
+            for(TopExp_Explorer e(shape,TopAbs_FACE);e.More();e.Next()) {
+                face++;const TopoDS_Face f=TopoDS::Face(e.Current());int bodyId=0,origin=-1;
+                for(const auto& body:bodies){for(TopExp_Explorer g(body.second,TopAbs_FACE);g.More();g.Next())if(f.IsSame(g.Current())){bodyId=body.first;break;}if(bodyId)break;}
+                for(const auto& known:origins)if(f.IsSame(known.first)){origin=known.second;break;}
+                GProp_GProps props;BRepGProp::SurfaceProperties(f,props);
+                BRepAdaptor_Surface surface(f,true);double type=5,radius=0;gp_Pnt p;gp_Dir d(0,0,1);
+                double umin,umax,vmin,vmax;BRepTools::UVBounds(f,umin,umax,vmin,vmax);
+                switch(surface.GetType()) {
+                    case GeomAbs_Plane:{type=0;gp_Pln pl=surface.Plane();d=pl.Axis().Direction();if(f.Orientation()==TopAbs_REVERSED)d.Reverse();p=surface.Value((umin+umax)/2,(vmin+vmax)/2);break;}
+                    case GeomAbs_Cylinder:{type=1;gp_Cylinder c=surface.Cylinder();p=c.Location();d=c.Axis().Direction();radius=c.Radius();break;}
+                    case GeomAbs_Cone:{type=2;gp_Cone c=surface.Cone();p=c.Apex();d=c.Axis().Direction();radius=c.RefRadius();break;}
+                    case GeomAbs_Sphere:{type=3;gp_Sphere c=surface.Sphere();p=c.Location();radius=c.Radius();break;}
+                    case GeomAbs_Torus:{type=4;gp_Torus c=surface.Torus();p=c.Location();d=c.Axis().Direction();radius=c.MinorRadius();break;}
+                    default:p=surface.Value((umin+umax)/2,(vmin+vmax)/2);break;
+                }
+                for(double value:{static_cast<double>(face),static_cast<double>(bodyId),std::abs(props.Mass()),type,p.X(),p.Y(),p.Z(),d.X(),d.Y(),d.Z(),radius,static_cast<double>(origin)})out.push_back(value);
+            }
+            for(double value:out)if(!std::isfinite(value)){kernelFailAt(-2,"Niepoprawne dane ściany");return env->NewDoubleArray(0);}
+            jdoubleArray result=env->NewDoubleArray(static_cast<jsize>(out.size()));if(result&&!out.empty())env->SetDoubleArrayRegion(result,0,static_cast<jsize>(out.size()),out.data());return result;
         }
         if(queryMode==3) {
             GProp_GProps volume,surface;BRepGProp::VolumeProperties(shape,volume);BRepGProp::SurfaceProperties(shape,surface);

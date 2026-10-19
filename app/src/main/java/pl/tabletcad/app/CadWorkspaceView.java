@@ -33,6 +33,7 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 
 import pl.tabletcad.app.model.CadProject;
+import pl.tabletcad.app.model.Datum;
 import pl.tabletcad.app.model.SketchPrimitive;
 import pl.tabletcad.app.storage.ProjectRepository;
 
@@ -164,6 +165,8 @@ public final class CadWorkspaceView extends View {
     private MeasurePoint measureB;
     private double[] measureEdges=new double[0],measureProperties=new double[0],measuredCurve;
     private boolean measurePointMode;
+    /** 0 edge/point measurement, 1 angle between two faces/edges, 2 face area and surface type. */
+    private int measureFaceMode;private double[] measureFaces=new double[0];private final List<GeometryMeasure.Direction> measureDirections=new ArrayList<>();private double[] measuredFace;private int measuredFaceIndex=-1;
     private android.widget.TextView measurementOutput;
     private String measuredEdgeText = "";
     private float touchDownX;
@@ -506,6 +509,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     if (py >= dp(374) && py <= dp(426)) chooseSketchPlane("XY");
                     else if (py >= dp(432) && py <= dp(484)) chooseSketchPlane("XZ");
                     else if (py >= dp(490) && py <= dp(542)) chooseSketchPlane("YZ");
+                    else if (py >= dp(548) && py <= dp(600) && !datumsOf(Datum.PLANE).isEmpty()) showDatumPlanePicker();
                 } else if (isInsideViewport(e.getX(), e.getY())) {
                     if(mode.equals("Profile wyciągnięcia")){if(extrusionFacePick!=null)pickExtrusionFace(e.getX(),e.getY());else toggleExtrusionProfile(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchOrbit)return true;
@@ -538,6 +542,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                         handleMeasureTap(e.getX(), e.getY());
                         return true;
                     }
+                    if(mode.equals("Konstrukcja")){datumPickTap(e.getX(),e.getY());return true;}
                     if(mode.equals("Wybierz")&&editVisibleSketchAt(e.getX(),e.getY()))return true;
                     int face = findFaceAt(e.getX(), e.getY());
                     if(mode.equals("Gwint")) {threadTap(face);return true;}
@@ -821,6 +826,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             drawTechnicalViews(canvas, left, top, right, bottom);
         } else {
             if (showSolid || !inSketch()) drawNativeSolid(canvas, (left + right) / 2f + panX, (top + bottom) / 2f + panY);
+            if (!inSketch() || !sketchPlaneChosen) drawDatums(canvas);
             if(inSketch()||showExtrusionSketch){if(sketchVisible)drawSketch(canvas,left,right);}
             else drawVisibleTreeSketches(canvas);
             if (mode.equals("Zmierz")) drawDimensions(canvas, left, top, right, bottom);
@@ -979,7 +985,12 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         for(int i=0;i<modelTreeRows.size();i++) {
             ModelTree.Row entry=modelTreeRows.get(i);float y=treeTop()+i*dp(36)-treeScroll;if(y+dp(36)<treeTop()||y>getHeight())continue;
             if(entry.key.equals(selectedTreeKey)){paint.setColor(Color.rgb(226,242,240));canvas.drawRoundRect(new RectF(dp(8),y,dp(220),y+dp(34)),dp(6),dp(6),paint);}
-            if(!entry.sketch()) {
+            if(entry.datum()) {
+                Datum d=datum(entry.datum);String glyph=d==null?"?":d.plane()?"▱":d.axis()?"⟋":"⊕";
+                text(canvas,glyph,dp(34),y+dp(23),13,Color.rgb(214,137,16),true);
+                canvas.save();canvas.clipRect(dp(50),y,dp(143),y+dp(36));text(canvas,entry.name,dp(52),y+dp(23),11.5f,INK,entry.key.equals(selectedTreeKey));canvas.restore();
+                text(canvas,"✎",dp(165),y+dp(23),15,ACCENT,true);text(canvas,d!=null&&d.hidden?"○":"●",dp(207),y+dp(23),13,ACCENT,true);
+            } else if(!entry.sketch()) {
                 text(canvas,collapsedBodies.contains(entry.body)?"›":"⌄",dp(12),y+dp(23),15,MUTED,true);
                 canvas.save();canvas.clipRect(dp(26),y,dp(194),y+dp(36));text(canvas,entry.name,dp(28),y+dp(23),12,INK,true);canvas.restore();
                 if(entry.body>0)text(canvas,project.hiddenBodies.contains(entry.body)?"○":"●",dp(207),y+dp(23),13,ACCENT,true);
@@ -993,10 +1004,16 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     private void treeTap(float x,float y) {
         int index=(int)((y-treeTop()+treeScroll)/dp(36));if(index<0||index>=modelTreeRows.size())return;
         ModelTree.Row entry=modelTreeRows.get(index);long now=android.os.SystemClock.uptimeMillis();boolean edit=entry.key.equals(selectedTreeKey)&&now-treeLastTap<android.view.ViewConfiguration.getDoubleTapTimeout();treeLastTap=now;
-        if(!entry.sketch()) {
+        if(entry.datum()) {
+            Datum d=datum(entry.datum);if(d==null)return;
+            if(x>dp(196)){d.hidden=!d.hidden;projectRepository.save(project);}
+            else if(mode.equals("Szkic")&&!sketchPlaneChosen&&d.plane())sketchOnDatum(d);
+            else if(x>dp(150)||edit)showDatumEditor(commandOf(d),d,null);
+            else {selectedTreeKey=entry.key;highlightBody=0;highlightFeature=Integer.MIN_VALUE;highlightSketch=false;operationMessage=d.name+" · "+d.describe()+(d.plane()?". Szkic → wybierz tę płaszczyznę w drzewie, aby na niej rysować.":"");}
+        } else if(!entry.sketch()) {
             if(x<dp(26)){if(!collapsedBodies.add(entry.body))collapsedBodies.remove(entry.body);}
             else if(x>dp(196)&&entry.body>0){if(!project.hiddenBodies.add(entry.body))project.hiddenBodies.remove(entry.body);projectRepository.save(project);}
-            else {selectedTreeKey=entry.key;project.selectedBody=entry.body>0?entry.body:1;highlightBody=entry.body;highlightFeature=Integer.MIN_VALUE;highlightSketch=false;}
+            else {selectedTreeKey=entry.key;project.selectedBody=entry.body>0?entry.body:1;highlightBody=Math.max(0,entry.body);highlightFeature=Integer.MIN_VALUE;highlightSketch=false;}
         } else if(x>dp(196)) {if(!project.hiddenSketchParts.add(entry.key))project.hiddenSketchParts.remove(entry.key);else if(selectedTreeKey.equals(entry.key)){selectedTreeKey="";highlightSketch=false;}projectRepository.save(project);}
         else if(x>dp(167))renameTreeSketch(entry);
         else {selectedTreeKey=entry.key;highlightSketch=true;highlightBody=0;highlightFeature=Integer.MIN_VALUE;selectedSketchId=null;editTreeSketch(entry);}
@@ -1096,6 +1113,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 pill(canvas,right+dp(18),dp(374),dp(202),dp(48),"Płaszczyzna XY",GRID,INK);
                 pill(canvas,right+dp(18),dp(432),dp(202),dp(48),"Płaszczyzna XZ",GRID,INK);
                 pill(canvas,right+dp(18),dp(490),dp(202),dp(48),"Płaszczyzna YZ",GRID,INK);
+                if(!datumsOf(Datum.PLANE).isEmpty())pill(canvas,right+dp(18),dp(548),dp(202),dp(48),"Konstrukcyjna…",GRID,INK);
             } else {
                 if(mode.equals("Szkic")&&(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn"))) {
                     labelValue(canvas,right,project.splineDraft?"Punkty splajnu":"Punkty polilinii",String.valueOf(project.polylineDraft.size()),dp(230));
@@ -1141,7 +1159,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             pill(canvas, right + dp(18), dp(374), dp(202), dp(48), "Płaszczyzna XY", Color.rgb(226, 232, 236), INK);
             pill(canvas, right + dp(18), dp(432), dp(202), dp(48), "Płaszczyzna XZ", Color.rgb(226, 232, 236), INK);
             pill(canvas, right + dp(18), dp(490), dp(202), dp(48), "Płaszczyzna YZ", Color.rgb(226, 232, 236), INK);
-            text(canvas, "lub dotknij płaskiej ściany bryły", right + dp(18), dp(562), 10, MUTED, false);
+            boolean datums=!datumsOf(Datum.PLANE).isEmpty();
+            if(datums)pill(canvas, right + dp(18), dp(548), dp(202), dp(48), "Konstrukcyjna…", Color.rgb(226, 232, 236), INK);
+            text(canvas, "lub dotknij płaskiej ściany bryły", right + dp(18), dp(datums?620:562), 10, MUTED, false);
         } else if (mode.equals("Edytuj szkic")) {
             text(canvas, selectedSketchId == null ? "Dotknij elementu szkicu" : "Wybrano element szkicu",
                 right + dp(18), dp(374), 12, selectedSketchId == null ? MUTED : ACCENT, true);
@@ -3308,8 +3328,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
     /** On-model drag arrow bound to a length field of the open dialog (hole depth, shell thickness, pattern spacing). */
     private static final class FieldHandle {
-        final android.widget.ScrollView owner;final double[] origin,axis;final EditText field;final double minimum,maximum;final String label;
-        PointF tip;boolean active;double startValue,startParameter;
+        final android.widget.ScrollView owner;final double[] origin;double[] axis;final EditText field;final double minimum,maximum;final String label;
+        java.util.function.Supplier<double[]> axisSource;PointF tip;boolean active;double startValue,startParameter;
         FieldHandle(android.widget.ScrollView owner,double[] origin,double[] axis,EditText field,double minimum,double maximum,String label){this.owner=owner;this.origin=origin.clone();this.axis=axis.clone();this.field=field;this.minimum=minimum;this.maximum=maximum;this.label=label;}
     }
     private FieldHandle fieldHandle;
@@ -3320,6 +3340,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     private double fieldValue(FieldHandle h){try{return parseCoordinate(h.field);}catch(IllegalArgumentException e){return Double.NaN;}}
     private void drawFieldHandle(Canvas canvas,float left,float top,float right,float bottom) {
         FieldHandle h=fieldHandle;if(h==null)return;
+        if(h.axisSource!=null&&!h.active)try{double[] a=h.axisSource.get();double l=Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]);if(l>1e-9)h.axis=new double[]{a[0]/l,a[1]/l,a[2]/l};}catch(RuntimeException ignored){}
         if(propertyEditor!=h.owner||!h.field.isEnabled()){if(propertyEditor!=h.owner)fieldHandle=null;else h.tip=null;return;}
         double value=fieldValue(h);if(!Double.isFinite(value)){h.tip=null;return;}
         double[] a=projectWorldPoint(h.origin[0],h.origin[1],h.origin[2]),b=projectWorldPoint(h.origin[0]+h.axis[0]*value,h.origin[1]+h.axis[1]*value,h.origin[2]+h.axis[2]*value);
@@ -3470,6 +3491,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private void drawDimensions(Canvas canvas, float left, float top, float right, float bottom) {
+        if(measureFaceMode>0)return;
         if(!measurePointMode&&measuredCurve!=null){drawMeasuredCurve(canvas);return;}
         if (measureA == null) {
             text(canvas, measurePointMode?"Wskaż dwa punkty / wierzchołki":"Dotknij widocznej krawędzi", (left + right) / 2f,
@@ -3495,6 +3517,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
     private void handleMeasureTap(float x, float y) {
         if(measurementOutput==null)showMeasurementPanel();
+        if(measureFaceMode>0&&project.importedMeshSource==null){measureFaceTap(x,y);return;}
         if(findFaceAt(x,y)<0&&nearestBrepVertex(x,y)==null&&nearestMeasurePoint(x,y)==null){clearViewportSelection();return;}
         if(!measurePointMode&&project.importedMeshSource==null) {
             double distance=dp(18);int selected=-1;
@@ -3527,6 +3550,24 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         invalidate();
     }
 
+    /** Angle (two picks: straight edges, planar faces or surface axes) or exact face area. */
+    private void measureFaceTap(float x,float y) {
+        double distance=dp(14);int selected=-1;
+        if(measureFaceMode==1)for(int i=0;i+15<measureEdges.length;i+=16) {
+            double[] a=projectWorldPoint(measureEdges[i+9],measureEdges[i+10],measureEdges[i+11]),b=projectWorldPoint(measureEdges[i+12],measureEdges[i+13],measureEdges[i+14]);
+            double d=HiddenLineVisibility.distanceToVisibleSegment(x,y,a,b,depthSurfaces);if(d<distance){distance=d;selected=i;}
+        }
+        GeometryMeasure.Direction picked=null;
+        if(selected>=0){try{picked=GeometryMeasure.edgeDirection(CadMeasurements.edge(measureProperties,measureEdges[selected+15]));}catch(IllegalArgumentException ignored){picked=null;}}
+        int face=selected>=0&&picked!=null?-1:findFaceAt(x,y);
+        if(picked==null&&face<0){operationMessage=measureFaceMode==1?"Dotknij prostej krawędzi albo ściany":"Dotknij ściany bryły";invalidate();return;}
+        double[] row=face>=0?GeometryMeasure.face(measureFaces,face):null;
+        if(face>=0&&row==null){operationMessage="Brak danych B-Rep tej ściany";invalidate();return;}
+        if(measureFaceMode==2){measuredFace=row;measuredFaceIndex=face;selectedFace=face;updateMeasurementOutput();invalidate();return;}
+        if(picked==null){picked=GeometryMeasure.faceDirection(row);if(picked==null){operationMessage="Ta powierzchnia nie ma kierunku (kula lub powierzchnia swobodna)";invalidate();return;}selectedFace=face;}
+        if(measureDirections.size()>=2)measureDirections.clear();measureDirections.add(picked);
+        updateMeasurementOutput();invalidate();
+    }
     private MeasurePoint nearestBrepVertex(float x,float y) {
         MeasurePoint best=null;double distance=dp(20);
         for(int i=0;i+15<measureProperties.length;i+=16)for(int endpoint:new int[]{0,6}) {
@@ -3546,6 +3587,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         double radius=project.importedStep?0:project.filletRadius;
         measureEdges=NativeCadEngine.modelEdges(modelWidth,modelHeight,modelDepth,radius,evaluationBase(),kernelFeatures(),source);
         measureProperties=NativeCadEngine.edgeMeasurements(modelWidth,modelHeight,modelDepth,radius,evaluationBase(),kernelFeatures(),source);
+        measureFaces=NativeCadEngine.faceAnalysis(modelWidth,modelHeight,modelDepth,radius,evaluationBase(),kernelFeatures(),source);
+        measureDirections.clear();measuredFace=null;measuredFaceIndex=-1;
     }
 
     private void showMeasurementPanel() {
@@ -3553,8 +3596,11 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         android.widget.RadioButton edge=new android.widget.RadioButton(getContext()),points=new android.widget.RadioButton(getContext());
         edge.setId(View.generateViewId());points.setId(View.generateViewId());
         edge.setText("Krawędź · długość / R / Ø");points.setText("Punkt–punkt · wierzchołki");
-        edge.setEnabled(project.importedMeshSource==null);types.addView(edge);types.addView(points);
-        types.check(measurePointMode?points.getId():edge.getId());
+        android.widget.RadioButton angle=new android.widget.RadioButton(getContext()),area=new android.widget.RadioButton(getContext());
+        angle.setId(View.generateViewId());area.setId(View.generateViewId());angle.setText("Kąt · ściany, krawędzie, osie");area.setText("Ściana · pole i typ powierzchni");
+        edge.setEnabled(project.importedMeshSource==null);angle.setEnabled(project.importedMeshSource==null);area.setEnabled(project.importedMeshSource==null);
+        types.addView(edge);types.addView(points);types.addView(angle);types.addView(area);
+        types.check(measureFaceMode==1?angle.getId():measureFaceMode==2?area.getId():measurePointMode?points.getId():edge.getId());
         android.widget.TextView output=new android.widget.TextView(getContext());output.setTextSize(15);
         output.setTextColor(INK);output.setPadding(0,(int)dp(12),0,(int)dp(16));
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);form.addView(types);form.addView(output);
@@ -3564,7 +3610,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             }).setNegativeButton("Zamknij pomiar",(d,w)->{mode="Wybierz";measureA=measureB=null;measuredCurve=null;invalidate();}).show();
         measurementOutput=output;
         types.setOnCheckedChangeListener((group,id)-> {
-            measurePointMode=id==points.getId();measureA=measureB=null;measuredCurve=null;
+            measurePointMode=id==points.getId();measureFaceMode=id==angle.getId()?1:id==area.getId()?2:0;measureA=measureB=null;measuredCurve=null;measureDirections.clear();measuredFace=null;
             updateMeasurementOutput();invalidate();
         });
         updateMeasurementOutput();
@@ -3572,6 +3618,18 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
     private void updateMeasurementOutput() {
         if(measurementOutput==null)return;
+        if(measureFaceMode==1) {
+            if(measureDirections.isEmpty())measurementOutput.setText("Dotknij pierwszej ściany płaskiej, prostej krawędzi albo ściany walcowej (oś).");
+            else if(measureDirections.size()==1)measurementOutput.setText("Wybrano: "+measureDirections.get(0).label+". Dotknij drugiego elementu.");
+            else measurementOutput.setText(measureDirections.get(0).label+" · "+measureDirections.get(1).label+"\n\n"+GeometryMeasure.describeAngle(measureDirections.get(0),measureDirections.get(1))+"\n\nWartości z geometrii OCCT. Kolejne dotknięcie zaczyna nowy pomiar.");
+            return;
+        }
+        if(measureFaceMode==2) {
+            if(measuredFace==null){measurementOutput.setText("Dotknij ściany bryły.");return;}
+            String text="Ściana "+(measuredFaceIndex+1)+" · "+GeometryMeasure.surfaceName(measuredFace[3])+"\n\nPole: "+formatArea(measuredFace[2]);
+            if(measuredFace[3]==1||measuredFace[3]==3)text+="\nPromień R: "+formatMm(measuredFace[10])+"\nŚrednica Ø: "+formatMm(2*measuredFace[10]);
+            measurementOutput.setText(text+"\n\nPole dokładne z B-Rep (BRepGProp), nie z siatki ekranu.");return;
+        }
         if(!measurePointMode) {
             if(measuredCurve==null){measurementOutput.setText(measureEdges.length==0?"Brak krawędzi B-Rep do pomiaru":"Dotknij widocznej krawędzi bryły. Przeciągnięcie obraca model.");return;}
             String value=(measuredCurve[14]==0?"Krawędź prosta":measuredCurve[14]==1?"Krawędź kołowa / łuk":"Krzywa B-Rep")+"\n\nDługość: "+formatMm(measuredCurve[9]);
@@ -3660,6 +3718,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     private static double square(double value) { return value * value; }
 
     /** Display text of a length in the project unit and display precision. */
+    private String formatArea(double value){return Units.area(value,project.units,project.displayDecimals);}
     private String formatMm(double value) {
         return Units.length(value,project.units,project.displayDecimals);
     }
@@ -4383,6 +4442,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             if(kind==FeaturePattern.LINEAR&&face!=null){choices.add("Normalna zaznaczonej ściany");frames.add(face);}
             if(kind==FeaturePattern.CIRCULAR&&cylinder!=null){choices.add("Oś zaznaczonej ściany walcowej");frames.add(new double[]{cylinder.origin[0],cylinder.origin[1],cylinder.origin[2],cylinder.axis[0],cylinder.axis[1],cylinder.axis[2]});}
         }
+        for(Datum d:datumsOf(kind==FeaturePattern.MIRROR?Datum.PLANE:Datum.AXIS)){choices.add("Konstrukcja: "+d.name);frames.add(d.frame());}
         android.widget.TextView reference=new android.widget.TextView(getContext());reference.setText(kind==FeaturePattern.MIRROR?"Płaszczyzna lustra":kind==FeaturePattern.LINEAR?"Kierunek szyku":"Oś obrotu");form.addView(reference);
         android.widget.Spinner frame=new android.widget.Spinner(getContext());frame.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,choices));form.addView(frame);
         if(original==null&&((kind==FeaturePattern.MIRROR&&face!=null)||(kind==FeaturePattern.LINEAR&&face!=null)||(kind==FeaturePattern.CIRCULAR&&cylinder!=null)))frame.setSelection(choices.size()-1);
@@ -4416,7 +4476,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 if(kind==FeaturePattern.LINEAR){if(fReverse.isChecked())v=-Math.abs(v);else v=Math.abs(v);}
                 else {
                     // The typed point defines the axis unless the axis of a picked cylinder is used.
-                    if(!choices.get(frame.getSelectedItemPosition()).startsWith("Oś zaznaczonej")){origin[0]=parseCoordinate(fx);origin[1]=parseCoordinate(fy);origin[2]=parseCoordinate(fz);}
+                    if(!choices.get(frame.getSelectedItemPosition()).startsWith("Oś zaznaczonej")&&!choices.get(frame.getSelectedItemPosition()).startsWith("Konstrukcja: ")){origin[0]=parseCoordinate(fx);origin[1]=parseCoordinate(fy);origin[2]=parseCoordinate(fz);}
                     if(flipAxis.isChecked())for(int i=0;i<3;i++)direction[i]=-direction[i];
                 }
             }
@@ -4436,7 +4496,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
         }).show();
         attachLivePreview(form,candidate,status,"Podgląd szyku na bryle. Przeciągnij strzałkę odstępu lub Zastosuj.");
-        if(kind==FeaturePattern.LINEAR){double[] dir=frames.get(frame.getSelectedItemPosition());attachFieldHandle(new double[]{meshCenterX,meshCenterY,meshCenterZ},new double[]{dir[3],dir[4],dir[5]},fValue,.01,5000,"Odstęp");}
+        if(kind==FeaturePattern.LINEAR){double[] dir=frames.get(frame.getSelectedItemPosition());attachFieldHandle(new double[]{meshCenterX,meshCenterY,meshCenterZ},new double[]{dir[3],dir[4],dir[5]},fValue,.01,5000,"Odstęp");
+            // The arrow follows the chosen direction and the reverse switch.
+            if(fieldHandle!=null)fieldHandle.axisSource=()->{double[] d=frames.get(frame.getSelectedItemPosition());double sign=fReverse.isChecked()?-1:1;return new double[]{d[3]*sign,d[4]*sign,d[5]*sign};};}
     }
     private void showPatternEditor(int index) {
         double[] f=project.committedFeatures.get(index);
@@ -4710,7 +4772,10 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         android.widget.Spinner body=new android.widget.Spinner(getContext());body.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,names));form.addView(body);
         body.setSelection(Math.max(0,ids.indexOf(original!=null?featureBody(project,editIndex):project.selectedBody)));if(original!=null)body.setEnabled(false);
         android.widget.Spinner axis=new android.widget.Spinner(getContext());axis.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,kind==1?new String[]{"Płaszczyzna YZ (normalna X)","Płaszczyzna XZ (normalna Y)","Płaszczyzna XY (normalna Z)"}:new String[]{kind==2?"Kierunek X":"Oś X","Kierunek Y".replace("Kierunek",kind==2?"Kierunek":"Oś"),"Kierunek Z".replace("Kierunek",kind==2?"Kierunek":"Oś")}));form.addView(axis);
-        int a0=original==null?(kind==3?2:0):Math.abs(original[6])>.5?0:Math.abs(original[7])>.5?1:2;axis.setSelection(a0);
+        List<Datum> references=datumsOf(kind==1?Datum.PLANE:Datum.AXIS);
+        {android.widget.ArrayAdapter<String> items=new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,new ArrayList<>());for(int i=0;i<axis.getAdapter().getCount();i++)items.add(String.valueOf(axis.getAdapter().getItem(i)));
+            for(Datum d:references)items.add("Konstrukcja: "+d.name+(kind==2?" (kierunek)":""));axis.setAdapter(items);}
+        int a0=original==null?(kind==3?2:0):Math.abs(original[6])>1-1e-12?0:Math.abs(original[7])>1-1e-12?1:Math.abs(original[8])>1-1e-12?2:0;axis.setSelection(a0);
         double[] o=original!=null?original:new double[16];
         EditText px=labeledCoordinate(form,kind==1?"Punkt płaszczyzny X [mm]":"Punkt osi X [mm]",o[3]),py=labeledCoordinate(form,kind==1?"Punkt płaszczyzny Y [mm]":"Punkt osi Y [mm]",o[4]),pz=labeledCoordinate(form,kind==1?"Punkt płaszczyzny Z [mm]":"Punkt osi Z [mm]",o[5]);
         EditText count=kind==1?null:labeledCoordinate(form,"Liczba wystąpień (z oryginałem)",original!=null?original[9]:3);
@@ -4718,9 +4783,10 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         String title=kind==1?"Lustro bryły":kind==2?"Szyk liniowy bryły":"Szyk kołowy bryły";
         new PropertyBuilder().setTitle(editIndex>=0?"Edytuj: "+title:title).setView(form).setNegativeButton("Anuluj",null).setPositiveButton(editIndex>=0?"Zastosuj":"Utwórz",(d,w)->{
             try {
-                double[] dir=new double[3];dir[axis.getSelectedItemPosition()]=1;int n=0;double v=0;
+                int pick=axis.getSelectedItemPosition();double[] dir=new double[3],point={parseCoordinate(px),parseCoordinate(py),parseCoordinate(pz)};int n=0;double v=0;
+                if(pick<3)dir[pick]=1;else {Datum ref=references.get(pick-3);dir=ref.direction.clone();point=ref.origin.clone();}
                 if(kind!=1){double c=parseCoordinate(count);if(c!=Math.floor(c))throw new IllegalArgumentException("Liczba wystąpień musi być całkowita");n=(int)c;v=parseCoordinate(value);}
-                double[] record=SweepLoft.bodyPatternRecord(kind,new double[]{parseCoordinate(px),parseCoordinate(py),parseCoordinate(pz)},dir,n,v);
+                double[] record=SweepLoft.bodyPatternRecord(kind,point,dir,n,v);
                 int target=ids.get(body.getSelectedItemPosition());
                 String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
                 if(editIndex>=0)next.committedFeatures.set(editIndex,record);
@@ -4728,6 +4794,171 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 commitProjectAsync(next,baseline,title+" · "+BodyGraph.name(next,target));
             }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
         }).show();
+    }
+
+    // ---- Construction geometry (datum planes, axes, points) ----
+    private static final String[] DATUM_COMMANDS={"Płaszczyzna odsunięta","Płaszczyzna pod kątem","Płaszczyzna przez 3 punkty","Oś konstrukcyjna","Punkt konstrukcyjny"};
+    /** Vertex picking for a datum: command, edited datum, picked points (model coordinates). */
+    private String datumPickCommand;private Datum datumPickEdited;private final List<double[]> datumPickPoints=new ArrayList<>();private int datumPickNeeded;
+    private List<Datum> datumsOf(String kind){List<Datum> r=new ArrayList<>();for(Datum d:project.datums)if(d.kind.equals(kind))r.add(d);return r;}
+    private Datum datum(String id){for(Datum d:project.datums)if(d.id.equals(id))return d;return null;}
+    private static String commandOf(Datum d) {
+        if(d.plane())return d.method.equals("offset")?DATUM_COMMANDS[0]:d.method.equals("angle")?DATUM_COMMANDS[1]:DATUM_COMMANDS[2];
+        return d.axis()?DATUM_COMMANDS[3]:DATUM_COMMANDS[4];
+    }
+    /** Plane references for offset/angle planes: label → {origin xyz, normal xyz}. */
+    private void planeReferences(List<String> labels,List<double[]> frames,Datum excluded) {
+        labels.add("Płaszczyzna XY");frames.add(new double[]{0,0,0,0,0,1});
+        labels.add("Płaszczyzna XZ");frames.add(new double[]{0,0,0,0,1,0});
+        labels.add("Płaszczyzna YZ");frames.add(new double[]{0,0,0,1,0,0});
+        double[] face=selectedPlanarFace();if(face!=null){labels.add("Zaznaczona ściana (wartości stałe)");frames.add(face);}
+        for(Datum d:datumsOf(Datum.PLANE))if(d!=excluded){labels.add(d.name);frames.add(d.frame());}
+    }
+    private void axisReferences(List<String> labels,List<double[]> frames,Datum excluded) {
+        labels.add("Oś X");frames.add(new double[]{0,0,0,1,0,0});labels.add("Oś Y");frames.add(new double[]{0,0,0,0,1,0});labels.add("Oś Z");frames.add(new double[]{0,0,0,0,0,1});
+        double[] row=selectedSurfaceAxis();if(row!=null){labels.add("Oś zaznaczonej ściany walcowej/stożkowej");frames.add(row);}
+        for(Datum d:datumsOf(Datum.AXIS))if(d!=excluded){labels.add(d.name);frames.add(d.frame());}
+    }
+    /** Axis {point, direction} of the selected cylindrical/conical face from the exact face analysis, or null. */
+    private double[] selectedSurfaceAxis() {
+        if(selectedFace<0||!project.hasSolid()||project.importedMeshSource!=null)return null;
+        String source=project.importedStep?importedSourceFile().getAbsolutePath():null;
+        double[] row=GeometryMeasure.face(NativeCadEngine.faceAnalysis(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),source),selectedFace);
+        if(row==null||(row[3]!=1&&row[3]!=2))return null;return new double[]{row[4],row[5],row[6],row[7],row[8],row[9]};
+    }
+    private android.widget.Spinner choice(LinearLayout form,String label,List<String> items,int selected) {
+        android.widget.TextView title=new android.widget.TextView(getContext());title.setText(label);form.addView(title);
+        android.widget.Spinner spinner=new android.widget.Spinner(getContext());spinner.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,items));
+        spinner.setSelection(Math.max(0,Math.min(items.size()-1,selected)));form.addView(spinner);return spinner;
+    }
+    private void showDatumEditor(String command,Datum existing,double[] picked) {
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        String kind=command.startsWith("Płaszczyzna")?Datum.PLANE:command.startsWith("Oś")?Datum.AXIS:Datum.POINT;
+        EditText name=new EditText(getContext());name.setSingleLine(true);name.setHint("Nazwa");name.setText(existing!=null?existing.name:Datum.nextName(project.datums,kind));form.addView(name);
+        android.widget.TextView info=new android.widget.TextView(getContext());form.addView(info);
+        java.util.function.Supplier<Datum> build;
+        double[] v=existing!=null?existing.values:null;
+        if(command.equals(DATUM_COMMANDS[0])) {
+            List<String> labels=new ArrayList<>();List<double[]> frames=new ArrayList<>();
+            if(existing!=null){labels.add("Bieżące odniesienie: "+(existing.reference.isEmpty()?"zapisane":existing.reference));frames.add(java.util.Arrays.copyOf(v,6));}
+            planeReferences(labels,frames,existing);
+            android.widget.Spinner base=choice(form,"Płaszczyzna bazowa",labels,existing==null&&selectedPlanarFace()!=null?3:0);
+            EditText distance=labeledCoordinate(form,"Odsunięcie wzdłuż normalnej [mm]",existing!=null?v[6]:10);
+            info.setText("Płaszczyzna równoległa do bazowej. Ściana i inne płaszczyzny są kopiowane liczbowo w chwili utworzenia.");
+            build=()->{double[] f=frames.get(base.getSelectedItemPosition());String ref=labels.get(base.getSelectedItemPosition()).replace("Bieżące odniesienie: ","");
+                double[] values=java.util.Arrays.copyOf(f,7);values[6]=parseCoordinate(distance);return existing!=null?new Datum(existing.id,kind,"offset",ref,values,name.getText().toString()):Datum.create(kind,"offset",ref,values,name.getText().toString());};
+        } else if(command.equals(DATUM_COMMANDS[1])) {
+            List<String> axisLabels=new ArrayList<>(),planeLabels=new ArrayList<>();List<double[]> axes=new ArrayList<>(),planes=new ArrayList<>();
+            if(existing!=null){axisLabels.add("Bieżąca oś");axes.add(java.util.Arrays.copyOf(v,6));planeLabels.add("Bieżąca płaszczyzna bazowa");planes.add(new double[]{v[0],v[1],v[2],v[6],v[7],v[8]});}
+            axisReferences(axisLabels,axes,null);planeReferences(planeLabels,planes,existing);
+            android.widget.Spinner axis=choice(form,"Oś obrotu (musi leżeć w płaszczyźnie bazowej)",axisLabels,0);
+            android.widget.Spinner base=choice(form,"Płaszczyzna bazowa",planeLabels,0);
+            EditText angle=labeledCoordinate(form,"Kąt [°]",existing!=null?v[9]:45);
+            info.setText("Płaszczyzna zawiera oś i jest obrócona względem płaszczyzny bazowej o podany kąt.");
+            build=()->{double[] a=axes.get(axis.getSelectedItemPosition()),b=planes.get(base.getSelectedItemPosition());
+                double[] values={a[0],a[1],a[2],a[3],a[4],a[5],b[3],b[4],b[5],parseCoordinate(angle)};
+                String ref=planeLabels.get(base.getSelectedItemPosition());return existing!=null?new Datum(existing.id,kind,"angle",ref,values,name.getText().toString()):Datum.create(kind,"angle",ref,values,name.getText().toString());};
+        } else {
+            int points=command.equals(DATUM_COMMANDS[2])?3:command.equals(DATUM_COMMANDS[3])?2:1;
+            double[] initial=picked!=null?picked:existing!=null?existing.values:null;
+            android.widget.Spinner method=null;List<double[]> axes=new ArrayList<>();List<String> axisLabels=new ArrayList<>();
+            if(kind.equals(Datum.AXIS)) {
+                List<String> methods=new ArrayList<>(java.util.Arrays.asList("Przez punkt A w kierunku X","Przez punkt A w kierunku Y","Przez punkt A w kierunku Z","Przez punkty A i B"));
+                double[] surface=selectedSurfaceAxis();if(surface!=null){methods.add("Oś zaznaczonej ściany walcowej/stożkowej");axes.add(surface);}
+                int selected=picked!=null?3:existing!=null&&existing.method.equals("points")?3:0;
+                if(existing!=null&&existing.method.equals("line")){double[] d=existing.direction;selected=Math.abs(d[0])>1-1e-12?0:Math.abs(d[1])>1-1e-12?1:Math.abs(d[2])>1-1e-12?2:-1;
+                    if(selected<0){methods.add("Bieżący kierunek");axes.add(existing.frame());selected=methods.size()-1;}}
+                method=choice(form,"Sposób",methods,selected);
+            }
+            final android.widget.Spinner fMethod=method;final int fixedMethods=4;
+            String[] letters={"A","B","C"};List<EditText> fields=new ArrayList<>();
+            for(int i=0;i<points;i++)for(int k=0;k<3;k++){double value=initial!=null&&initial.length>=i*3+3?initial[i*3+k]:i==1&&kind.equals(Datum.AXIS)&&k==2?10:i==1&&k==0?10:i==2&&k==1?10:0;
+                fields.add(labeledCoordinate(form,"Punkt "+letters[i]+" "+"XYZ".charAt(k)+" [mm]",value));}
+            info.setText(points==3?"Trzy niewspółliniowe punkty. „Wskaż” wybiera wierzchołki B-Rep na modelu.":points==2?"Kierunek X/Y/Z przez punkt A albo prosta przez punkty A i B. „Wskaż” wybiera wierzchołki.":"Punkt w układzie modelu. „Wskaż” wybiera wierzchołek B-Rep.");
+            build=()->{
+                double[] values=new double[points*3];for(int i=0;i<values.length;i++)values[i]=parseCoordinate(fields.get(i));
+                String m=kind.equals(Datum.PLANE)?"points":kind.equals(Datum.POINT)?"coords":"points";String ref="";
+                if(kind.equals(Datum.AXIS)) {
+                    int s=fMethod.getSelectedItemPosition();
+                    if(s<3){double[] d=new double[3];d[s]=1;values=new double[]{values[0],values[1],values[2],d[0],d[1],d[2]};m="line";ref="Oś "+"XYZ".charAt(s)+" przez punkt";}
+                    else if(s>=fixedMethods){values=axes.get(s-fixedMethods).clone();m="line";ref=s-fixedMethods==0&&selectedSurfaceAxis()!=null?"Oś ściany walcowej":"Oś";}
+                }
+                return existing!=null?new Datum(existing.id,kind,m,ref,values,name.getText().toString()):Datum.create(kind,m,ref,values,name.getText().toString());
+            };
+        }
+        final java.util.function.Supplier<Datum> candidate=build;
+        PropertyBuilder dialog=new PropertyBuilder().setTitle(existing!=null?"Edytuj: "+existing.name:command).setView(form).setNegativeButton("Anuluj",null)
+            .setPositiveButton(existing!=null?"Zastosuj":"Utwórz",(d,w)->{
+                try {
+                    Datum created=candidate.get();created.hidden=existing!=null&&existing.hidden;
+                    if(commitModelChange(()->{int at=existing==null?-1:project.datums.indexOf(datum(existing.id));if(at>=0)project.datums.set(at,created);else project.datums.add(created);})) {
+                        selectedTreeKey="datum:"+created.id;operationMessage=(existing!=null?"Zaktualizowano: ":"Utworzono: ")+created.name+" · "+created.describe();
+                    }
+                }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+                invalidate();
+            });
+        if(command.equals(DATUM_COMMANDS[2])||command.equals(DATUM_COMMANDS[3])||command.equals(DATUM_COMMANDS[4]))
+            dialog.setNeutralButton("Wskaż na modelu",(d,w)->beginDatumPick(command,existing,command.equals(DATUM_COMMANDS[2])?3:command.equals(DATUM_COMMANDS[3])?2:1));
+        else if(existing!=null)dialog.setNeutralButton("Usuń",(d,w)->removeDatum(existing));
+        dialog.show();
+    }
+    private void removeDatum(Datum d) {
+        if(commitModelChange(()->project.datums.removeIf(x->x.id.equals(d.id)))){if(selectedTreeKey.equals("datum:"+d.id))selectedTreeKey="";operationMessage="Usunięto: "+d.name+". Szkice na tej płaszczyźnie zachowują swój układ.";}
+        invalidate();
+    }
+    private void beginDatumPick(String command,Datum existing,int needed) {
+        if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Wskazywanie wymaga bryły B-Rep; wpisz współrzędne";invalidate();return;}
+        datumPickCommand=command;datumPickEdited=existing;datumPickNeeded=needed;datumPickPoints.clear();mode="Konstrukcja";loadMeasurementGeometry();
+        operationMessage="Dotknij wierzchołka bryły ("+1+"/"+needed+")";invalidate();
+    }
+    private void datumPickTap(float x,float y) {
+        MeasurePoint picked=nearestBrepVertex(x,y);
+        if(picked==null){operationMessage="Dotknij bliżej widocznego wierzchołka ("+(datumPickPoints.size()+1)+"/"+datumPickNeeded+")";invalidate();return;}
+        datumPickPoints.add(new double[]{picked.x+meshCenterX,picked.y+meshCenterY,picked.z+meshCenterZ});
+        if(datumPickPoints.size()<datumPickNeeded){operationMessage="Wybrano "+datumPickPoints.size()+"/"+datumPickNeeded+". Dotknij kolejnego wierzchołka.";invalidate();return;}
+        double[] values=new double[datumPickNeeded*3];for(int i=0;i<datumPickNeeded;i++)System.arraycopy(datumPickPoints.get(i),0,values,i*3,3);
+        mode="Wybierz";String command=datumPickCommand;Datum edited=datumPickEdited;datumPickCommand=null;datumPickPoints.clear();
+        showDatumEditor(command,edited,values);invalidate();
+    }
+    /** Starts a sketch on a datum plane with the same frame convention as a planar face. */
+    private void sketchOnDatum(Datum d) {
+        selectedNormalX=d.direction[0];selectedNormalY=d.direction[1];selectedNormalZ=d.direction[2];
+        selectedPointX=d.origin[0];selectedPointY=d.origin[1];selectedPointZ=d.origin[2];selectedFace=-1;
+        chooseSketchPlane(d.name);
+    }
+    private void showDatumPlanePicker() {
+        List<Datum> planes=datumsOf(Datum.PLANE);if(planes.isEmpty()){operationMessage="Brak płaszczyzn konstrukcyjnych (Bryła → Konstrukcja)";invalidate();return;}
+        String[] names=new String[planes.size()];for(int i=0;i<names.length;i++)names[i]=planes.get(i).name+" · "+planes.get(i).describe();
+        new PropertyBuilder().setTitle("Szkic na płaszczyźnie konstrukcyjnej").setItems(names,(d,w)->sketchOnDatum(planes.get(w))).setNegativeButton("Anuluj",null).show();
+    }
+    private void drawDatums(Canvas canvas) {
+        if(project.datums.isEmpty())return;
+        double size=Math.max(20,.6*Math.max(modelWidth,Math.max(modelHeight,modelDepth)));double[] c={meshCenterX,meshCenterY,meshCenterZ};
+        paint.setStrokeWidth(dp(1.5f));
+        for(Datum d:project.datums) {
+            if(d.hidden)continue;boolean selected=selectedTreeKey.equals("datum:"+d.id);int color=selected?Color.rgb(230,126,34):Color.rgb(214,137,16);
+            if(d.plane()) {
+                double[] n=d.direction,f=d.sketchFrame();double t=(c[0]-d.origin[0])*n[0]+(c[1]-d.origin[1])*n[1]+(c[2]-d.origin[2])*n[2];
+                double[] centre={c[0]-n[0]*t,c[1]-n[1]*t,c[2]-n[2]*t};android.graphics.Path path=new android.graphics.Path();boolean visible=true;
+                double[][] corners={{-1,-1},{1,-1},{1,1},{-1,1}};
+                for(int i=0;i<4;i++){double[] q=projectWorldPoint(centre[0]+(f[3]*corners[i][0]+f[6]*corners[i][1])*size,centre[1]+(f[4]*corners[i][0]+f[7]*corners[i][1])*size,centre[2]+(f[5]*corners[i][0]+f[8]*corners[i][1])*size);
+                    if(q[2]<=0)visible=false;if(i==0)path.moveTo((float)q[0],(float)q[1]);else path.lineTo((float)q[0],(float)q[1]);}
+                if(!visible)continue;path.close();
+                paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(selected?70:40,Color.red(color),Color.green(color),Color.blue(color)));canvas.drawPath(path,paint);
+                paint.setStyle(Paint.Style.STROKE);paint.setColor(color);canvas.drawPath(path,paint);
+                double[] label=projectWorldPoint(centre[0]+(f[3]-f[6])*size,centre[1]+(f[4]-f[7])*size,centre[2]+(f[5]-f[8])*size);paint.setStyle(Paint.Style.FILL);
+                text(canvas,d.name,(float)label[0]+dp(4),(float)label[1]-dp(4),10,color,true);
+            } else if(d.axis()) {
+                double[] a=projectWorldPoint(d.origin[0]-d.direction[0]*size,d.origin[1]-d.direction[1]*size,d.origin[2]-d.direction[2]*size),b=projectWorldPoint(d.origin[0]+d.direction[0]*size,d.origin[1]+d.direction[1]*size,d.origin[2]+d.direction[2]*size);
+                if(a[2]<=0||b[2]<=0)continue;paint.setStyle(Paint.Style.STROKE);paint.setColor(color);paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(10),dp(4),dp(2),dp(4)},0));
+                canvas.drawLine((float)a[0],(float)a[1],(float)b[0],(float)b[1],paint);paint.setPathEffect(null);paint.setStyle(Paint.Style.FILL);text(canvas,d.name,(float)b[0]+dp(4),(float)b[1],10,color,true);
+            } else {
+                double[] p=projectWorldPoint(d.origin[0],d.origin[1],d.origin[2]);if(p[2]<=0)continue;paint.setStyle(Paint.Style.STROKE);paint.setColor(color);
+                canvas.drawCircle((float)p[0],(float)p[1],dp(5),paint);canvas.drawLine((float)p[0]-dp(9),(float)p[1],(float)p[0]+dp(9),(float)p[1],paint);canvas.drawLine((float)p[0],(float)p[1]-dp(9),(float)p[0],(float)p[1]+dp(9),paint);
+                paint.setStyle(Paint.Style.FILL);text(canvas,d.name,(float)p[0]+dp(8),(float)p[1]-dp(8),10,color,true);
+            }
+        }
+        paint.setStyle(Paint.Style.FILL);
     }
 
     // ---- Split a body by a plane ----
@@ -4741,6 +4972,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         android.widget.Spinner body=new android.widget.Spinner(getContext());body.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,names));form.addView(body);
         body.setSelection(Math.max(0,ids.indexOf(original!=null?featureBody(project,editIndex):project.selectedBody)));if(original!=null)body.setEnabled(false);
         List<String> choices=new ArrayList<>(java.util.Arrays.asList("Płaszczyzna YZ (normalna X)","Płaszczyzna XZ (normalna Y)","Płaszczyzna XY (normalna Z)"));if(face!=null)choices.add("Płaszczyzna zaznaczonej ściany (stała)");
+        final List<Datum> splitPlanes=datumsOf(Datum.PLANE);for(Datum d:splitPlanes)choices.add("Konstrukcja: "+d.name+" (odsunięcie)");
         android.widget.Spinner plane=new android.widget.Spinner(getContext());plane.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,choices));form.addView(plane);
         int axis=original==null?0:Math.abs(original[5])>.5?0:Math.abs(original[6])>.5?1:2;plane.setSelection(original==null&&face!=null?3:axis);
         double[] centre={meshCenterX,meshCenterY,meshCenterZ};
@@ -4749,7 +4981,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         new PropertyBuilder().setTitle(editIndex>=0?"Edytuj podział bryły":"Podziel bryłę").setView(form).setNegativeButton("Anuluj",null).setPositiveButton(editIndex>=0?"Zastosuj":"Podziel",(d,w)->{
             try {
                 int choice=plane.getSelectedItemPosition();double value=parseCoordinate(offset),sign=flip.isChecked()?-1:1;double[] point=new double[3],normal=new double[3];
-                if(choice<3){point[choice]=value;normal[choice]=sign;}else for(int i=0;i<3;i++){point[i]=face[i]+face[3+i]*value;normal[i]=face[3+i]*sign;}
+                double[] reference=choice<3?null:face!=null&&choice==3?face:splitPlanes.get(choice-3-(face!=null?1:0)).frame();
+                if(choice<3){point[choice]=value;normal[choice]=sign;}else for(int i=0;i<3;i++){point[i]=reference[i]+reference[3+i]*value;normal[i]=reference[3+i]*sign;}
                 int target=ids.get(body.getSelectedItemPosition());
                 String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
                 double[] record;
@@ -5404,6 +5637,20 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         finishModelImport("Gotowe: wczytano siatkę STL");
     }
 
+    /** OBJ is converted to the retained binary STL source, so reopening uses the STL mesh path. */
+    public void importObj(File staged) throws IOException {
+        double[] mesh;
+        try(FileInputStream input=new FileInputStream(staged)) { mesh=CadExchange.readObj(input); }
+        if(!CadMesh.isValid(mesh,false))throw new IOException("Niepoprawna siatka OBJ");
+        String sourceName="mesh-"+UUID.randomUUID()+".stl";
+        File retained=new File(projectRepository.importedStepFile().getParentFile(),sourceName);
+        try(OutputStream output=new FileOutputStream(retained)){CadExchange.writeBinaryStl(mesh,output);}
+        if(!commitModelChange(() -> {resetImportedModel();project.importedMeshSource=sourceName;})) {
+            retained.delete();throw new IOException(operationMessage);
+        }
+        finishModelImport("Gotowe: wczytano siatkę OBJ ("+mesh.length/13+" trójkątów)");
+    }
+
     public void writeObj(OutputStream output) throws IOException {
         if(SketchTransactions.active(project)) throw new IOException("Zakończ albo anuluj edycję szkicu przed eksportem");
         ObjExporter.write(output,nativeMesh);
@@ -5707,6 +5954,11 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }
         if(tool.equals("Obrót profilu")){chooseRevolveProfile();return;}
         if(tool.equals("Właściwości bryły")){showBodyProperties();return;}
+        for(String command:DATUM_COMMANDS)if(tool.equals(command)){mode="Wybierz";showDatumEditor(command,null,null);return;}
+        if(tool.equals("Zmierz kąt")||tool.equals("Pole ściany")) {
+            if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Pomiar kątów i pól wymaga bryły B-Rep";invalidate();return;}
+            mode="Zmierz";measurePointMode=false;loadMeasurementGeometry();measureFaceMode=tool.equals("Zmierz kąt")?1:2;showMeasurementPanel();invalidate();return;
+        }
         if (tool.equals("Zakończ")) {
             finishSketchWork();return;
         }
@@ -5804,7 +6056,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         else if (tool.equals("Fazuj")) showEdgeTreatmentEditor(-1,true);
         else if (tool.equals("Zmierz")) {
             mode = "Zmierz";
-            measurePointMode=project.importedMeshSource!=null;
+            measurePointMode=project.importedMeshSource!=null;measureFaceMode=0;
             loadMeasurementGeometry();showMeasurementPanel();
         } else if (tool.equals("Rysunek")) {
             if(mode.equals("Rysunek")) {

@@ -6,7 +6,8 @@ import android.graphics.*;
 public final class SemanticIcons {
     private SemanticIcons() {}
     public static boolean draw(Canvas canvas,String id,float x,float y,float scale,int color) {
-        if(drawView(canvas,id,x,y,scale,color)||drawSolidCopy(canvas,id,x,y,scale,color))return true;
+        if(drawConstruction(canvas,id,x,y,scale,color)||drawView(canvas,id,x,y,scale,color)||drawSolidCopy(canvas,id,x,y,scale,color))return true;
+        if(id.equals("Zmierz kąt"))id="Kąt";
         if(!java.util.Arrays.asList("Splajn","Wielokąt","Kwadrat","Prostokąt od środka","Zaokrąglij szkic","Wymiary","Wyciągnij","Wytnij","Wycięcie","Połączenie","Dodanie","Nowa bryła","Część wspólna","Gwint","Kąt").contains(id))return false;
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.7f);p.setStyle(Paint.Style.STROKE);p.setStrokeJoin(Paint.Join.ROUND);p.setStrokeCap(Paint.Cap.ROUND);
         canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
@@ -144,6 +145,35 @@ public final class SemanticIcons {
         }
         canvas.restore();return true;
     }
+    /** Construction planes/axis/point and face measurement glyphs (planes drawn as parallelograms). */
+    private static boolean drawConstruction(Canvas canvas,String id,float x,float y,float scale,int color) {
+        if(!java.util.Arrays.asList("Płaszczyzna odsunięta","Płaszczyzna pod kątem","Płaszczyzna przez 3 punkty","Oś konstrukcyjna","Punkt konstrukcyjny","Pole ściany","Elementy konstrukcyjne").contains(id))return false;
+        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.6f);p.setStyle(Paint.Style.STROKE);p.setStrokeJoin(Paint.Join.ROUND);p.setStrokeCap(Paint.Cap.ROUND);
+        canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
+        if(id.equals("Płaszczyzna odsunięta")) {
+            plane(canvas,p,0,6);p.setPathEffect(new DashPathEffect(new float[]{2.5f,2f},0));plane(canvas,p,0,-6);p.setPathEffect(null);
+            canvas.drawLine(0,4,0,-5,p);canvas.drawLine(0,-5,-2.5f,-2.5f,p);canvas.drawLine(0,-5,2.5f,-2.5f,p);
+        } else if(id.equals("Płaszczyzna pod kątem")) {
+            plane(canvas,p,0,6);Path tilt=new Path();tilt.moveTo(-6,6);tilt.lineTo(-1,-11);tilt.lineTo(12,-11);tilt.lineTo(7,6);canvas.drawPath(tilt,p);
+            canvas.drawArc(new RectF(-4,-4,12,14),-80,-40,false,p);
+        } else if(id.equals("Płaszczyzna przez 3 punkty")) {
+            plane(canvas,p,0,0);Paint f=new Paint(p);f.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(-6,3,2.2f,f);canvas.drawCircle(5,4,2.2f,f);canvas.drawCircle(2,-4,2.2f,f);
+        } else if(id.equals("Oś konstrukcyjna")) {
+            p.setPathEffect(new DashPathEffect(new float[]{6f,2.5f,1.5f,2.5f},0));canvas.drawLine(-12,12,12,-12,p);p.setPathEffect(null);
+            canvas.drawLine(12,-12,6,-11,p);canvas.drawLine(12,-12,11,-6,p);canvas.drawOval(new RectF(-7,-3,3,5),p);
+        } else if(id.equals("Punkt konstrukcyjny")) {
+            canvas.drawCircle(0,0,6,p);canvas.drawLine(-11,0,11,0,p);canvas.drawLine(0,-11,0,11,p);
+            Paint f=new Paint(p);f.setStyle(Paint.Style.FILL);canvas.drawCircle(0,0,1.8f,f);
+        } else if(id.equals("Pole ściany")) {
+            Path face=new Path();face.moveTo(-12,6);face.lineTo(-5,-7);face.lineTo(12,-7);face.lineTo(5,6);face.close();canvas.drawPath(face,p);
+            canvas.save();canvas.clipPath(face);p.setStrokeWidth(1);for(int i=-20;i<20;i+=4)canvas.drawLine(i,8,i+10,-9,p);canvas.restore();
+        } else {
+            plane(canvas,p,0,4);p.setPathEffect(new DashPathEffect(new float[]{4f,2f,1.2f,2f},0));canvas.drawLine(0,-12,0,10,p);p.setPathEffect(null);
+        }
+        canvas.restore();return true;
+    }
+    private static void plane(Canvas c,Paint p,float x,float y){Path path=new Path();path.moveTo(x-12,y+5);path.lineTo(x-6,y-5);path.lineTo(x+12,y-5);path.lineTo(x+6,y+5);path.close();c.drawPath(path,p);}
     /** Small isometric block used by the 3D pattern, mirror and shell glyphs. */
     private static void block(Canvas c,Paint p,float x,float y,float s) {
         Path top=new Path();top.moveTo(x-s,y-s*.3f);top.lineTo(x,y-s*.8f);top.lineTo(x+s,y-s*.3f);top.lineTo(x,y+s*.2f);top.close();c.drawPath(top,p);

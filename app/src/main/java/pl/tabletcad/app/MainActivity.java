@@ -32,9 +32,9 @@ public final class MainActivity extends Activity {
             @Override public void requestExport(String format) { requestExportFile(format); }
             @Override public void requestOpenStep() {
                 new android.app.AlertDialog.Builder(MainActivity.this).setTitle("Otwórz plik")
-                    .setItems(new String[]{"STEP — bryła", "STL — siatka ASCII / binarna", "DXF — szkic 2D"},
+                    .setItems(new String[]{"STEP — bryła", "STL — siatka ASCII / binarna", "DXF — szkic 2D", "OBJ — siatka"},
                         (dialog,which)-> {
-                            pendingImportFormat = which==0 ? "step" : which==1 ? "stl" : "dxf";
+                            pendingImportFormat = which==0 ? "step" : which==1 ? "stl" : which==2 ? "dxf" : "obj";
                             requestStepFile();
                         }).setNegativeButton("Anuluj",null).show();
             }
@@ -144,11 +144,11 @@ public final class MainActivity extends Activity {
                     byte[] buffer=new byte[16384]; int n,total=0;
                     while((n=input.read(buffer))!=-1) {
                         total+=n;
-                        if(total>32*1024*1024) throw new IOException("Limit STL: 32 MB");
+                        if(total>32*1024*1024) throw new IOException("Limit pliku: 32 MB");
                         output.write(buffer,0,n);
                     }
                 }
-                workspace.importStl(staged);
+                if(pendingImportFormat.equals("obj"))workspace.importObj(staged);else workspace.importStl(staged);
             }
             Toast.makeText(this,"Otwarto "+pendingImportFormat.toUpperCase(),Toast.LENGTH_LONG).show();
         } catch(IOException error) {
