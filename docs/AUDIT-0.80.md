@@ -33,3 +33,18 @@ komponentach, czyszczenie po usunięciu wystąpienia.
 
 - Brak testów na tablecie. Brak więzów montażowych rozwiązywanych stale (przegub obrotowy,
   przesuwny) i ruchu złożenia; eksport STEP zapisuje wystąpienia jako zwykłe bryły.
+
+## Test na tablecie (19.10.2026, HONOR YLE-W09, Android 16)
+
+- APK 0.80.0-assembly zbudowane lokalnie i zainstalowane przez ADB (aktualizacja z 0.73
+  bez utraty projektów; lista projektów i stare dokumenty otwierają się poprawnie).
+- Testy instrumentowane `WorkspaceInstrumentation`: result=PASS (1583 linie PASS), w tym
+  nowe próby jądra na ARM64: CadToolsKernelProbe, ConstructionKernelProbe,
+  HistoryKernelProbe, AnalysisKernelProbe, PrintKernelProbe, AssemblyKernelProbe,
+  BodyPropertiesProbe, EdgeChamferProbe, SketchEditingProbe, oraz CadToolsUiProbe
+  (status więzów, płaszczyzna konstrukcyjna z paska narzędzi, szkic na niej).
+- Scenariusz obowiązkowy 16.3 (CadScenarioProbe, kroki 1–21, rzeczywiste dotknięcia):
+  PASS — objętości analityczne, zapis/odczyt, edycja wymiaru, eksport i import STEP.
+- Logcat crash: brak awarii.
+- Nie sprawdzono ręcznie (gestami) każdego nowego okna 0.75–0.80; pokrywają je testy
+  domenowe i jądra uruchomione na urządzeniu.

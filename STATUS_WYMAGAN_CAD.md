@@ -16,7 +16,8 @@ lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT
 ## Działające podzbiory
 
 0.80.0: komponenty, wystąpienia (rekord -23), dosuwanie ścian, kolizje, lista części.
-Audyt: docs/AUDIT-0.80.md.
+Wersje 0.74–0.80 przetestowane na tablecie HONOR YLE-W09 (instrumentacja PASS,
+scenariusz 16.3 PASS, brak awarii). Audyt: docs/AUDIT-0.80.md.
 
 0.79.0: wstawianie przy znaczniku historii, wybór konstrukcji dotykiem, edycja szyku
 szkicu, eksport siatki z dokładnością, 3MF, nawisy, połóż na stole. Audyt: docs/AUDIT-0.79.md.

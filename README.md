@@ -8,7 +8,8 @@ Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
 
 Wersja 0.80 — złożenia: komponenty w drzewie, powiązane wystąpienia, dosuwanie ścian,
-kolizje i lista części z CSV. [Audyt 0.80](docs/AUDIT-0.80.md).
+kolizje i lista części z CSV. Wersje 0.74–0.80 przetestowane na tablecie (testy
+instrumentowane i scenariusz 16.3 PASS). [Audyt 0.80](docs/AUDIT-0.80.md).
 
 Wersja 0.79.1 — asocjacyjne położenie otworu od krawędzi, łuki w statusie więzów,
 promień okręgu zachowany przy ruchu środka.
