@@ -12,6 +12,7 @@ public final class SketchEditing {
     }
 
     public static List<SketchPrimitive> explode(SketchPrimitive source) {
+        if(source.isEllipse())throw new IllegalArgumentException("Elipsy nie można rozbić na odcinki");
         List<SketchPrimitive> parts=explodeGeometry(source);List<SketchPrimitive> result=new ArrayList<>();
         for(SketchPrimitive p:parts)result.add(p.withConstruction(source.construction));return result;
     }

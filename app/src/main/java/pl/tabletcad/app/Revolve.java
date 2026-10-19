@@ -10,6 +10,7 @@ public final class Revolve {
     public static boolean is(double[] f){return f!=null&&f.length>=PREFIX&&f[0]==-3;}
     public static double[] create(SketchPrimitive shape,CadProject p,double[] axis,double angle,boolean cut) {
         if(shape==null||!shape.closedProfile())throw new IllegalArgumentException("Obrót wymaga zamkniętego profilu");
+        if(shape.isEllipse())throw new IllegalArgumentException("Obrót elipsy nie jest jeszcze obsługiwany – użyj wyciągnięcia lub przejścia");
         if(axis==null||axis.length!=4)throw new IllegalArgumentException("Niepoprawna oś obrotu");
         double[] f={-3,cut?1:0,shape.x1,shape.y1,shape.x2,shape.y2,angle,
             p.sketchOriginX,p.sketchOriginY,p.sketchOriginZ,p.sketchUx,p.sketchUy,p.sketchUz,
@@ -29,6 +30,7 @@ public final class Revolve {
     }
     public static double[] withProfile(double[] f,SketchPrimitive shape) {
         if(shape==null||!shape.closedProfile())throw new IllegalArgumentException("Obrót wymaga zamkniętego profilu");
+        if(shape.isEllipse())throw new IllegalArgumentException("Obrót elipsy nie jest jeszcze obsługiwany");
         double[] result=Arrays.copyOf(f,PREFIX);result[2]=shape.x1;result[3]=shape.y1;result[4]=shape.x2;result[5]=shape.y2;result[20]=shape.featureType();
         result=shape.appendVertices(result);validate(result);return result;
     }

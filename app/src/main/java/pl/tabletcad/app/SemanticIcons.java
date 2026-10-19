@@ -141,7 +141,7 @@ public final class SemanticIcons {
         c.drawLine(x-s,y+s*.7f,x,y+s*1.2f,p);c.drawLine(x,y+s*1.2f,x+s,y+s*.7f,p);
     }
     private static boolean drawSolidCopy(Canvas canvas,String id,float x,float y,float scale,int color) {
-        if(!java.util.Arrays.asList("Lustro operacji","Szyk liniowy operacji","Szyk kołowy operacji","Powłoka","Otwór","Pochyl ściany","Przesuń bryłę","Obróć bryłę","Skaluj bryłę","Połącz bryły","Odejmij bryły","Część wspólna brył","Podziel bryłę").contains(id))return false;
+        if(!java.util.Arrays.asList("Lustro operacji","Szyk liniowy operacji","Szyk kołowy operacji","Powłoka","Otwór","Pochyl ściany","Przesuń bryłę","Obróć bryłę","Skaluj bryłę","Połącz bryły","Odejmij bryły","Część wspólna brył","Podziel bryłę","Przejście","Przeciągnij","Lustro bryły","Szyk liniowy bryły","Szyk kołowy bryły","Elipsa").contains(id))return false;
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.5f);p.setStyle(Paint.Style.STROKE);p.setStrokeJoin(Paint.Join.ROUND);p.setStrokeCap(Paint.Cap.ROUND);
         canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
         if(id.equals("Lustro operacji")) {
@@ -162,6 +162,27 @@ public final class SemanticIcons {
             canvas.drawLine(-12,10,12,10,p);canvas.drawLine(-8,10,-4,-10,p);canvas.drawLine(8,10,4,-10,p);canvas.drawLine(-4,-10,4,-10,p);
             p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));canvas.drawLine(-8,10,-8,-10,p);p.setPathEffect(null);
             canvas.drawArc(new RectF(-16,-6,0,10),-90,22,false,p);
+        } else if(id.equals("Elipsa")) {
+            canvas.save();canvas.rotate(-20);canvas.drawOval(new RectF(-12,-7,12,7),p);canvas.restore();p.setStrokeWidth(1);canvas.drawPoint(0,0,p);
+            p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));canvas.drawLine(0,0,11.3f,-4.1f,p);p.setPathEffect(null);
+        } else if(id.equals("Przejście")) {
+            // Loft: a rectangle below blending into a circle above.
+            Path base=new Path();base.moveTo(-11,9);base.lineTo(3,9);base.lineTo(10,5);base.lineTo(-4,5);base.close();canvas.drawPath(base,p);
+            canvas.drawOval(new RectF(-5,-12,5,-7),p);
+            p.setStrokeWidth(1.1f);canvas.drawLine(-11,9,-5,-9.5f,p);canvas.drawLine(10,5,5,-9.5f,p);canvas.drawLine(3,9,2,-7.5f,p);
+        } else if(id.equals("Przeciągnij")) {
+            // Sweep: a circular profile carried along a curved dashed path.
+            p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));Path path=new Path();path.moveTo(-12,10);path.cubicTo(-12,-2,0,-2,12,-10);canvas.drawPath(path,p);p.setPathEffect(null);
+            canvas.drawOval(new RectF(-15,5,-9,15),p);
+            Path tube=new Path();tube.moveTo(-9,7);tube.cubicTo(-9,-4,2,-5,10,-13);canvas.drawPath(tube,p);
+        } else if(id.equals("Lustro bryły")) {
+            block(canvas,p,-7,-2,5);block(canvas,p,7,-2,5);p.setPathEffect(new DashPathEffect(new float[]{2.5f,2f},0));canvas.drawLine(0,-13,0,13,p);p.setPathEffect(null);
+            Paint fill=new Paint(p);fill.setStyle(Paint.Style.FILL);canvas.drawCircle(0,-13,1.6f,fill);
+        } else if(id.equals("Szyk liniowy bryły")) {
+            for(int i=0;i<3;i++)block(canvas,p,-9+9*i,-1,4.2f);
+        } else if(id.equals("Szyk kołowy bryły")) {
+            p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));canvas.drawCircle(0,0,9,p);p.setPathEffect(null);
+            for(int i=0;i<3;i++){double a=2*Math.PI/3*i-Math.PI/2;block(canvas,p,(float)Math.cos(a)*9,(float)Math.sin(a)*9-2,3.4f);}
         } else if(id.equals("Podziel bryłę")) {
             // Block split by a dashed plane into two separated parts.
             block(canvas,p,-6,-1,5);block(canvas,p,6,-1,5);

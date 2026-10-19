@@ -10,6 +10,7 @@ public final class SketchSnapper {
         if(p.curves!=null)return SketchCurves.samples(p.curves,16);
         if(p.vertices!=null)return p.vertices.clone();
         if(p.type.equals("Prostokąt"))return new double[]{p.x1,p.y1,p.x2,p.y1,p.x2,p.y2,p.x1,p.y2,(p.x1+p.x2)/2,p.y1,p.x2,(p.y1+p.y2)/2,(p.x1+p.x2)/2,p.y2,p.x1,(p.y1+p.y2)/2};
+        if(p.isEllipse()){double a=p.major(),ux=(p.x2-p.x1)/a,uy=(p.y2-p.y1)/a,b=p.minor;return new double[]{p.x1,p.y1,p.x1+ux*a,p.y1+uy*a,p.x1-ux*a,p.y1-uy*a,p.x1-uy*b,p.y1+ux*b,p.x1+uy*b,p.y1-ux*b};}
         if(p.type.equals("Okrąg")){double r=Math.hypot(p.x2-p.x1,p.y2-p.y1);return new double[]{p.x1,p.y1,p.x1+r,p.y1,p.x1-r,p.y1,p.x1,p.y1+r,p.x1,p.y1-r};}
         return new double[]{p.x1,p.y1,p.x2,p.y2,(p.x1+p.x2)/2,(p.y1+p.y2)/2};
     }

@@ -5,7 +5,7 @@ import pl.tabletcad.app.model.SketchPrimitive;
 /** Exact sketch constructions. Curves remain analytic through modeling and exchange. */
 public final class SketchShapes {
     private SketchShapes() {}
-    public static boolean threePointTool(String kind){return "Łuk".equals(kind)||"Okrąg 3 pkt".equals(kind)||"Szczelina".equals(kind);}
+    public static boolean threePointTool(String kind){return "Łuk".equals(kind)||"Okrąg 3 pkt".equals(kind)||"Szczelina".equals(kind)||"Elipsa".equals(kind);}
     public static boolean drawingTool(String kind){return "Kwadrat".equals(kind)||"Splajn".equals(kind)||threePointTool(kind)||"Linia".equals(kind)||"Polilinia".equals(kind)||"Pomocnicza".equals(kind)||"Okrąg".equals(kind)||"Prostokąt".equals(kind)||"Prostokąt od środka".equals(kind)||"Wielokąt".equals(kind);}
     private static void point(double x,double y) {
         if(!Double.isFinite(x)||!Double.isFinite(y)||Math.abs(x)>5000||Math.abs(y)>5000)
@@ -46,6 +46,14 @@ public final class SketchShapes {
             SketchCurves.Arc arc=SketchCurves.arc(SketchCurves.arc(a[0],a[1],c[0],c[1],b[0],b[1]),0);
             circle(arc.x,arc.y,arc.r);return new SketchPrimitive(id,"Okrąg",arc.x,arc.y,a[0],a[1]);
         }
+        if(tool.equals("Elipsa")) {
+            // Centre, end of the semi-major axis, and a point whose distance from the major axis is the semi-minor axis.
+            double major=Math.hypot(b[0]-a[0],b[1]-a[1]);if(major<.01)throw new IllegalArgumentException("Półoś wielka musi wynosić co najmniej 0,01 mm");
+            double minor=Math.abs((c[0]-a[0])*(-(b[1]-a[1])/major)+(c[1]-a[1])*((b[0]-a[0])/major));
+            if(minor<.01)throw new IllegalArgumentException("Wskaż półoś małą poza osią wielką");
+            if(minor>major)throw new IllegalArgumentException("Półoś mała jest dłuższa od wielkiej – zacznij od dłuższej osi");
+            return SketchPrimitive.ellipse(id,a[0],a[1],b[0],b[1],minor);
+        }
         if(!tool.equals("Szczelina"))throw new IllegalArgumentException("Nieobsługiwana konstrukcja trzypunktowa");
         double length=Math.hypot(b[0]-a[0],b[1]-a[1]);if(length<.01)throw new IllegalArgumentException("Środki końców szczeliny muszą być różne");
         double ux=(b[0]-a[0])/length,uy=(b[1]-a[1])/length,nx=-uy,ny=ux;
@@ -61,6 +69,7 @@ public final class SketchShapes {
     }
     public static String instruction(String tool,int count) {
         if(tool.equals("Szczelina"))return count==0?"Szczelina: dotknij środka pierwszego końca":count==1?"Szczelina: dotknij środka drugiego końca":"Szczelina: wskaż szerokość, dotykając poza linią łączącą środki";
+        if(tool.equals("Elipsa"))return count==0?"Elipsa: dotknij środka":count==1?"Elipsa: dotknij końca półosi wielkiej":"Elipsa: wskaż półoś małą (odległość od osi wielkiej)";
         if(tool.equals("Okrąg 3 pkt"))return "Okrąg: dotknij "+(count==0?"pierwszego":count==1?"drugiego":"trzeciego")+" punktu obwodu";
         return count==0?"Łuk: dotknij początku":count==1?"Łuk: dotknij końca":"Łuk: wskaż punkt pośredni po właściwej stronie cięciwy";
     }

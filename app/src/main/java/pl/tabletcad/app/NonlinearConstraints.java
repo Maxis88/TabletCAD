@@ -173,7 +173,7 @@ public final class NonlinearConstraints {
             double[] p=b.data(all);for(double v:p)if(!Double.isFinite(v)||Math.abs(v)>5000)throw new IllegalArgumentException("Więzy wyprowadzają geometrię poza ±5000 mm");
             SketchPrimitive rebuilt;
             if(b.source.vertices!=null){if(SketchSpline.is(b.source))rebuilt=new SketchPrimitive(original.id,p,"Splajn");else {SketchContours.validate(p);rebuilt=new SketchPrimitive(original.id,p);}}
-            else {if(length(p)<.01)throw new IllegalArgumentException("Więz tworzy zerową geometrię");rebuilt=new SketchPrimitive(original.id,b.source.type,p[0],p[1],p[2],p[3],b.source.driving);}
+            else {if(length(p)<.01)throw new IllegalArgumentException("Więz tworzy zerową geometrię");rebuilt=b.source.withPoints(p[0],p[1],p[2],p[3],b.source.driving);}
             result.add(rebuilt.withConstruction(b.source.construction));
         }
         SketchConstraints.validate(result,links);return result;

@@ -6,6 +6,7 @@ import pl.tabletcad.app.model.SketchPrimitive;
 public final class SketchFillet {
     private SketchFillet() {}
     public static java.util.List<SketchPrimitive> pair(SketchPrimitive a,SketchPrimitive b,double radius) {
+        if(a.isEllipse()||b.isEllipse())throw new IllegalArgumentException("Zaokrąglenie między elipsą a innym elementem nie jest obsługiwane");
         if(!(a.type.equals("Linia")||a.type.equals("Pomocnicza"))||!(b.type.equals("Linia")||b.type.equals("Pomocnicza"))||a.id.equals(b.id)||a.driving!=null||b.driving!=null)throw new IllegalArgumentException("Wybierz dwie różne linie bez zablokowanych wymiarów");
         if(a.construction!=b.construction)throw new IllegalArgumentException("Wybierz dwie linie tego samego rodzaju geometrii");
         if(!Double.isFinite(radius)||radius<.01||radius>5000)throw new IllegalArgumentException("Promień: 0,01–5000 mm");
@@ -25,6 +26,7 @@ public final class SketchFillet {
         return java.util.Arrays.asList(aa,bb,arc);
     }
     public static SketchPrimitive apply(SketchPrimitive source,double radius) {
+        if(source!=null&&source.isEllipse())throw new IllegalArgumentException("Zaokrąglenie narożników elipsy nie ma zastosowania");
         if(!Double.isFinite(radius)||radius<.01||radius>5000)throw new IllegalArgumentException("Promień: 0,01–5000 mm");
         if(source.driving!=null)throw new IllegalArgumentException("Odblokuj wymiary figury przed zaokrągleniem narożników");
         if(SketchSpline.is(source)||source.curves!=null||!source.closedGeometry()||source.type.equals("Okrąg"))throw new IllegalArgumentException("Wybierz prostokąt lub zamknięty kontur odcinków");

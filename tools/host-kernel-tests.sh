@@ -56,8 +56,8 @@ find "$ROOT/app/src/main/java" -name '*.java' > "$OUT/sources.txt"
 javac -nowarn -encoding UTF-8 --release 17 -classpath "$ANDROID_JAR" -d "$OUT/classes" @"$OUT/sources.txt"
 CP="$OUT/probes:$OUT/classes:$JSON_JAR:$ANDROID_JAR"
 # Probes that only use the kernel and the document model run headless on the desktop JVM.
-PROBES="${PROBES:-KernelDiagnosticsProbe SolidPatternKernelProbe SketchDesignKernelProbe}"
-HOST_TESTS="${HOST_TESTS:-SketchDesignHostTest SolidPatternHostTest UnitsHostTest ProjectLibraryFilesHostTest BodyMassHostTest LibraryWorkspaceHostTest}"
+PROBES="${PROBES:-KernelDiagnosticsProbe SolidPatternKernelProbe SketchDesignKernelProbe CadToolsKernelProbe}"
+HOST_TESTS="${HOST_TESTS:-SketchDesignHostTest SolidPatternHostTest UnitsHostTest CadToolsHostTest ProjectLibraryFilesHostTest BodyMassHostTest LibraryWorkspaceHostTest}"
 status=0
 for test in $HOST_TESTS $PROBES; do
   javac -nowarn -encoding UTF-8 -classpath "$CP" -d "$OUT/probes" "$ROOT/tools/$test.java"

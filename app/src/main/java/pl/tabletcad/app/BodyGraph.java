@@ -12,7 +12,7 @@ public final class BodyGraph {
         while(p.featureBodyTargets.size()<p.committedFeatures.size()){p.featureBodyTargets.add(-1);p.featureBodyOutputs.add(1);}
         reconcile(p);
     }
-    public static boolean creates(double[] f){return f.length>=16&&f[0]>=0&&(((int)f[1]&4)!=0);}
+    public static boolean creates(double[] f){return f.length>=16&&((f[0]>=0&&(((int)f[1]&4)!=0))||SweepLoft.creates(f));}
     public static int allocate(CadProject p) {int id=p.nextBodyIndex++;p.bodyUuids.put(id,UUID.randomUUID().toString());return id;}
     public static void reconcile(CadProject p) {
         while(p.featureBodyTargets.size()>p.committedFeatures.size()){p.featureBodyTargets.remove(p.featureBodyTargets.size()-1);p.featureBodyOutputs.remove(p.featureBodyOutputs.size()-1);}
@@ -48,14 +48,18 @@ public final class BodyGraph {
         if(type==ShellFeature.TYPE)return 16+(int)packed[offset+1]*ShellFeature.FACE;
         if(type==DraftFeature.TYPE)return 16+(int)packed[offset+1]*DraftFeature.FACE;
         if(type==-3){double t=packed[offset+20];return 22+(t>=1001?((int)t-1000)*7:t>=5?((int)t-2)*2:0);}
+        if(type==SweepLoft.LOFT||type==SweepLoft.SWEEP||type==SweepLoft.BODY_PATTERN)return SweepLoft.length(packed,offset);
+        if(type==2000)return 17;
         return 16+(type>=1001?((int)type-1000)*7:type>=5?((int)type-2)*2:0);
     }
     public static double[] pack(CadProject p,double[] raw) {
-        if(p.bodyGraphStart<0){for(double[] f:p.committedFeatures)if(FeaturePattern.is(f)||ShellFeature.is(f))throw new IllegalArgumentException("Szyk i powłoka wymagają grafu brył");return raw.clone();}
+        if(p.bodyGraphStart<0){for(double[] f:p.committedFeatures)if(FeaturePattern.is(f)||ShellFeature.is(f)||SweepLoft.loft(f)||SweepLoft.sweep(f)||SweepLoft.bodyPattern(f))throw new IllegalArgumentException("Szyk i powłoka wymagają grafu brył");return raw.clone();}
         List<double[]> records=new ArrayList<>();int length=0,index=0;
         for(int offset=0;offset<raw.length;index++) {
             int size=recordLength(raw,offset);if(size<16||size>raw.length-offset)throw new IllegalArgumentException("Niepoprawna długość operacji");
             double[] record=Arrays.copyOfRange(raw,offset,offset+size);offset+=size;
+            // Loft/sweep geometry is refreshed from the referenced sketch elements before every evaluation.
+            if((SweepLoft.loft(record)||SweepLoft.sweep(record))&&index<p.committedFeatures.size())record=SweepLoft.refresh(p,record,index<p.committedProfileIds.size()?p.committedProfileIds.get(index):null);
             // Patterns are expanded here, from the current source operations, into one routed record.
             if(FeaturePattern.is(record)) {
                 if(index>=p.committedFeatures.size()||index<p.bodyGraphStart)throw new IllegalArgumentException("Szyk musi być zatwierdzoną operacją grafu brył");

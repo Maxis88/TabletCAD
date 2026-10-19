@@ -51,15 +51,21 @@ public final class Units {
     public static String label(String text,String unit){return text==null?null:text.replace("[mm]","["+unit+"]");}
 
     /** Parses a length (expression) and returns millimetres. */
-    public static double parseLength(String text,String unit) {
-        Value v=new Parser(text,factor(unit)).parse();
+    public static double parseLength(String text,String unit) {return parseLength(text,unit,null);}
+    /** Parses a plain number (angle, count, factor); units are not allowed. */
+    public static double parseNumber(String text) {return parseNumber(text,null);}
+    /**
+     * Variables for expressions: name → {value, power}; power 1 = length in mm, 0 = number.
+     * Names are letters, digits and '_' starting with a letter, and must not be a unit name.
+     */
+    public static double parseLength(String text,String unit,java.util.Map<String,double[]> variables) {
+        Value v=new Parser(text,factor(unit),variables).parse();
         if(v.power==0)return v.value*factor(unit);
         if(v.power==1)return v.value;
         throw new IllegalArgumentException("Wynik wyrażenia nie jest długością");
     }
-    /** Parses a plain number (angle, count, factor); units are not allowed. */
-    public static double parseNumber(String text) {
-        Value v=new Parser(text,1).parse();
+    public static double parseNumber(String text,java.util.Map<String,double[]> variables) {
+        Value v=new Parser(text,1,variables).parse();
         if(v.power!=0)throw new IllegalArgumentException("To pole nie przyjmuje jednostek długości");
         return v.value;
     }
@@ -70,8 +76,9 @@ public final class Units {
         Value(double value,int power){this.value=value;this.power=power;}
     }
     private static final class Parser {
-        private final String s;private final double unitFactor;private int at;
-        Parser(String text,double unitFactor) {
+        private final String s;private final double unitFactor;private int at;private final java.util.Map<String,double[]> variables;
+        Parser(String text,double unitFactor,java.util.Map<String,double[]> variables) {
+            this.variables=variables;
             if(text==null)throw new IllegalArgumentException("Wpisz wartość");
             String t=text.trim().replace('−','-').replace('×','*').replace('·','*').replace('÷','/').replace('″','"');
             // A single comma is a decimal separator (Polish notation); commas are never operators.
@@ -117,6 +124,13 @@ public final class Units {
         private Value primary() {
             skip();
             if(eat('(')){Value v=sum();if(!eat(')'))throw new IllegalArgumentException("Brak nawiasu zamykającego");return withUnit(v);}
+            if(at<s.length()&&Character.isLetter(s.charAt(at))) {
+                int begin=at;while(at<s.length()&&(Character.isLetterOrDigit(s.charAt(at))||s.charAt(at)=='_'))at++;
+                String name=s.substring(begin,at);
+                double[] value=variables==null?null:variables.get(name);
+                if(value==null)throw new IllegalArgumentException("Nieznany parametr „"+name+"”");
+                return new Value(value[0],(int)value[1]);
+            }
             int start=at;
             while(at<s.length()&&(Character.isDigit(s.charAt(at))||s.charAt(at)=='.'))at++;
             if(at<s.length()&&(s.charAt(at)=='e'||s.charAt(at)=='E')&&at+1<s.length()&&(Character.isDigit(s.charAt(at+1))||((s.charAt(at+1)=='-'||s.charAt(at+1)=='+')&&at+2<s.length()&&Character.isDigit(s.charAt(at+2))))) {

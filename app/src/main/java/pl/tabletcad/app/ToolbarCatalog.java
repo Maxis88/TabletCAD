@@ -14,7 +14,7 @@ public final class ToolbarCatalog {
         return sketch?new Group[]{
             new Group("Edytuj","Edytuj","Edytuj"),
             new Group("Wyci\u0105gnij","Wyci\u0105gnij","Wyci\u0105gnij"),
-            new Group("Rysuj","Polilinia","Linia","Polilinia","Prostokąt","Kwadrat","Prostokąt od środka","Wielokąt","Okrąg","Okrąg 3 pkt","Szczelina","Łuk","Splajn"),
+            new Group("Rysuj","Polilinia","Linia","Polilinia","Prostokąt","Kwadrat","Prostokąt od środka","Wielokąt","Okrąg","Okrąg 3 pkt","Elipsa","Szczelina","Łuk","Splajn"),
             new Group("Geometria","Geometria","Geometria","Przesuń szkic","Obróć szkic","Skaluj szkic","Powiązania profilu","Połącz kontur","Odsunięcie","Lustro","Szyk liniowy","Szyk kołowy","Zaokrąglij szkic"),
             new Group("Przytnij","Przytnij","Przytnij","Przedłuż"),
             new Group("Więzy","Więzy","Więzy","Wymiar"),
@@ -25,8 +25,8 @@ public final class ToolbarCatalog {
         }:new Group[]{
             new Group("Wybierz","Wybierz","Wybierz"),
             new Group("Szkice","Szkic","Szkic","Edytuj"),
-            new Group("Modeluj","Wyciągnij","Wyciągnij","Obrót profilu","Otwór","Gwint","Powłoka","Edytuj profil źródłowy","Powiązania profilu"),
-            new Group("Bryły","Połącz bryły","Połącz bryły","Odejmij bryły","Część wspólna brył","Podziel bryłę","Przesuń bryłę","Obróć bryłę","Skaluj bryłę"),
+            new Group("Modeluj","Wyciągnij","Wyciągnij","Obrót profilu","Przejście","Przeciągnij","Otwór","Gwint","Powłoka","Edytuj profil źródłowy","Powiązania profilu"),
+            new Group("Bryły","Połącz bryły","Połącz bryły","Odejmij bryły","Część wspólna brył","Podziel bryłę","Lustro bryły","Szyk liniowy bryły","Szyk kołowy bryły","Przesuń bryłę","Obróć bryłę","Skaluj bryłę"),
             new Group("Powiel","Szyk liniowy operacji","Lustro operacji","Szyk liniowy operacji","Szyk kołowy operacji"),
             new Group("Zmień","Zaokrąglij","Głębokość","Zaokrąglij","Fazuj","Pochyl ściany","Usuń cechę"),
             new Group("Sprawdź","Zmierz","Zmierz","Właściwości bryły","Rysunek"),

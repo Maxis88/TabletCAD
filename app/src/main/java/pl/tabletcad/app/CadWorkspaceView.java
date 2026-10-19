@@ -508,7 +508,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 } else if (isInsideViewport(e.getX(), e.getY())) {
                     if(mode.equals("Profile wyciągnięcia")){if(extrusionFacePick!=null)pickExtrusionFace(e.getX(),e.getY());else toggleExtrusionProfile(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchOrbit)return true;
-                    if(mode.equals("Szkic")&&sketchPlaneChosen&&(sketchTool.equals("Okrąg 3 pkt")||sketchTool.equals("Szczelina"))){threePointTap(e.getX(),e.getY());return true;}
+                    if(mode.equals("Szkic")&&sketchPlaneChosen&&(sketchTool.equals("Okrąg 3 pkt")||sketchTool.equals("Szczelina")||sketchTool.equals("Elipsa"))){threePointTap(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Łuk")){arcTap(e.getX(),e.getY());return true;}
                     if(filletSelectionChanged!=null) {
                         selectFilletEdge(e.getX(),e.getY());return true;
@@ -715,7 +715,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                             catch(IllegalArgumentException e){dragPreview=null;}
                         } else {
                             try {dragPreview=SketchDimensions.constrainDrag(draggedSketch,
-                                new SketchPrimitive(draggedSketch.id,draggedSketch.type,x1,y1,x2,y2),dragHandle);}
+                                draggedSketch.withPoints(x1,y1,x2,y2,null),dragHandle);}
                             catch(IllegalArgumentException error){dragPreview=null;operationMessage=error.getMessage();}
                         }
                         dragSolvedPreview=null;
@@ -752,7 +752,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             try{arcPreview=SketchCurves.arc(a[0],a[1],mid[0],mid[1],b[0],b[1]);}catch(IllegalArgumentException e){arcPreview=null;}
             invalidate();
         }
-        if(mode.equals("Szkic")&&(sketchTool.equals("Okrąg 3 pkt")||sketchTool.equals("Szczelina"))&&sketchPlaneChosen&&event.getActionMasked()==MotionEvent.ACTION_MOVE&&isInsideViewport(event.getX(),event.getY())&&project.threePointDraft.size()==2) {
+        if(mode.equals("Szkic")&&(sketchTool.equals("Okrąg 3 pkt")||sketchTool.equals("Szczelina")||sketchTool.equals("Elipsa"))&&sketchPlaneChosen&&event.getActionMasked()==MotionEvent.ACTION_MOVE&&isInsideViewport(event.getX(),event.getY())&&project.threePointDraft.size()==2) {
             try{threePointPreview=SketchShapes.threePoint("preview",sketchTool,project.threePointDraft.get(0),project.threePointDraft.get(1),snappedSketchPoint(event.getX(),event.getY(),null,null,null));}
             catch(IllegalArgumentException error){threePointPreview=null;}invalidate();
         }
@@ -1523,6 +1523,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             }
         } else if (entity.type.equals("Linia") || entity.type.equals("Pomocnicza")) {
             drawSketchSegment(canvas,entity.x1,entity.y1,entity.x2,entity.y2);
+        } else if (entity.isEllipse()) {
+            double[] e=ellipsePoints(entity,96);
+            for(int i=0;i<e.length;i+=2){int j=(i+2)%e.length;drawSketchSegment(canvas,e[i],e[i+1],e[j],e[j+1]);}
         } else if (entity.type.equals("Prostokąt")) {
             drawSketchSegment(canvas,entity.x1,entity.y1,entity.x2,entity.y1);
             drawSketchSegment(canvas,entity.x2,entity.y1,entity.x2,entity.y2);
@@ -1567,6 +1570,28 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }
     }
 
+    /** Closed polyline approximation of an ellipse for display and picking only; B-Rep uses the exact curve. */
+    private static double[] ellipsePoints(SketchPrimitive e,int count) {
+        double a=e.major(),ux=(e.x2-e.x1)/a,uy=(e.y2-e.y1)/a;double[] r=new double[count*2];
+        for(int i=0;i<count;i++){double t=2*Math.PI*i/count,c=Math.cos(t)*a,s=Math.sin(t)*e.minor;r[2*i]=e.x1+ux*c-uy*s;r[2*i+1]=e.y1+uy*c+ux*s;}
+        return r;
+    }
+    /** Exact numeric ellipse: centre, semi-axes and rotation of the major axis. */
+    private void showEllipseEditor(SketchPrimitive entity) {
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        EditText cx=labeledCoordinate(form,"Środek X [mm]",entity.x1),cy=labeledCoordinate(form,"Środek Y [mm]",entity.y1);
+        EditText major=labeledCoordinate(form,"Półoś wielka a [mm]",entity.major()),minor=labeledCoordinate(form,"Półoś mała b [mm]",entity.minor);
+        EditText angle=labeledCoordinate(form,"Obrót osi wielkiej [°]",SketchDimensions.angle(entity));
+        android.widget.CheckBox construction=new android.widget.CheckBox(getContext());construction.setText("Geometria pomocnicza");construction.setChecked(entity.construction);form.addView(construction);
+        new PropertyBuilder().setTitle("Elipsa").setView(form).setNeutralButton("Usuń element",(d,w)->deleteSketchEntity(entity.id)).setNegativeButton("Anuluj",null)
+            .setPositiveButton("Zastosuj",(d,w)->{
+                try {
+                    double x=parseCoordinate(cx),y=parseCoordinate(cy),a=parseCoordinate(major),b=parseCoordinate(minor),t=Math.toRadians(parseCoordinate(angle));
+                    SketchPrimitive changed=SketchPrimitive.ellipse(entity.id,x,y,x+a*Math.cos(t),y+a*Math.sin(t),b).withConstruction(construction.isChecked());
+                    replaceSketchEntity(entity,changed,true);
+                }catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+            }).show();
+    }
     private void drawEditableDimension(Canvas canvas,SketchPrimitive entity,String kind,int segment,PointF a,PointF b,PointF inside,String label) {
         drawingDimension=new DimensionHit(entity.id,kind,segment,null);
         drawSketchDimension(canvas,a,b,inside,label);drawingDimension=null;
@@ -1610,14 +1635,37 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(hit.entityId.startsWith("link:")){showPositionDimensionEditor(Integer.parseInt(hit.entityId.substring(5)));return;}
         SketchPrimitive found=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(hit.entityId))found=p;
         if(found==null)return;final SketchPrimitive source=found;beginSketchWork();mode="Edytuj szkic";
+        if(source.isEllipse()) {
+            boolean majorAxis=hit.kind.equals("ellipseMajor");
+            EditText axis=coordinateInput(majorAxis?"Półoś wielka a [mm]":"Półoś mała b [mm]",majorAxis?source.major():source.minor);
+            new PropertyBuilder().setTitle(majorAxis?"Półoś wielka elipsy":"Półoś mała elipsy").setView(axis).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
+                try {
+                    double value=parseCoordinate(axis),a=source.major(),ux=(source.x2-source.x1)/a,uy=(source.y2-source.y1)/a;
+                    SketchPrimitive changed=majorAxis?SketchPrimitive.ellipse(source.id,source.x1,source.y1,source.x1+ux*value,source.y1+uy*value,source.minor):SketchPrimitive.ellipse(source.id,source.x1,source.y1,source.x2,source.y2,value);
+                    replaceSketchEntity(source,changed.withConstruction(source.construction),true);
+                }catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+            }).show();return;
+        }
         double value=hit.kind.equals("angle")?SketchDimensions.angle(source):hit.kind.equals("width")?Math.abs(source.x2-source.x1):hit.kind.equals("height")?Math.abs(source.y2-source.y1):SketchDimensions.length(source);
         if(hit.kind.equals("side")){int i=hit.segment*2,j=(i+2)%source.vertices.length;value=Math.hypot(source.vertices[j]-source.vertices[i],source.vertices[j+1]-source.vertices[i+1]);}
         if(hit.kind.equals("arcRadius"))value=SketchCurves.arc(source.curves,hit.segment*7).r;
         if(hit.kind.equals("diameter"))value=2*SketchDimensions.length(source);
         EditText input=coordinateInput(hit.kind.equals("angle")?"Kąt [°]":hit.kind.equals("diameter")?"Średnica Ø [mm]":"Wymiar [mm]",value);
+        final int dimIndex=hit.kind.equals("angle")||hit.kind.equals("height")?1:0;
+        final String dimKey=(hit.kind.equals("side")||hit.kind.equals("arcRadius"))?null:UserParameters.dimKey(project.sketchId,source.id,dimIndex);
+        if(dimKey!=null&&!hit.kind.equals("diameter"))bound(input,dimKey);
         new PropertyBuilder().setTitle(hit.kind.equals("angle")?"Edytuj kąt [°]":hit.kind.equals("diameter")?"Edytuj średnicę Ø [mm]":"Edytuj wymiar [mm]").setView(input).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
-            try {replaceSketchEntity(source,dimensionChanged(source,hit.kind,hit.segment,parseCoordinate(input)));}
-            catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+            try {
+                if(dimKey!=null&&UserParameters.isExpression(input.getText().toString())) {
+                    if(hit.kind.equals("diameter"))throw new IllegalArgumentException("Parametrem steruj promieniem (wymiar długości okręgu), nie średnicą");
+                    // Driven by a parameter: store the binding and let the parameter pass recompute the sketch and model.
+                    String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));
+                    UserParameters.bind(next,dimKey,input.getText().toString());UserParameters.apply(next);commitProjectAsync(next,baseline,"Wymiar powiązano z parametrem");return;
+                }
+                if(dimKey!=null)project.parameterBindings.remove(dimKey);
+                replaceSketchEntity(source,dimensionChanged(source,hit.kind,hit.segment,parseCoordinate(input)));
+            }
+            catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
         }).show();
         input.requestFocus();input.post(()->{android.view.inputmethod.InputMethodManager keyboard=(android.view.inputmethod.InputMethodManager)getContext().getSystemService(Context.INPUT_METHOD_SERVICE);keyboard.showSoftInput(input,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);});
     }
@@ -1700,6 +1748,13 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }
         if(entity.curves!=null) {
             for(int i=0;i<entity.curves.length;i+=7)if(entity.curves[i]==1){SketchCurves.Arc arc=SketchCurves.arc(entity.curves,i);double[] mid=arc.point(.5);drawEditableDimension(canvas,entity,"arcRadius",i/7,projectSketchPoint(arc.x,arc.y),projectSketchPoint(mid[0],mid[1]),null,"R "+formatMm(arc.r));}
+            return;
+        }
+        if(entity.isEllipse()) {
+            if(!sketchPointVisible(entity.x1,entity.y1))return;
+            double a=entity.major(),ux=(entity.x2-entity.x1)/a,uy=(entity.y2-entity.y1)/a;
+            drawEditableDimension(canvas,entity,"ellipseMajor",0,projectSketchPoint(entity.x1,entity.y1),projectSketchPoint(entity.x2,entity.y2),null,"a "+formatMm(a));
+            drawEditableDimension(canvas,entity,"ellipseMinor",0,projectSketchPoint(entity.x1,entity.y1),projectSketchPoint(entity.x1-uy*entity.minor,entity.y1+ux*entity.minor),null,"b "+formatMm(entity.minor));
             return;
         }
         double[] dimensions=entity.driving!=null?entity.driving:new double[]{entity.type.equals("Prostokąt")?Math.abs(entity.x2-entity.x1):SketchDimensions.length(entity),Math.abs(entity.y2-entity.y1)};
@@ -2028,6 +2083,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     int j=(i+2)%entity.vertices.length;
                     distance=Math.min(distance,sketchSegmentDistance(sx,sy,entity.vertices[i],entity.vertices[i+1],entity.vertices[j],entity.vertices[j+1]));
                 }
+            } else if (entity.isEllipse()) {
+                double[] e=ellipsePoints(entity,96);distance=Double.POSITIVE_INFINITY;
+                for(int i=0;i<e.length;i+=2){int j=(i+2)%e.length;distance=Math.min(distance,sketchSegmentDistance(sx,sy,e[i],e[i+1],e[j],e[j+1]));}
             } else if (entity.type.equals("Okrąg")) {
                 double radius = Math.hypot(entity.x2 - entity.x1, entity.y2 - entity.y1);
                 distance = Double.POSITIVE_INFINITY;
@@ -2065,6 +2123,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private void showSketchEntityEditor(SketchPrimitive entity) {
+        if(entity.isEllipse()){showEllipseEditor(entity);return;}
         if(entity.curves!=null){showCurveEditor(entity);return;}
         if(entity.vertices!=null) {
             android.widget.TextView instructions=new android.widget.TextView(getContext());
@@ -2110,7 +2169,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
     private void showContourFillet() {
         List<SketchPrimitive> profiles=new ArrayList<>();List<String> names=new ArrayList<>();
-        for(SketchPrimitive p:project.sketch)if(p.closedProfile()&&p.curves==null&&!p.type.equals("Okrąg")){profiles.add(p);names.add(p.type);}
+        for(SketchPrimitive p:project.sketch)if(p.closedProfile()&&p.curves==null&&!p.type.equals("Okrąg")&&!p.isEllipse()){profiles.add(p);names.add(p.type);}
         SketchPrimitive selected=null;for(SketchPrimitive p:profiles)if(p.id.equals(selectedSketchId))selected=p;
         if(selected!=null){showSketchFilletRadius(selected);return;}
         if(profiles.size()==1){showSketchFilletRadius(profiles.get(0));return;}
@@ -2545,6 +2604,10 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         input.setSelectAllOnFocus(true);
         return input;
     }
+    /** Shows the bound parameter expression instead of the value, when the field is driven by one. */
+    private EditText bound(EditText field,String key){String expression=project.parameterBindings.get(key);if(expression!=null)field.setText(expression);return field;}
+    /** Binds (expression with parameter names) or unbinds (plain value) a driven value in the given document. */
+    private static void bindField(CadProject target,String key,EditText field){String text=field.getText().toString().trim();if(UserParameters.isExpression(text))UserParameters.bind(target,key,text);else target.parameterBindings.remove(key);}
     /** Length input (project units, expressions allowed) for forms built outside coordinateInput. */
     private EditText lengthInput(double mm) {return coordinateInput("Wartość [mm]",mm);}
     private void setLengthText(EditText input,double mm){input.setText(LENGTH_INPUT.equals(input.getTag())?Units.input(mm,project.units):String.format(java.util.Locale.US,"%.3f",mm));}
@@ -2552,7 +2615,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     /** Exact value of a field: lengths are returned in mm, other fields as plain numbers. */
     private double parseCoordinate(EditText input) {
         String text=input.getText().toString();
-        return LENGTH_INPUT.equals(input.getTag())?Units.parseLength(text,project.units):Units.parseNumber(text);
+        java.util.Map<String,double[]> variables=project.parameters.isEmpty()||!UserParameters.isExpression(text)?null:UserParameters.evaluate(project);
+        return LENGTH_INPUT.equals(input.getTag())?Units.parseLength(text,project.units,variables):Units.parseNumber(text,variables);
     }
 
     private void replaceSketchEntity(SketchPrimitive oldEntity, SketchPrimitive changed) {
@@ -3728,6 +3792,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(ShellFeature.is(feature)){showShellEditor(index);return;}
         if(BodyCombine.is(feature)){beginBodyCombine((int)feature[1],index);return;}
         if(BodySplit.is(feature)){showBodySplit(index);return;}
+        if(SweepLoft.bodyPattern(feature)){showBodyPatternDialog((int)feature[1],index);return;}
+        if(SweepLoft.loft(feature)||SweepLoft.sweep(feature)){showLoftSweepEditor(index);return;}
         if(DraftFeature.is(feature)){showDraftEditor(index);return;}
         if(BodyTransform.is(feature)){showBodyTransform((int)feature[1],index);return;}
         if(HoleFeature.is(feature)){holeEditIndex=index;double[] f=feature;holeReference=new double[]{f[2],f[3],f[4],f[5],f[6],f[7],f[8]};mode="Otwór";showHolePanel();return;}
@@ -3735,7 +3801,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(EdgeFillet.is(feature)||EdgeChamfer.is(feature)){showEdgeFilletEditor(index);return;}
         String linkedProfileId=index<project.committedProfileIds.size()?project.committedProfileIds.get(index):null;
         if(feature[0]>=5 || project.isProfileDimensioned(linkedProfileId) || ProfileDependencies.consumers(project,linkedProfileId).size()>1) {
-            EditText depth=coordinateInput("Głębokość [mm]",Math.abs(feature[6]));
+            EditText depth=bound(coordinateInput("Głębokość [mm]",Math.abs(feature[6])),UserParameters.depthKey(index));
             android.widget.CheckBox reverse=directionCheck(feature[6]);
             android.widget.CheckBox symmetric=symmetricCheck(FeatureDirection.isSymmetric(feature[1]),reverse);
             LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);form.addView(depth);form.addView(reverse);
@@ -3748,7 +3814,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                         double value=FeatureDirection.signed(parseCoordinate(depth),reverse.isChecked(),symmetric.isChecked());
                         double[] candidate=feature.clone();candidate[6]=value;
                         candidate[1]=FeatureDirection.withSymmetric(feature[1],symmetric.isChecked());
-                        if(commitModelChange(() -> project.committedFeatures.set(index,candidate)))
+                        if(commitModelChange(() -> {project.committedFeatures.set(index,candidate);bindField(project,UserParameters.depthKey(index),depth);}))
                             operationMessage="Gotowe: przeliczono operację konturu";
                     }catch(IllegalArgumentException e){operationMessage="Głębokość: 0,1–5000 mm";}
                     invalidate();
@@ -3772,6 +3838,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             label.setTextSize(12);
             fields.addView(label);
             inputs[i] = coordinateInput(labels[i], i==4?Math.abs(feature[6]):feature[i + 2]);
+            if(i==4)bound(inputs[i],UserParameters.depthKey(index));
             fields.addView(inputs[i]);
         }
         android.widget.CheckBox reverse=directionCheck(feature[6]);fields.addView(reverse);
@@ -3800,6 +3867,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     } else {
                         if (commitModelChange(() -> {
                             project.committedFeatures.set(index, candidate);
+                            bindField(project,UserParameters.depthKey(index),inputs[4]);
                             String profileId = index < project.committedProfileIds.size()
                                 ? project.committedProfileIds.get(index) : "";
                             SketchPrimitive changed=SketchPrimitive.fromFeature(profileId,candidate[0]==1?"Okrąg":"Prostokąt",candidate,2,16);
@@ -3874,6 +3942,13 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     private void toggleExtrusionProfile(float x,float y) {
         double[] point=screenToSketch(x,y);SketchPrimitive chosen=null;double area=Double.POSITIVE_INFINITY;boolean overConstruction=false;
         for(SketchPrimitive p:project.sketch)if(p.closedGeometry()) {
+            if(p.isEllipse()) {
+                double a=p.major(),ux=(p.x2-p.x1)/a,uy=(p.y2-p.y1)/a,dx=point[0]-p.x1,dy=point[1]-p.y1,s=(dx*ux+dy*uy)/a,t=(-dx*uy+dy*ux)/p.minor;
+                boolean in=s*s+t*t<1;double size=Math.PI*a*p.minor;
+                if(in&&p.construction)overConstruction=true;
+                if(in&&!p.construction&&size<area){chosen=p;area=size;}
+                continue;
+            }
             boolean inside=p.type.equals("Okrąg")?Math.hypot(point[0]-p.x1,point[1]-p.y1)<Math.hypot(p.x2-p.x1,p.y2-p.y1):p.vertices!=null?polygonContains(p.vertices,point[0],point[1]):p.curves!=null?polygonContains(SketchCurves.samples(p.curves,96),point[0],point[1]):point[0]>=Math.min(p.x1,p.x2)&&point[0]<=Math.max(p.x1,p.x2)&&point[1]>=Math.min(p.y1,p.y2)&&point[1]<=Math.max(p.y1,p.y2);
             double size=p.type.equals("Okrąg")?Math.PI*Math.pow(Math.hypot(p.x2-p.x1,p.y2-p.y1),2):Math.abs((p.x2-p.x1)*(p.y2-p.y1));
             if(inside&&p.construction)overConstruction=true;
@@ -3995,7 +4070,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private static double[] profileCenter(SketchPrimitive shape) {
-        if(shape.type.equals("Okrąg"))return new double[]{shape.x1,shape.y1};
+        if(shape.type.equals("Okrąg")||shape.isEllipse())return new double[]{shape.x1,shape.y1};
         if(shape.curves!=null){double[] b=SketchCurves.bounds(shape.curves);return new double[]{(b[0]+b[2])*.5,(b[1]+b[3])*.5};}
         if(shape.vertices!=null){double minX=Double.POSITIVE_INFINITY,minY=minX,maxX=-minX,maxY=-minX;for(int i=0;i<shape.vertices.length;i+=2){minX=Math.min(minX,shape.vertices[i]);maxX=Math.max(maxX,shape.vertices[i]);minY=Math.min(minY,shape.vertices[i+1]);maxY=Math.max(maxY,shape.vertices[i+1]);}return new double[]{(minX+maxX)*.5,(minY+maxY)*.5};}
         return new double[]{(shape.x1+shape.x2)*.5,(shape.y1+shape.y2)*.5};
@@ -4285,9 +4360,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         android.widget.TextView info=new android.widget.TextView(getContext());
         info.setText("Środek leży na wskazanej ścianie i przesuwa się razem z nią przy zmianie parametrów. Dotknij innej płaskiej ściany, aby ją zmienić.");form.addView(info);
         EditText x=labeledCoordinate(form,"Środek X [mm]",holeReference[0]),y=labeledCoordinate(form,"Środek Y [mm]",holeReference[1]),z=labeledCoordinate(form,"Środek Z [mm]",holeReference[2]);
-        EditText diameter=labeledCoordinate(form,"Średnica [mm]",original!=null?original[9]:6.5);
+        EditText diameter=labeledCoordinate(form,"Średnica [mm]",original!=null?original[9]:6.5);if(holeEditIndex>=0)bound(diameter,"hole:"+holeEditIndex+":d");
         android.widget.CheckBox through=new android.widget.CheckBox(getContext());through.setText("Na wylot (przez całą bryłę)");through.setChecked(original==null||original[1]==1);form.addView(through);
-        EditText depth=labeledCoordinate(form,"Głębokość [mm]",original!=null&&original[1]==0?original[10]:10);
+        EditText depth=labeledCoordinate(form,"Głębokość [mm]",original!=null&&original[1]==0?original[10]:10);if(holeEditIndex>=0)bound(depth,"hole:"+holeEditIndex+":h");
         EditText tip=labeledCoordinate(form,"Kąt wierzchołkowy wiertła [°] (0 = płaskie dno)",original!=null&&original[1]==0?original[14]:118);
         android.widget.TextView headLabel=new android.widget.TextView(getContext());headLabel.setText("Pogłębienie");form.addView(headLabel);
         android.widget.Spinner head=new android.widget.Spinner(getContext());head.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,new String[]{"Brak (otwór prosty)","Walcowe (pod łeb walcowy)","Stożkowe (pod łeb stożkowy)"}));
@@ -4322,6 +4397,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     int body=selectedFace>=0?faceBodies.getOrDefault(selectedFace,1):project.selectedBody>0?project.selectedBody:1;
                     if(holeEditIndex>=0)next.committedFeatures.set(holeEditIndex,record);
                     else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
+                    int at=holeEditIndex>=0?holeEditIndex:next.committedFeatures.size()-1;bindField(next,"hole:"+at+":d",diameter);if(through.isChecked())next.parameterBindings.remove("hole:"+at+":h");else bindField(next,"hole:"+at+":h",depth);
                     int edited=holeEditIndex;holeEditIndex=-1;holeReference=null;
                     commitProjectAsync(next,baseline,(edited>=0?"Zaktualizowano: ":"Utworzono: ")+HoleFeature.describe(record));
                 }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
@@ -4378,6 +4454,111 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 try{double[] updated=DraftFeature.withAngle(f,parseCoordinate(angle));String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));next.committedFeatures.set(index,updated);commitProjectAsync(next,baseline,"Zaktualizowano: "+DraftFeature.describe(updated));}
                 catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
             }).show();
+    }
+
+    // ---- Loft, sweep and whole-body patterns ----
+    /** Like prepareSolidTool, but an empty document is allowed: the operation may create the first body. */
+    private boolean prepareProfileTool(String name) {
+        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return false;}
+        if(inSketch()){finishSketchWork();if(inSketch())return false;}
+        if(project.importedMeshSource!=null){operationMessage=name+" wymaga modelu B-Rep";invalidate();return false;}
+        if(!project.hasSolid()){operationMessage=name+": najpierw utwórz pierwszą bryłę (np. wyciągnięcie). Kolejne mogą powstać jako „Nowa bryła”.";invalidate();return false;}
+        if(modelOperationPending){operationMessage="Trwa już obliczanie operacji";invalidate();return false;}
+        closePropertyEditor();preserveExtrudedBase();commitActiveFeature();BodyGraph.begin(project);return true;
+    }
+    private String placedLabel(SweepLoft.Placed e){return e.sketchName+" · "+(e.shape.isEllipse()?"Elipsa":e.shape.type)+(e.shape.construction?" (pomocnicza)":"");}
+    private android.widget.Spinner operationSpinner(LinearLayout form,int flags) {
+        android.widget.TextView label=new android.widget.TextView(getContext());label.setText("Operacja");form.addView(label);
+        android.widget.Spinner operation=new android.widget.Spinner(getContext());operation.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,new String[]{"Nowa bryła","Połącz z bryłą","Wytnij z bryły"}));
+        operation.setSelection(flags==4?0:flags==1?2:project.hasSolid()?1:0);form.addView(operation);return operation;
+    }
+    private static int flagsOf(int position){return position==0?4:position==2?1:0;}
+    private void commitProfileOperation(double[] record,String ref,int editIndex,String success) {
+        try {
+            String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
+            boolean create=((int)record[1]&4)!=0;
+            if(editIndex>=0) {
+                boolean wasCreate=next.featureBodyTargets.get(editIndex)==0;
+                if(wasCreate!=create)throw new IllegalArgumentException("Zmiana między „Nowa bryła” a łączeniem wymaga usunięcia i ponownego utworzenia operacji");
+                next.committedFeatures.set(editIndex,record);next.committedProfileIds.set(editIndex,ref);
+            } else {
+                if(!create&&!next.hasSolid())throw new IllegalArgumentException("Brak bryły do połączenia lub wycięcia – wybierz „Nowa bryła”");
+                next.committedFeatures.add(record);next.committedProfileIds.add(ref);
+                if(create){next.featureBodyTargets.add(0);next.featureBodyOutputs.add(BodyGraph.allocate(next));}
+                else {int body=next.selectedBody>0?next.selectedBody:1;next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
+            }
+            BodyGraph.validate(next);commitProjectAsync(next,baseline,success);
+        }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+    }
+    private void showLoftDialog() {
+        List<SweepLoft.Placed> profiles=new ArrayList<>();for(SweepLoft.Placed e:SweepLoft.elements(project))if(e.shape.closedProfile())profiles.add(e);
+        if(profiles.size()<2){operationMessage="Przejście: potrzebne są co najmniej dwa zamknięte profile w różnych szkicach (np. na płaszczyźnie odsuniętej).";invalidate();return;}
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Zaznacz profile w kolejności przejścia (kolejność zaznaczania). Każdy profil z innego szkicu.");form.addView(info);
+        List<SweepLoft.Placed> order=new ArrayList<>();
+        for(SweepLoft.Placed e:profiles){android.widget.CheckBox box=new android.widget.CheckBox(getContext());box.setText(placedLabel(e));box.setOnCheckedChangeListener((b,c)->{if(c)order.add(e);else order.remove(e);});form.addView(box);}
+        android.widget.CheckBox ruled=new android.widget.CheckBox(getContext());ruled.setText("Ściany prostokreślne (bez wygładzania)");form.addView(ruled);
+        android.widget.Spinner operation=operationSpinner(form,project.hasSolid()?0:4);
+        new PropertyBuilder().setTitle("Przejście między profilami").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Utwórz",(d,w)->{
+            try{double[] record=SweepLoft.loftRecord(order,flagsOf(operation.getSelectedItemPosition()),ruled.isChecked());commitProfileOperation(record,SweepLoft.loftRef(order),-1,"Utworzono przejście przez "+order.size()+" profile");}
+            catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+        }).show();
+    }
+    private void showSweepDialog() {
+        List<SweepLoft.Placed> all=SweepLoft.elements(project),profiles=new ArrayList<>(),paths=new ArrayList<>();
+        for(SweepLoft.Placed e:all){if(e.shape.closedProfile())profiles.add(e);if(!e.shape.isEllipse()&&!SketchSpline.is(e.shape)&&!e.shape.type.equals("Okrąg")&&!e.shape.type.equals("Prostokąt"))paths.add(e);}
+        if(profiles.isEmpty()||paths.isEmpty()){operationMessage="Przeciągnięcie: potrzebny zamknięty profil i ścieżka z linii/łuków (zwykle w szkicu prostopadłym do profilu).";invalidate();return;}
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView t1=new android.widget.TextView(getContext());t1.setText("Profil");form.addView(t1);
+        List<String> names=new ArrayList<>();for(SweepLoft.Placed e:profiles)names.add(placedLabel(e));
+        android.widget.Spinner profile=new android.widget.Spinner(getContext());profile.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,names));form.addView(profile);
+        android.widget.TextView t2=new android.widget.TextView(getContext());t2.setText("Ścieżka – zaznacz kolejne elementy (od początku ścieżki, przy profilu)");form.addView(t2);
+        List<SweepLoft.Placed> order=new ArrayList<>();
+        for(SweepLoft.Placed e:paths){android.widget.CheckBox box=new android.widget.CheckBox(getContext());box.setText(placedLabel(e));box.setOnCheckedChangeListener((b,c)->{if(c)order.add(e);else order.remove(e);});form.addView(box);}
+        android.widget.Spinner operation=operationSpinner(form,project.hasSolid()?0:4);
+        new PropertyBuilder().setTitle("Przeciągnięcie po ścieżce").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Utwórz",(d,w)->{
+            try{SweepLoft.Placed chosen=profiles.get(profile.getSelectedItemPosition());double[] record=SweepLoft.sweepRecord(chosen,order,flagsOf(operation.getSelectedItemPosition()));commitProfileOperation(record,SweepLoft.sweepRef(chosen,order),-1,"Utworzono przeciągnięcie po ścieżce ("+order.size()+" el.)");}
+            catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+        }).show();
+    }
+    private void showLoftSweepEditor(int index) {
+        double[] f=project.committedFeatures.get(index);LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView info=new android.widget.TextView(getContext());info.setText(SweepLoft.label(f)+": kształt pochodzi ze wskazanych elementów szkiców – edytuj szkic, a operacja zostanie przeliczona.");form.addView(info);
+        android.widget.CheckBox ruled=new android.widget.CheckBox(getContext());ruled.setText("Ściany prostokreślne");ruled.setChecked(f[3]==1);if(SweepLoft.loft(f))form.addView(ruled);
+        boolean create=index<project.featureBodyTargets.size()&&project.featureBodyTargets.get(index)==0;
+        android.widget.Spinner operation=new android.widget.Spinner(getContext());operation.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,create?new String[]{"Nowa bryła"}:new String[]{"Połącz z bryłą","Wytnij z bryły"}));
+        if(!create)operation.setSelection(((int)f[1]&1)!=0?1:0);form.addView(operation);
+        new PropertyBuilder().setTitle("Edytuj: "+SweepLoft.label(f)).setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
+            try{double[] r=f.clone();if(!create)r[1]=operation.getSelectedItemPosition()==1?1:0;if(SweepLoft.loft(r))r[3]=ruled.isChecked()?1:0;SweepLoft.validate(r);commitProfileOperation(r,project.committedProfileIds.get(index),index,"Zaktualizowano: "+SweepLoft.label(r));}
+            catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+        }).show();
+    }
+    private void showBodyPatternDialog(int kind,int editIndex) {
+        double[] original=editIndex>=0?project.committedFeatures.get(editIndex):null;
+        List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(ids.isEmpty()){operationMessage="Brak bryły do powielenia";invalidate();return;}
+        String[] names=new String[ids.size()];for(int i=0;i<names.length;i++)names[i]=BodyGraph.name(project,ids.get(i));
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.Spinner body=new android.widget.Spinner(getContext());body.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,names));form.addView(body);
+        body.setSelection(Math.max(0,ids.indexOf(original!=null?featureBody(project,editIndex):project.selectedBody)));if(original!=null)body.setEnabled(false);
+        android.widget.Spinner axis=new android.widget.Spinner(getContext());axis.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,kind==1?new String[]{"Płaszczyzna YZ (normalna X)","Płaszczyzna XZ (normalna Y)","Płaszczyzna XY (normalna Z)"}:new String[]{kind==2?"Kierunek X":"Oś X","Kierunek Y".replace("Kierunek",kind==2?"Kierunek":"Oś"),"Kierunek Z".replace("Kierunek",kind==2?"Kierunek":"Oś")}));form.addView(axis);
+        int a0=original==null?(kind==3?2:0):Math.abs(original[6])>.5?0:Math.abs(original[7])>.5?1:2;axis.setSelection(a0);
+        double[] o=original!=null?original:new double[16];
+        EditText px=labeledCoordinate(form,kind==1?"Punkt płaszczyzny X [mm]":"Punkt osi X [mm]",o[3]),py=labeledCoordinate(form,kind==1?"Punkt płaszczyzny Y [mm]":"Punkt osi Y [mm]",o[4]),pz=labeledCoordinate(form,kind==1?"Punkt płaszczyzny Z [mm]":"Punkt osi Z [mm]",o[5]);
+        EditText count=kind==1?null:labeledCoordinate(form,"Liczba wystąpień (z oryginałem)",original!=null?original[9]:3);
+        EditText value=kind==1?null:labeledCoordinate(form,kind==2?"Odstęp [mm] (ujemny = przeciwny kierunek)":"Kąt całkowity [°]",original!=null?original[10]:kind==2?20:360);
+        String title=kind==1?"Lustro bryły":kind==2?"Szyk liniowy bryły":"Szyk kołowy bryły";
+        new PropertyBuilder().setTitle(editIndex>=0?"Edytuj: "+title:title).setView(form).setNegativeButton("Anuluj",null).setPositiveButton(editIndex>=0?"Zastosuj":"Utwórz",(d,w)->{
+            try {
+                double[] dir=new double[3];dir[axis.getSelectedItemPosition()]=1;int n=0;double v=0;
+                if(kind!=1){double c=parseCoordinate(count);if(c!=Math.floor(c))throw new IllegalArgumentException("Liczba wystąpień musi być całkowita");n=(int)c;v=parseCoordinate(value);}
+                double[] record=SweepLoft.bodyPatternRecord(kind,new double[]{parseCoordinate(px),parseCoordinate(py),parseCoordinate(pz)},dir,n,v);
+                int target=ids.get(body.getSelectedItemPosition());
+                String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
+                if(editIndex>=0)next.committedFeatures.set(editIndex,record);
+                else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(target);next.featureBodyOutputs.add(target);}
+                commitProjectAsync(next,baseline,title+" · "+BodyGraph.name(next,target));
+            }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+        }).show();
     }
 
     // ---- Split a body by a plane ----
@@ -4593,8 +4774,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         reverse.setOnCheckedChangeListener((button,checked)->{invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,100);});
         symmetric.setOnCheckedChangeListener((button,checked)->{reverse.setEnabled(!checked);invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,100);});
         postDelayed(preview,100);
-        double u=profile.type.equals("Okrąg")?profile.x1:(profile.x1+profile.x2)*.5;
-        double v=profile.type.equals("Okrąg")?profile.y1:(profile.y1+profile.y2)*.5;
+        double u=profile.type.equals("Okrąg")||profile.isEllipse()?profile.x1:(profile.x1+profile.x2)*.5;
+        double v=profile.type.equals("Okrąg")||profile.isEllipse()?profile.y1:(profile.y1+profile.y2)*.5;
         double sign=operation.equals("cut")?-1:1;
         double[] origin={project.sketchOriginX+u*project.sketchUx+v*project.sketchVx,
             project.sketchOriginY+u*project.sketchUy+v*project.sketchVy,
@@ -4745,7 +4926,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         List<double[]> points = new ArrayList<>();
         if (project.sketch.isEmpty() || (!inSketch() && project.hasSolid())) return points;
         for (SketchPrimitive p : project.sketch) {
-            if (p.type.equals("Okrąg")) {
+            if (p.isEllipse()) {
+                double r = p.major();points.add(new double[]{p.x1 - r, p.y1 - r}); points.add(new double[]{p.x1 + r, p.y1 + r});
+            } else if (p.type.equals("Okrąg")) {
                 double r = Math.hypot(p.x2 - p.x1, p.y2 - p.y1);
                 points.add(new double[]{p.x1 - r, p.y1 - r}); points.add(new double[]{p.x1 + r, p.y1 + r});
                 points.add(new double[]{p.x1 - r, p.y1 + r}); points.add(new double[]{p.x1 + r, p.y1 - r});
@@ -5088,6 +5271,10 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 writer.write("0\nLWPOLYLINE\n8\nSKETCH\n100\nAcDbEntity\n100\nAcDbPolyline\n90\n"+primitive.vertices.length/2+"\n70\n1\n");
                 for(int i=0;i<primitive.vertices.length;i+=2)
                     writer.write("10\n"+primitive.vertices[i]+"\n20\n"+primitive.vertices[i+1]+"\n");
+            } else if (primitive.isEllipse()) {
+                // DXF ELLIPSE: centre, major-axis endpoint relative to the centre, minor/major ratio, full parameter range.
+                writer.write("0\nELLIPSE\n8\nSKETCH\n100\nAcDbEntity\n100\nAcDbEllipse\n10\n"+primitive.x1+"\n20\n"+primitive.y1+"\n30\n0\n11\n"+(primitive.x2-primitive.x1)+"\n21\n"+(primitive.y2-primitive.y1)
+                    +"\n31\n0\n40\n"+(primitive.minor/primitive.major())+"\n41\n0\n42\n"+(2*Math.PI)+"\n");
             } else if (primitive.type.equals("Okrąg")) {
                 double radius = Math.hypot(primitive.x2 - primitive.x1, primitive.y2 - primitive.y1);
                 writer.write("0\nCIRCLE\n8\nSKETCH\n10\n" + primitive.x1 + "\n20\n" + primitive.y1
@@ -5241,6 +5428,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(tool.equals("Powłoka")){beginShellTool(-1);return;}
         if(tool.equals("Otwór")){beginHoleTool();return;}
         if(tool.equals("Pochyl ściany")){beginDraftTool(-1);return;}
+        if(tool.equals("Przejście")){if(prepareProfileTool("Przejście"))showLoftDialog();return;}
+        if(tool.equals("Przeciągnij")){if(prepareProfileTool("Przeciągnięcie"))showSweepDialog();return;}
+        if(tool.equals("Lustro bryły")||tool.equals("Szyk liniowy bryły")||tool.equals("Szyk kołowy bryły")){if(prepareSolidTool(tool))showBodyPatternDialog(tool.startsWith("Lustro")?1:tool.startsWith("Szyk liniowy")?2:3,-1);return;}
         if(tool.equals("Podziel bryłę")){if(prepareSolidTool(tool))showBodySplit(-1);return;}
         if(tool.equals("Przesuń bryłę")||tool.equals("Obróć bryłę")||tool.equals("Skaluj bryłę")){if(prepareSolidTool(tool))showBodyTransform(tool.startsWith("Przesuń")?BodyTransform.MOVE:tool.startsWith("Obróć")?BodyTransform.ROTATE:BodyTransform.SCALE,-1);return;}
         if(tool.equals("Połącz bryły")||tool.equals("Odejmij bryły")||tool.equals("Część wspólna brył")){beginBodyCombine(tool.equals("Połącz bryły")?BodyCombine.JOIN:tool.equals("Odejmij bryły")?BodyCombine.CUT:BodyCombine.INTERSECT,-1);return;}
@@ -5310,7 +5500,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                         else {
                             if(!active) {
                                 int index=project.committedFeatures.size()-1;
-                                BodyGraph.removeRoute(project,index);project.committedFeatures.remove(index);
+                                BodyGraph.removeRoute(project,index);project.committedFeatures.remove(index);UserParameters.removed(project,index);
                                 if(index<project.committedProfileIds.size()) project.committedProfileIds.remove(index);
                             }
                             project.featureOperation="none";project.featureProfileId=null;project.sketchExtruded=false;
@@ -5415,7 +5605,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             if (sketchPlaneChosen) alignToCurrentSketchPlane();
             post(this::showDrawingOptions);
             if(tool.equals("Łuk"))operationMessage="Łuk: dotknij początku, końca, a następnie punktu pośredniego łuku.";
-            if(tool.equals("Okrąg 3 pkt")||tool.equals("Szczelina"))operationMessage=SketchShapes.instruction(tool,project.threePointDraft.size());
+            if(tool.equals("Okrąg 3 pkt")||tool.equals("Szczelina")||tool.equals("Elipsa"))operationMessage=SketchShapes.instruction(tool,project.threePointDraft.size());
         } else if (tool.equals("Edytuj")) {
             if(inSketch()){mode="Edytuj szkic";sketchPlaneChosen=true;alignToCurrentSketchPlane();invalidate();}
             else showSavedSketchPicker();
@@ -5508,9 +5698,54 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     private void showProjectMenu() {
         closePropertyEditor();
         new PropertyBuilder().setTitle("Projekt · "+project.name+" · TabletCAD v"+appVersion())
-            .setItems(new String[]{"Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt","Dane i nazwa dokumentu","Jednostki i dokładność"},(d,which)-> {
-                if(which==0)showNewProject();else if(which==1)showProjectLibrary();else if(which==2)showProjectCopy();else if(which==3)showProjectTrash();else if(which==4)showDrawingMetadataEditor();else showUnitSettings();
+            .setItems(new String[]{"Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt","Dane i nazwa dokumentu","Jednostki i dokładność","Parametry"},(d,which)-> {
+                if(which==0)showNewProject();else if(which==1)showProjectLibrary();else if(which==2)showProjectCopy();else if(which==3)showProjectTrash();else if(which==4)showDrawingMetadataEditor();else if(which==5)showUnitSettings();else showParameters();
             }).setNegativeButton("Zamknij",null).show();
+    }
+
+    /** User parameters: list with current values, add/edit/delete; bound values are recomputed on change. */
+    private void showParameters() {
+        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
+        if(SketchTransactions.active(project)){operationMessage="Najpierw zakończ lub anuluj aktywną edycję szkicu";invalidate();return;}
+        java.util.Map<String,double[]> values;
+        try{values=UserParameters.evaluate(project);}catch(IllegalArgumentException error){values=new java.util.HashMap<>();operationMessage=error.getMessage();}
+        List<String> rows=new ArrayList<>();
+        for(UserParameters.Parameter x:project.parameters){double[] v=values.get(x.name);rows.add(x.name+" = "+x.expression+(v==null?"":"  →  "+(x.length?formatMm(v[0]):String.format(java.util.Locale.US,"%.6g",v[0]))));}
+        rows.add("+ Dodaj parametr");
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView info=new android.widget.TextView(getContext());
+        info.setText("Wpisz nazwę parametru w polu głębokości lub wymiaru (np. grubosc/2), aby nim sterować. Powiązań: "+project.parameterBindings.size()+".");form.addView(info);
+        new PropertyBuilder().setTitle("Parametry").setView(form).setItems(rows.toArray(new String[0]),(d,which)->showParameterEditor(which<project.parameters.size()?which:-1)).setNegativeButton("Zamknij",null).show();
+    }
+    private void showParameterEditor(int index) {
+        UserParameters.Parameter original=index>=0?project.parameters.get(index):null;
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView l1=new android.widget.TextView(getContext());l1.setText("Nazwa");form.addView(l1);
+        EditText name=new EditText(getContext());name.setSingleLine(true);name.setText(original!=null?original.name:"p"+(project.parameters.size()+1));form.addView(name);
+        android.widget.TextView l2=new android.widget.TextView(getContext());l2.setText("Wyrażenie (liczby, jednostki, + − * / ( ), inne parametry)");form.addView(l2);
+        EditText expression=new EditText(getContext());expression.setSingleLine(true);expression.setText(original!=null?original.expression:"10");form.addView(expression);
+        android.widget.CheckBox length=new android.widget.CheckBox(getContext());length.setText("Długość (w jednostce projektu: "+project.units+")");length.setChecked(original==null||original.length);form.addView(length);
+        PropertyBuilder builder=new PropertyBuilder().setTitle(original!=null?"Parametr "+original.name:"Nowy parametr").setView(form).setNegativeButton("Anuluj",null);
+        if(original!=null)builder.setNeutralButton("Usuń",(d,w)->changeParameters(next->{
+            for(String expr:next.parameterBindings.values())if(UserParameters.names(expr).contains(original.name))throw new IllegalArgumentException("Parametr jest używany w powiązaniach – najpierw je zmień");
+            next.parameters.remove(index);
+        },"Usunięto parametr "+original.name));
+        builder.setPositiveButton("Zapisz",(d,w)->changeParameters(next->{
+            String n=name.getText().toString().trim();UserParameters.validateName(n);
+            UserParameters.Parameter value=new UserParameters.Parameter(n,expression.getText().toString().trim(),length.isChecked());
+            if(index>=0){
+                String old=next.parameters.get(index).name;next.parameters.set(index,value);
+                if(!old.equals(n))for(java.util.Map.Entry<String,String> e:next.parameterBindings.entrySet())if(UserParameters.names(e.getValue()).contains(old))throw new IllegalArgumentException("Zmiana nazwy używanego parametru – najpierw zmień powiązania");
+            }else next.parameters.add(value);
+        },"Zapisano parametr")).show();
+    }
+    private interface DocumentChange{void apply(CadProject next);}
+    private void changeParameters(DocumentChange change,String success) {
+        try {
+            String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));
+            change.apply(next);UserParameters.evaluate(next);UserParameters.apply(next);
+            commitProjectAsync(next,baseline,success);
+        }catch(org.json.JSONException|IllegalArgumentException error){operationMessage="Parametry: "+error.getMessage();invalidate();}
     }
 
     /** Project units and display precision; the B-Rep and all stored values stay in millimetres. */
@@ -5933,6 +6168,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(feature.equals("Powłoka")||feature.equals("Otwór")){drawToolIcon(canvas,feature,x,y,color);return;}
         if(feature.equals("Pochylenie")){drawToolIcon(canvas,"Pochyl ściany",x,y,color);return;}
         if(feature.equals("Podział bryły")){drawToolIcon(canvas,"Podziel bryłę",x,y,color);return;}
+        if(feature.equals("Przejście")){drawToolIcon(canvas,"Przejście",x,y,color);return;}
+        if(feature.equals("Przeciągnięcie")){drawToolIcon(canvas,"Przeciągnij",x,y,color);return;}
+        if(feature.endsWith(" bryły")&&(feature.startsWith("Lustro")||feature.startsWith("Szyk"))){drawToolIcon(canvas,feature,x,y,color);return;}
         if(feature.equals("Przesunięcie bryły")||feature.equals("Obrót bryły")||feature.equals("Skalowanie bryły")){drawToolIcon(canvas,feature.startsWith("Przes")?"Przesuń bryłę":feature.startsWith("Obrót")?"Obróć bryłę":"Skaluj bryłę",x,y,color);return;}
         if(feature.equals("Połączenie brył")||feature.equals("Odjęcie brył")||feature.equals("Część wspólna brył")){drawToolIcon(canvas,feature.startsWith("Połą")?"Połącz bryły":feature.startsWith("Odję")?"Odejmij bryły":"Część wspólna brył",x,y,color);return;}
         if (feature.equals("Szkic")) drawToolIcon(canvas, "Szkic", x, y, color);

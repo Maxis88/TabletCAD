@@ -16,7 +16,8 @@ public final class SketchTransform {
         if(!Double.isFinite(factor)||factor<.001||factor>1000)throw new IllegalArgumentException("Skala: 0,001–1000");
         if(!Double.isFinite(cx)||!Double.isFinite(cy)||Math.abs(cx)>5000||Math.abs(cy)>5000)throw new IllegalArgumentException("Niepoprawny środek skali");
         SketchPrimitive result;
-        if(source.curves!=null) {
+        if(source.isEllipse())result=SketchPrimitive.ellipse(source.id,cx+(source.x1-cx)*factor,cy+(source.y1-cy)*factor,cx+(source.x2-cx)*factor,cy+(source.y2-cy)*factor,source.minor*factor);
+        else if(source.curves!=null) {
             double[] data=source.curves.clone();
             for(int i=0;i<data.length;i+=7)for(int j:new int[]{1,3,5}) {
                 if(j==3&&data[i]==0)continue;
@@ -31,6 +32,7 @@ public final class SketchTransform {
     }
     private static SketchPrimitive finish(SketchPrimitive source,SketchPrimitive result,double scale,double degrees) {
         double[] bounds=result.curves!=null?SketchCurves.bounds(result.curves):new double[]{result.x1,result.y1,result.x2,result.y2};
+        if(result.isEllipse()){double r=result.major();bounds=new double[]{result.x1-r,result.y1-r,result.x1+r,result.y1+r};}
         if(result.type.equals("Okrąg")){double radius=SketchDimensions.length(result);if(radius<.01)throw new IllegalArgumentException("Promień musi wynosić co najmniej 0,01 mm");bounds=new double[]{result.x1-radius,result.y1-radius,result.x1+radius,result.y1+radius};}
         for(double value:bounds)if(!Double.isFinite(value)||Math.abs(value)>5000)throw new IllegalArgumentException("Geometria poza zakresem ±5000 mm");
         if(result.vertices!=null&&!SketchSpline.is(result))SketchContours.validate(result.vertices);

@@ -21,6 +21,7 @@ public final class SketchMirror {
         if(!Double.isFinite(ax)||!Double.isFinite(ay)||!Double.isFinite(bx)||!Double.isFinite(by)||!Double.isFinite(length)||length<.01)
             throw new IllegalArgumentException("Oś lustra musi być niezerową linią");
         double ux=(bx-ax)/length,uy=(by-ay)/length;
+        if(source.isEllipse()){double[] c=point(source.x1,source.y1,ax,ay,ux,uy),e=point(source.x2,source.y2,ax,ay,ux,uy);return SketchPrimitive.ellipse(id,c[0],c[1],e[0],e[1],source.minor);}
         if(source.curves!=null) {
             double[] curves=source.curves.clone();
             for(int i=0;i<curves.length;i+=7)for(int j:new int[]{1,3,5}) {

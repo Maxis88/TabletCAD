@@ -42,6 +42,7 @@ public final class CurveTrimmer {
         else {double[] mid=point(segment,(from+to)/2);result.add(new SketchPrimitive(id,SketchCurves.arc(a[0],a[1],mid[0],mid[1],b[0],b[1]),false));}
     }
     public static List<SketchPrimitive> trim(List<SketchPrimitive> geometry,SketchPrimitive target,double x,double y) {
+        if(target!=null&&target.isEllipse())throw new IllegalArgumentException("Przycinanie elipsy nie jest jeszcze obsługiwane");
         if(!Double.isFinite(x)||!Double.isFinite(y))throw new IllegalArgumentException("Niepoprawny punkt przycinania");
         if(target.driving!=null)throw new IllegalArgumentException("Odblokuj wymiary przed przycinaniem elementu");
         boolean circle=target.type.equals("Okrąg");List<double[]> outline=segments(target);

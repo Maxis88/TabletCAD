@@ -45,7 +45,7 @@ public final class SketchDimensions {
             throw new IllegalArgumentException("Wymiar wyprowadza geometrię poza ±5000 mm");
         return new SketchPrimitive(original.id,original.type,original.x1,original.y1,x2,y2,lock?driving:null).withConstruction(original.construction);
     }
-    public static SketchPrimitive unlocked(SketchPrimitive p) {return p.vertices!=null||p.curves!=null?p:new SketchPrimitive(p.id,p.type,p.x1,p.y1,p.x2,p.y2).withConstruction(p.construction);}
+    public static SketchPrimitive unlocked(SketchPrimitive p) {return p.vertices!=null||p.curves!=null||p.isEllipse()?p:new SketchPrimitive(p.id,p.type,p.x1,p.y1,p.x2,p.y2).withConstruction(p.construction);}
     public static SketchPrimitive constrainDrag(SketchPrimitive original,SketchPrimitive candidate,int handle) {
         if(original.driving==null)return candidate;
         if(handle!=0 && !(original.type.equals("Okrąg")&&handle==1))return original;

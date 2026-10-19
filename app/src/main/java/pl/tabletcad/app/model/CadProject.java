@@ -35,6 +35,9 @@ public final class CadProject {
     public double materialDensityKgM3;
     /** Decimal places of lengths shown on the canvas (values are stored exactly in mm). */
     public int displayDecimals=3;
+    /** Named user parameters and the model values driven by them (see UserParameters). */
+    public final List<pl.tabletcad.app.UserParameters.Parameter> parameters=new ArrayList<>();
+    public final java.util.Map<String,String> parameterBindings=new java.util.LinkedHashMap<>();
 
     public final String id;
     public String name;
@@ -130,6 +133,8 @@ public final class CadProject {
         try{pl.tabletcad.app.Units.validateDecimals(displayDecimals);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
         root.put("units", units);
         root.put("displayDecimals", displayDecimals);
+        if(!parameters.isEmpty())root.put("parameters",pl.tabletcad.app.UserParameters.toJson(this));
+        if(!parameterBindings.isEmpty())root.put("parameterBindings",new JSONObject(parameterBindings));
         root.put("sketchPlane", sketchPlane);
         root.put("sketchId", sketchId);
         JSONArray saved = new JSONArray();
@@ -189,6 +194,7 @@ public final class CadProject {
         project.emptyDocument=root.optBoolean("emptyDocument",false);
         if(!pl.tabletcad.app.Units.valid(project.units))throw new JSONException("Nieznana jednostka projektu: "+project.units);
         project.displayDecimals=root.optInt("displayDecimals",3);
+        pl.tabletcad.app.UserParameters.read(project,root);
         try{pl.tabletcad.app.Units.validateDecimals(project.displayDecimals);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
         if (root.has("materialDensityKgM3")) {
             Object density = root.get("materialDensityKgM3");
@@ -383,7 +389,7 @@ public final class CadProject {
     private static void validateFeatureArray(JSONArray data,int prefix) throws JSONException {
         if(data.length()<prefix) throw new JSONException("Invalid feature length");
         if(prefix==7&&data.getDouble(0)==-10){double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);try{pl.tabletcad.app.ExtrusionPlan.validateBase(f);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}return;}
-        if(prefix==16&&(data.getDouble(0)==pl.tabletcad.app.FeaturePattern.TYPE||data.getDouble(0)==pl.tabletcad.app.ShellFeature.TYPE||data.getDouble(0)==pl.tabletcad.app.HoleFeature.TYPE||data.getDouble(0)==pl.tabletcad.app.BodyCombine.TYPE||data.getDouble(0)==pl.tabletcad.app.DraftFeature.TYPE||data.getDouble(0)==pl.tabletcad.app.BodyTransform.TYPE||data.getDouble(0)==pl.tabletcad.app.BodySplit.TYPE)){double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);try{if(f[0]==pl.tabletcad.app.FeaturePattern.TYPE)pl.tabletcad.app.FeaturePattern.validate(f);else if(f[0]==pl.tabletcad.app.HoleFeature.TYPE)pl.tabletcad.app.HoleFeature.validate(f);else if(f[0]==pl.tabletcad.app.BodyCombine.TYPE)pl.tabletcad.app.BodyCombine.validate(f);else if(f[0]==pl.tabletcad.app.DraftFeature.TYPE)pl.tabletcad.app.DraftFeature.validate(f);else if(f[0]==pl.tabletcad.app.BodyTransform.TYPE)pl.tabletcad.app.BodyTransform.validate(f);else if(f[0]==pl.tabletcad.app.BodySplit.TYPE)pl.tabletcad.app.BodySplit.validate(f);else pl.tabletcad.app.ShellFeature.validate(f);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}return;}
+        if(prefix==16&&(data.getDouble(0)==pl.tabletcad.app.FeaturePattern.TYPE||data.getDouble(0)==pl.tabletcad.app.ShellFeature.TYPE||data.getDouble(0)==pl.tabletcad.app.HoleFeature.TYPE||data.getDouble(0)==pl.tabletcad.app.BodyCombine.TYPE||data.getDouble(0)==pl.tabletcad.app.DraftFeature.TYPE||data.getDouble(0)==pl.tabletcad.app.BodyTransform.TYPE||data.getDouble(0)==pl.tabletcad.app.BodySplit.TYPE||data.getDouble(0)==-19||data.getDouble(0)==-20||data.getDouble(0)==-21)){double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);try{if(f[0]==pl.tabletcad.app.FeaturePattern.TYPE)pl.tabletcad.app.FeaturePattern.validate(f);else if(f[0]==pl.tabletcad.app.HoleFeature.TYPE)pl.tabletcad.app.HoleFeature.validate(f);else if(f[0]==pl.tabletcad.app.BodyCombine.TYPE)pl.tabletcad.app.BodyCombine.validate(f);else if(f[0]==pl.tabletcad.app.DraftFeature.TYPE)pl.tabletcad.app.DraftFeature.validate(f);else if(f[0]==pl.tabletcad.app.BodyTransform.TYPE)pl.tabletcad.app.BodyTransform.validate(f);else if(f[0]==pl.tabletcad.app.BodySplit.TYPE)pl.tabletcad.app.BodySplit.validate(f);else if(f[0]<=-19)pl.tabletcad.app.SweepLoft.validate(f);else pl.tabletcad.app.ShellFeature.validate(f);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}return;}
         if(prefix==16&&data.getDouble(0)==-8){double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);try{pl.tabletcad.app.HoleThread.validate(f);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}return;}
         if(data.getDouble(0)==-3) {
             double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);
@@ -396,7 +402,8 @@ public final class CadProject {
             return;
         }
         double type=data.getDouble(0);int tail=0;
-        if(type>=1001&&type<=1128&&type==Math.floor(type))tail=((int)type-1000)*7;
+        if(type==2000)tail=1;
+        else if(type>=1001&&type<=1128&&type==Math.floor(type))tail=((int)type-1000)*7;
         else if(type>=5&&type<=258&&type==Math.floor(type)) tail=((int)type-2)*2;
         else if(type!=0&&type!=1) throw new JSONException("Invalid feature type");
         if(data.length()!=prefix+tail) throw new JSONException("Invalid polygon length");
@@ -405,6 +412,11 @@ public final class CadProject {
             if(prefix==7)pl.tabletcad.app.FeatureDirection.basePlane(data.getDouble(5));
             else pl.tabletcad.app.FeatureDirection.validateOperation(data.getDouble(1));
         }catch(IllegalArgumentException error){throw new JSONException(error.getMessage());}
+        if(type==2000) {
+            double[] f=new double[data.length()];for(int i=0;i<f.length;i++)f[i]=data.getDouble(i);
+            try{SketchPrimitive.fromFeature("check","Elipsa",f,prefix==7?1:2,prefix);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
+            tail=0;
+        }
         if(tail>0) {
             double[] vertices=new double[tail];for(int i=0;i<tail;i++) vertices[i]=data.getDouble(prefix+i);
             try{if(type>=1001)pl.tabletcad.app.SketchCurves.validate(vertices,true);else pl.tabletcad.app.SketchContours.validate(vertices);}

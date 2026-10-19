@@ -12,6 +12,7 @@ public final class SketchOffset {
     private static final double EPS=1e-7;
 
     public static SketchPrimitive offset(SketchPrimitive source,String id,double distance) {
+        if(source!=null&&source.isEllipse())throw new IllegalArgumentException("Odsunięcie elipsy nie jest dokładną elipsą – niedostępne");
         if(source==null||id==null||id.isEmpty()||id.equals(source.id))throw new IllegalArgumentException("Odsunięcie wymaga nowej tożsamości");
         if(!Double.isFinite(distance)||Math.abs(distance)<.001||Math.abs(distance)>5000)throw new IllegalArgumentException("Odległość odsunięcia: 0,001–5000 mm");
         SketchPrimitive result;

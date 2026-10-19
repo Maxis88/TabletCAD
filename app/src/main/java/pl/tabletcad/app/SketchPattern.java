@@ -20,7 +20,8 @@ public final class SketchPattern {
             return new double[]{px,py};
         };
         SketchPrimitive result;
-        if(s.curves!=null) {
+        if(s.isEllipse()){double[] a=map.apply(s.x1,s.y1),b=map.apply(s.x2,s.y2);result=SketchPrimitive.ellipse(id,a[0],a[1],b[0],b[1],s.minor);}
+        else if(s.curves!=null) {
             double[] r=s.curves.clone();
             for(int i=0;i<r.length;i+=7)for(int j:new int[]{1,3,5}){if(j==3&&r[i]==0)continue;double[] p=map.apply(r[i+j],r[i+j+1]);r[i+j]=p[0];r[i+j+1]=p[1];}
             result=new SketchPrimitive(id,r,s.closedGeometry());

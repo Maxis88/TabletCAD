@@ -15,6 +15,7 @@ public final class SketchExtend {
     public enum End { START, END, AUTO }
 
     public static SketchPrimitive extend(SketchPrimitive line,List<SketchPrimitive> sketch,End end) {
+        if(line!=null&&line.isEllipse())throw new IllegalArgumentException("Przedłużać można linie, nie elipsy");
         if(line==null||!(line.type.equals("Linia")||line.type.equals("Pomocnicza")))throw new IllegalArgumentException("Przedłużać można tylko linie");
         if(line.driving!=null)throw new IllegalArgumentException("Linia ma zablokowany wymiar długości — odblokuj go przed przedłużeniem");
         double length=Math.hypot(line.x2-line.x1,line.y2-line.y1);if(length<.01)throw new IllegalArgumentException("Zerowa linia");

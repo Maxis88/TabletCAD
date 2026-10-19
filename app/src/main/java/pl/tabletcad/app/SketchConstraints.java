@@ -208,7 +208,7 @@ public final class SketchConstraints {
             else {
                 if(Math.hypot(c[2]-c[0],c[3]-c[1])<.01||p.type.equals("Prostokąt")&&(Math.abs(c[2]-c[0])<.01||Math.abs(c[3]-c[1])<.01))
                     throw new IllegalArgumentException("Połączenie tworzy element o zerowym rozmiarze");
-                solved=new SketchPrimitive(p.id,p.type,c[0],c[1],c[2],c[3],p.driving);
+                solved=p.withPoints(c[0],c[1],c[2],c[3],p.driving);
             }
             result.add(solved.withConstruction(p.construction));
         }
