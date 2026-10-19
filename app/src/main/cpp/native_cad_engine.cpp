@@ -997,6 +997,25 @@ TopoDS_Shape shellBody(const TopoDS_Shape& shape,const double* f,const FaceOrigi
     if(!std::isfinite(after)||after<=1e-9||(!outside&&after>=before-1e-9)){kernelReason("Powłoka nie zmieniła bryły – sprawdź grubość ścianki");return {};}
     return result;
 }
+// Offset (press-pull) of one planar face: -24, distance (+ adds material outward, − removes inward), face point xyz,
+// outward normal xyz, creator tag, seven zeros. The face is found like a shell face (creator + normal + point).
+TopoDS_Shape offsetFace(const TopoDS_Shape& shape,const double* f,const FaceOrigins& origins) {
+    if(shape.IsNull()||countShapes(shape,TopAbs_SOLID)!=1){kernelReason("Odsunięcie ściany wymaga dokładnie jednej bryły");return {};}
+    TopExp_Explorer find(shape,TopAbs_SOLID);const TopoDS_Shape solid=find.Current();
+    std::string error;const TopoDS_Face face=shellFace(solid,f+2,origins,error,"odsuwanej");if(face.IsNull()){kernelReason(error.c_str());return {};}
+    BRepAdaptor_Surface surface(face,true);if(surface.GetType()!=GeomAbs_Plane){kernelReason("Odsunąć można tylko płaską ścianę");return {};}
+    const double d=f[1];gp_Vec n(f[5],f[6],f[7]);n.Normalize();
+    BRepPrimAPI_MakePrism prism(face,n*d,true);prism.Build();if(!prism.IsDone()){kernelReason("Nie można utworzyć odsunięcia ściany");return {};}
+    TopoDS_Shape result;
+    if(d>0){BRepAlgoAPI_Fuse op(solid,prism.Shape());op.Build();if(op.IsDone()){op.SimplifyResult(true,true);result=op.Shape();}}
+    else {BRepAlgoAPI_Cut op(solid,prism.Shape());op.Build();if(op.IsDone()){op.SimplifyResult(true,true);result=op.Shape();}}
+    if(result.IsNull()||!BRepCheck_Analyzer(result).IsValid()||countShapes(result,TopAbs_SOLID)==0){kernelReason("Odsunięcie ściany dało niepoprawną bryłę");return {};}
+    const double before=shapeVolume(solid),after=shapeVolume(result);
+    if(std::abs(after-before)<std::max(1e-7,before*1e-10)){kernelReason("Odsunięcie nie zmieniło bryły");return {};}
+    if(d<0&&after<=1e-7){kernelReason("Odsunięcie usunęłoby całą bryłę");return {};}
+    return result;
+}
+
 // Parametric hole on a planar face. The stored point is projected onto the CURRENT plane of the
 // referenced face (same creator and normal), so the hole follows parametric edits of that face.
 TopoDS_Shape holeFeature(const TopoDS_Shape& shape,const double* f,const FaceOrigins& origins) {
@@ -1191,6 +1210,12 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                 if((f[1]!=0&&f[1]!=1)||f[9]<.05||f[9]>2000||(f[1]==0&&(f[10]<.01||f[10]>5000))||(f[11]!=0&&f[11]!=1&&f[11]!=2)||f[15]!=0||(f[14]!=0&&(f[14]<30||f[14]>179))){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                 if(f[11]!=0&&(f[12]<=f[9]||(f[11]==1&&(f[13]<.01||(f[1]==0&&f[13]>=f[10])))||(f[11]==2&&(f[13]<30||f[13]>179)))){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                 shape=holeFeature(shape,f,origins);if(shape.IsNull()){kernelFailAt(tag,"Otwór nie powiódł się");return {};}
+                updateOrigins(prior,shape,tag,origins);i+=16;continue;
+            }
+            if(f[0]==-24) {
+                if(f[1]==0||std::abs(f[1])>5000||std::abs(f[5]*f[5]+f[6]*f[6]+f[7]*f[7]-1)>1e-6||f[8]!=std::floor(f[8])){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                for(int k=9;k<16;k++)if(f[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                shape=offsetFace(shape,f,origins);if(shape.IsNull()){kernelFailAt(tag,"Odsunięcie ściany nie powiodło się");return {};}
                 updateOrigins(prior,shape,tag,origins);i+=16;continue;
             }
             if(f[0]==-12) {

@@ -47,10 +47,10 @@ public final class FeatureHistory {
     }
 
     /** Applies an index mapping to every index reference inside a record. */
-    static double[] remap(double[] f,IntUnaryOperator map) {
+    public static double[] remap(double[] f,IntUnaryOperator map) {
         double[] r=f.clone();
         if(FeaturePattern.is(f)){for(int i=0;i<(int)f[2];i++)r[FeaturePattern.PREFIX+i]=map.applyAsInt((int)f[FeaturePattern.PREFIX+i]);return r;}
-        if(HoleFeature.is(f)){if(f[8]>=0&&f[8]<Integer.MAX_VALUE/4)r[8]=map.applyAsInt((int)f[8]);return r;}
+        if(HoleFeature.is(f)||FaceOffset.is(f)){if(f[8]>=0&&f[8]<Integer.MAX_VALUE/4)r[8]=map.applyAsInt((int)f[8]);return r;}
         if(ShellFeature.is(f)||DraftFeature.is(f)) {
             for(int i=0;i<(int)f[1];i++){int at=ShellFeature.PREFIX+i*ShellFeature.FACE+6;if(f[at]>=0&&f[at]<Integer.MAX_VALUE/4)r[at]=map.applyAsInt((int)f[at]);}
             return r;
@@ -58,10 +58,10 @@ public final class FeatureHistory {
         return r;
     }
     /** Index references held by a record (pattern sources, face creators). */
-    static List<Integer> references(double[] f) {
+    public static List<Integer> references(double[] f) {
         List<Integer> r=new ArrayList<>();
         if(FeaturePattern.is(f))for(int s:FeaturePattern.sources(f))r.add(s);
-        else if(HoleFeature.is(f)){if(f[8]>=0&&f[8]<Integer.MAX_VALUE/4)r.add((int)f[8]);}
+        else if(HoleFeature.is(f)||FaceOffset.is(f)){if(f[8]>=0&&f[8]<Integer.MAX_VALUE/4)r.add((int)f[8]);}
         else if(ShellFeature.is(f)||DraftFeature.is(f))for(int i=0;i<(int)f[1];i++){double o=f[ShellFeature.PREFIX+i*ShellFeature.FACE+6];if(o>=0&&o<Integer.MAX_VALUE/4)r.add((int)o);}
         return r;
     }

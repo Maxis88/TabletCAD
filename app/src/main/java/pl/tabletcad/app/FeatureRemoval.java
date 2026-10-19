@@ -38,6 +38,7 @@ public final class FeatureRemoval {
             if(FeaturePattern.is(f)){for(int s:FeaturePattern.sources(f))if(gone.contains(s)){plan.consequences.add("Operacja nr "+(i+1)+" ("+FeaturePattern.label(f)+") przestanie powielać usuwane operacje");break;}}
             if(ShellFeature.is(f))for(ShellFeature.Face face:ShellFeature.faces(f))if(gone.contains(face.origin)){plan.consequences.add("Powłoka nr "+(i+1)+" utraci wskazaną ścianę – trzeba ją wskazać ponownie");break;}
             if(DraftFeature.is(f))for(int k=0;k<(int)f[1];k++)if(gone.contains((int)f[DraftFeature.PREFIX+k*DraftFeature.FACE+6])){plan.consequences.add("Pochylenie nr "+(i+1)+" utraci wskazaną ścianę – trzeba ją wskazać ponownie");break;}
+            if(FaceOffset.is(f)&&gone.contains((int)f[8]))plan.consequences.add("Odsunięcie ściany nr "+(i+1)+" traci wskazaną ścianę – zostanie sprawdzone przy przeliczeniu");
             if(HoleFeature.is(f)&&gone.contains((int)f[8]))plan.consequences.add("Otwór nr "+(i+1)+" leży na ścianie usuwanej operacji – zostanie sprawdzony przy przeliczeniu");
             if(EdgeFillet.is(f)||EdgeChamfer.is(f))plan.consequences.add("Operacja nr "+(i+1)+" odnosi się do krawędzi; zostanie sprawdzona przy przeliczeniu");
         }
@@ -74,7 +75,7 @@ public final class FeatureRemoval {
             if(kept.isEmpty())return f;// removed together with its last source by the plan
             double[] r=Arrays.copyOf(f,FeaturePattern.PREFIX+kept.size());r[2]=kept.size();for(int i=0;i<kept.size();i++)r[FeaturePattern.PREFIX+i]=kept.get(i);return r;
         }
-        if(HoleFeature.is(f)) {
+        if(HoleFeature.is(f)||FaceOffset.is(f)) {
             double[] r=f.clone();r[8]=f[8]==removed?Integer.MAX_VALUE/2:f[8]>removed?f[8]-1:f[8];return r;
         }
         if(ShellFeature.is(f)||DraftFeature.is(f)) {
