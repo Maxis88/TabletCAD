@@ -9,7 +9,7 @@ public final class NonlinearConstraints {
     private NonlinearConstraints() {}
     public static boolean relation(String kind){return Arrays.asList("parallel","perpendicular","equal","concentric","tangent","pointOn","symmetric","collinear","rigid").contains(kind);}
     public static boolean present(List<Link> links){for(Link l:links)if(relation(l.kind))return true;return false;}
-    public static String symbol(String kind){return kind.equals("parallel")?"∥":kind.equals("perpendicular")?"⊥":kind.equals("equal")?"=":kind.equals("concentric")?"◎":kind.equals("tangent")?"T":kind.equals("pointOn")?"P∈":kind.equals("collinear")?"⫽":kind.equals("rigid")?"⧉":kind.equals("symmetric")?"↔":kind;}
+    public static String symbol(String kind){return kind.equals("parallel")?"∥":kind.equals("perpendicular")?"⊥":kind.equals("equal")?"=":kind.equals("concentric")?"◎":kind.equals("tangent")?"T":kind.equals("pointOn")?"P∈":kind.equals("collinear")?"⫽":kind.equals("rigid")?"⧉":kind.equals("symmetric")?"↔︎":kind;}
     static final class Block {
         final SketchPrimitive source;final int start,size;
         Block(SketchPrimitive p,int offset){source=p;start=offset;size=p.curves!=null?0:p.vertices!=null?p.vertices.length:4;}

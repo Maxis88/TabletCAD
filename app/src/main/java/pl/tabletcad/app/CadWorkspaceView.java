@@ -382,8 +382,10 @@ public final class CadWorkspaceView extends View {
                 }
             }
             android.widget.Button positiveButton=null;
+            // A menu of items closes with ✕; a separate "Zamknij" without an action would only repeat it.
+            if(items!=null&&positive<0&&negative>=0&&actions.get(negative)==null&&labels.size()==1)negative=-2;
             // Additional actions (Do powierzchni…, Usuń, Edytuj profil…) full width, then Anuluj | main action side by side.
-            for(int i=0;i<labels.size();i++)if(i!=positive&&i!=negative)body.addView(action(i),PanelStyle.spaced(c,8));
+            for(int i=0;i<labels.size();i++)if(i!=positive&&i!=negative&&negative!=-2)body.addView(action(i),PanelStyle.spaced(c,8));
             if(positive>=0||negative>=0) {
                 LinearLayout footer=new LinearLayout(c);footer.setOrientation(LinearLayout.HORIZONTAL);
                 if(negative>=0){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1);if(positive>=0)p.rightMargin=(int)dp(8);footer.addView(action(negative),p);}
@@ -627,7 +629,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                             else operationMessage = "Wybierz płaską ścianę — powierzchnia jest zakrzywiona";
                         } else if (mode.equals("Wybierz")) {
                             Integer origin=faceFeatures.get(face);highlightFeature=origin==null?Integer.MIN_VALUE:origin;highlightBody=0;highlightSketch=false;
-                            operationMessage="Zaznaczono ścianę — Szkic utworzy na niej szkic. Przytrzymaj ścianę, aby edytować operację, która ją utworzyła.";
+                            operationMessage="";
                         }
                         invalidate();
                     } else clearViewportSelection();
@@ -888,6 +890,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         workCenterY = (top + bottom) / 2f + panY;
 
         drawTopBar(canvas);
+        if(propertyEditor!=null){paint.setStyle(Paint.Style.FILL);paint.setColor(PANEL);canvas.drawRect(right,topBar(),getWidth(),getHeight(),paint);paint.setColor(DIVIDER);canvas.drawRect(right,topBar(),right+dp(1),getHeight(),paint);}
         modelTreeRows=ModelTree.rows(project,collapsedBodies);
         drawLeftPanel(canvas, left, top, bottom);
         if(propertiesVisible() && propertyEditor==null)drawProperties(canvas, right, top, bottom);
@@ -1025,7 +1028,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         LinearLayout body=new LinearLayout(getContext());body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding((int)dp(8),(int)dp(6),(int)dp(8),(int)dp(8));body.setBackgroundColor(CHROME);
         android.widget.TextView heading=new android.widget.TextView(getContext());
-        heading.setText((role?"Szkic · ":"Bryła · ")+group.title);heading.setTextColor(Color.WHITE);heading.setTextSize(13);
+        heading.setText(group.title);heading.setTextColor(Color.WHITE);heading.setTextSize(13);
         heading.setPadding((int)dp(6),0,0,(int)dp(5));body.addView(heading);
         LinearLayout row=null;int commandIndex=0;
         int columns=Math.max(1,Math.min(4,(int)((getWidth()-toolbarX()-dp(16))/dp(88))));
@@ -1415,7 +1418,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     /** Quick actions for the selected face, shown as chips at the top of the viewport. */
     private final List<RectF> selectionChipRects=new ArrayList<>();private final List<Runnable> selectionChipActions=new ArrayList<>();
     private boolean selectionBarVisible() {
-        return !inSketch()&&mode.equals("Wybierz")&&propertyEditor==null&&selectedFace>=0&&project.hasSolid()&&project.importedMeshSource==null&&!showingSection();
+        return !inSketch()&&mode.equals("Wybierz")&&propertyEditor==null&&toolbarPopup==null&&selectedFace>=0&&project.hasSolid()&&project.importedMeshSource==null&&!showingSection();
     }
     private void drawSelectionBar(Canvas canvas,float left,float top,float right) {
         selectionChipRects.clear();selectionChipActions.clear();
@@ -2720,7 +2723,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     }
                     if(linked==0)linked=linkCopies(source,java.util.Collections.singletonList(copy),c->NonlinearConstraints.withGroup(NonlinearConstraints.mirror(axis[0],axis[1],axis[2],axis[3]),UUID.randomUUID().toString(),"M,0,0,0,0"));
                     projectRepository.save(project);
-                    operationMessage=linked>0?(source.type.equals("Linia")||source.type.equals("Okrąg")?"Utworzono kopię lustrzaną z więzem symetrii ↔ – podąża za źródłem i za osią. Zakończ zatwierdza szkic.":"Utworzono powiązaną kopię lustrzaną ⧉ – zmiana źródła zmienia kopię (oś stała). Zakończ zatwierdza szkic."):"Utworzono niezależną kopię lustrzaną (tego typu geometrii nie można powiązać). Zakończ zatwierdza szkic.";
+                    operationMessage=linked>0?(source.type.equals("Linia")||source.type.equals("Okrąg")?"Utworzono kopię lustrzaną z więzem symetrii ↔︎ – podąża za źródłem i za osią. Zakończ zatwierdza szkic.":"Utworzono powiązaną kopię lustrzaną ⧉ – zmiana źródła zmienia kopię (oś stała). Zakończ zatwierdza szkic."):"Utworzono niezależną kopię lustrzaną (tego typu geometrii nie można powiązać). Zakończ zatwierdza szkic.";
                 }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
                 invalidate();
             }).show();
@@ -2879,7 +2882,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
     private void showConstraintMenu() {
         new PropertyBuilder().setTitle("Więzy szkicu")
-            .setItems(new String[]{"Połącz dwa punkty","Odcinek poziomy (H)","Odcinek pionowy (V)","Unieruchom punkt","Równoległość ∥","Prostopadłość ⊥","Równa długość / promień =","Styczność T","Współśrodkowość ◎","Symetria względem osi ↔","Punkt na obiekcie","Wymiar położenia X ↔","Wymiar położenia Y ↕","Współliniowość ⫽"},(d,which)-> {
+            .setItems(new String[]{"Połącz dwa punkty","Odcinek poziomy (H)","Odcinek pionowy (V)","Unieruchom punkt","Równoległość ∥","Prostopadłość ⊥","Równa długość / promień =","Styczność T","Współśrodkowość ◎","Symetria względem osi ↔︎","Punkt na obiekcie","Wymiar położenia X ↔︎","Wymiar położenia Y ↕︎","Współliniowość ⫽"},(d,which)-> {
                 constraintKind=new String[]{"coincident","horizontal","vertical","fixed","parallel","perpendicular","equal","tangent","concentric","symmetric","pointOn","dimX","dimY","collinear"}[which];
                 coincidenceMode=true;coincidenceFirst=null;
                 operationMessage=NonlinearConstraints.relation(constraintKind)?"Wskaż dwa elementy relacji "+NonlinearConstraints.symbol(constraintKind):which==0?"Wskaż dwa punkty różnych elementów":which==3?"Dotknij punktu, który ma pozostać na miejscu":"Dotknij odcinka lub boku konturu";
@@ -4298,8 +4301,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         for(int i=0;i<ids.size();i++)for(int j=i+1;j<ids.size();j++) {
             double[] d=NativeCadEngine.bodyDistance(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),src,ids.get(i),ids.get(j));
             if(d.length!=8)continue;
-            if(d[7]>1e-9){collisions++;text.append("KOLIZJA: ").append(BodyGraph.name(project,ids.get(i))).append(" ↔ ").append(BodyGraph.name(project,ids.get(j))).append(" · część wspólna ").append(Units.volume(d[7],project.units,project.displayDecimals)).append('\n');}
-            else if(d[0]<1e-9)text.append("Styk: ").append(BodyGraph.name(project,ids.get(i))).append(" ↔ ").append(BodyGraph.name(project,ids.get(j))).append('\n');
+            if(d[7]>1e-9){collisions++;text.append("KOLIZJA: ").append(BodyGraph.name(project,ids.get(i))).append(" ↔︎ ").append(BodyGraph.name(project,ids.get(j))).append(" · część wspólna ").append(Units.volume(d[7],project.units,project.displayDecimals)).append('\n');}
+            else if(d[0]<1e-9)text.append("Styk: ").append(BodyGraph.name(project,ids.get(i))).append(" ↔︎ ").append(BodyGraph.name(project,ids.get(j))).append('\n');
         }
         android.widget.TextView view=new android.widget.TextView(getContext());view.setTextSize(15);
         view.setText((collisions==0?"Brak kolizji między "+ids.size()+" bryłami.":"Kolizje: "+collisions)+(text.length()>0?"\n\n"+text:"")+"\n\nWynik dokładny (BRepExtrema + część wspólna B-Rep).");
