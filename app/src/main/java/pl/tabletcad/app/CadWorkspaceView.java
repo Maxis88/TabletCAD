@@ -179,6 +179,7 @@ public final class CadWorkspaceView extends View {
     private String treeSelection = "Model";
     private boolean showSolid = true;
     private boolean trimMode;
+    private boolean projectionMode;private double[] projectionEdges=new double[0],projectionProperties=new double[0];
     private boolean cornerFilletPicking;private String cornerFirst;
     private boolean dimensionMode;
     private boolean coincidenceMode;
@@ -517,6 +518,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                         if(cornerFilletPicking){cornerFilletTap(e.getX(),e.getY());return true;}
                         if(coincidenceMode){coincidenceTap(e.getX(),e.getY());return true;}
                         if(trimMode) {trimSketchAt(e.getX(),e.getY());return true;}
+                        if(projectionMode){projectionTap(e.getX(),e.getY());return true;}
                         if(dimensionMode) {
                             SketchPrimitive entity=findSketchAt(e.getX(),e.getY());
                             if(entity!=null){selectedSketchId=entity.id;showSketchDimensionEditor(entity);}
@@ -825,6 +827,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(!mode.equals("Rysunek")) drawAxis(canvas, right - dp(70), bottom - dp(60));
         drawExtrusionManipulator(canvas,left,top,right,bottom);
         if(!propertiesVisible()&&!operationMessage.isEmpty())drawViewportMessage(canvas,left,right,bottom);
+        if(inSketch()&&!mode.equals("Rysunek")){drawProjectionEdges(canvas);drawConstraintStatus(canvas,left,bottom);}
         canvas.restore();
         drawTimeline(canvas);
     }
@@ -1163,6 +1166,58 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         canvas.save();canvas.translate(right+dp(18),y);layout.draw(canvas);canvas.restore();
     }
 
+    /** "Rzutuj": exact model edges onto the sketch plane, all in-plane edges or picked one by one. */
+    private void showEdgeProjection() {
+        if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Rzutowanie wymaga bryły B-Rep (siatka STL nie ma dokładnych krawędzi)";return;}
+        String source=project.importedStep?importedSourceFile().getAbsolutePath():null;double radius=project.importedStep?0:project.filletRadius;
+        projectionEdges=NativeCadEngine.modelEdges(modelWidth,modelHeight,modelDepth,radius,evaluationBase(),kernelFeatures(),source);
+        projectionProperties=NativeCadEngine.edgeMeasurements(modelWidth,modelHeight,modelDepth,radius,evaluationBase(),kernelFeatures(),source);
+        if(projectionEdges.length==0){operationMessage=previewFailure("Brak krawędzi B-Rep do rzutowania");return;}
+        new PropertyBuilder().setTitle("Rzutuj krawędzie na szkic").setItems(new String[]{"Wszystkie krawędzie leżące w płaszczyźnie szkicu","Wskazuj krawędzie dotykiem"},(d,w)-> {
+            if(w==0)applyProjection(EdgeProjection.inPlane(project,projectionEdges));
+            else {projectionMode=true;showSolid=true;operationMessage="Dotknij krawędzi bryły, aby ją zrzutować. Inne narzędzie kończy rzutowanie.";}
+            invalidate();
+        }).setNegativeButton("Anuluj",null).show();
+    }
+    private void projectionTap(float x,float y) {
+        double distance=dp(18);int selected=-1;
+        for(int i=0;i+15<projectionEdges.length;i+=16) {
+            double[] a=projectWorldPoint(projectionEdges[i+9],projectionEdges[i+10],projectionEdges[i+11]),b=projectWorldPoint(projectionEdges[i+12],projectionEdges[i+13],projectionEdges[i+14]);
+            double d=sketchScreenSegmentDistance(x,y,a[0],a[1],b[0],b[1]);if(d<distance){distance=d;selected=(int)projectionEdges[i+15];}
+        }
+        if(selected<0){operationMessage="Dotknij bliżej krawędzi bryły";invalidate();return;}
+        applyProjection(java.util.Collections.singletonList(selected));invalidate();
+    }
+    private static double sketchScreenSegmentDistance(double x,double y,double ax,double ay,double bx,double by) {
+        double dx=bx-ax,dy=by-ay,l=dx*dx+dy*dy,t=l<1e-9?0:Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/l));return Math.hypot(x-ax-t*dx,y-ay-t*dy);
+    }
+    private void applyProjection(List<Integer> ids) {
+        if(ids.isEmpty()){operationMessage="Żadna krawędź nie leży w płaszczyźnie szkicu – użyj wskazywania dotykiem";return;}
+        EdgeProjection.Result r=EdgeProjection.project(project,projectionEdges,projectionProperties,ids);
+        if(r.created.isEmpty()){operationMessage=r.skipped>0?"Nie zrzutowano: "+r.reason:"Krawędź jest już w szkicu";return;}
+        List<SketchPrimitive> geometry=new ArrayList<>(project.sketch);geometry.addAll(r.created);
+        List<SketchConstraints.Link> links=new ArrayList<>(project.coincidences);links.addAll(r.links);
+        try{SketchConstraints.validate(geometry,links);}catch(IllegalArgumentException e){operationMessage=e.getMessage();return;}
+        if(applySolvedSketch(geometry,links))operationMessage="Zrzutowano "+r.created.size()+" el. (unieruchomione)"+(r.skipped>0?"; pominięto "+r.skipped+": "+r.reason:"");
+    }
+    private void drawProjectionEdges(Canvas canvas) {
+        if(!projectionMode)return;paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(2));paint.setColor(Color.rgb(142,68,173));
+        for(int i=0;i+15<projectionEdges.length;i+=16){double[] a=projectWorldPoint(projectionEdges[i+9],projectionEdges[i+10],projectionEdges[i+11]),b=projectWorldPoint(projectionEdges[i+12],projectionEdges[i+13],projectionEdges[i+14]);canvas.drawLine((float)a[0],(float)a[1],(float)b[0],(float)b[1],paint);}
+        paint.setStyle(Paint.Style.FILL);
+    }
+    private long constraintKey=Long.MIN_VALUE;private NonlinearConstraints.Status constraintStatus;
+    /** Sketch constraint state (under/fully/over-constrained, contradictory) as a pill in the viewport. */
+    private void drawConstraintStatus(Canvas canvas,float left,float bottom) {
+        if(project.sketch.isEmpty())return;
+        long key=17;for(SketchPrimitive p:project.sketch){key=key*31+p.id.hashCode();key=key*31+Double.hashCode(p.x1+2*p.y1+3*p.x2+5*p.y2+7*p.minor);if(p.vertices!=null)key=key*31+java.util.Arrays.hashCode(p.vertices);if(p.curves!=null)key=key*31+java.util.Arrays.hashCode(p.curves);if(p.driving!=null)key=key*31+java.util.Arrays.hashCode(p.driving);}
+        for(SketchConstraints.Link l:project.coincidences)key=key*31+(l.kind+l.a+l.ai+l.b+l.bi+l.axis).hashCode()+Double.hashCode(l.x*3+l.y);
+        if(key!=constraintKey){constraintKey=key;try{constraintStatus=NonlinearConstraints.status(project.sketch,project.coincidences);}catch(RuntimeException e){constraintStatus=null;}}
+        if(constraintStatus==null)return;
+        String label=constraintStatus.label();int color=constraintStatus.contradictory?Color.rgb(198,40,40):constraintStatus.redundant>0?Color.rgb(196,120,24):constraintStatus.full()?Color.rgb(46,125,50):Color.rgb(69,90,100);
+        paint.setTextSize(11*getResources().getDisplayMetrics().scaledDensity);paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);float w=paint.measureText(label)+dp(24);
+        paint.setColor(color);canvas.drawRoundRect(new RectF(left+dp(12),bottom-dp(40),left+dp(12)+w,bottom-dp(14)),dp(9),dp(9),paint);
+        text(canvas,label,left+dp(12)+w/2,bottom-dp(23),11,Color.WHITE,true,Paint.Align.CENTER);
+    }
     private void drawViewportMessage(Canvas canvas,float left,float right,float bottom) {
         android.text.TextPaint messagePaint=new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
         // Floating status toast: dark pill centred above the timeline, red accent for failures.
@@ -2487,8 +2542,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
     private void showConstraintMenu() {
         new PropertyBuilder().setTitle("Więzy szkicu")
-            .setItems(new String[]{"Połącz dwa punkty","Odcinek poziomy (H)","Odcinek pionowy (V)","Unieruchom punkt","Równoległość ∥","Prostopadłość ⊥","Równa długość / promień =","Styczność T","Współśrodkowość ◎","Symetria względem osi ↔","Punkt na obiekcie","Wymiar położenia X ↔","Wymiar położenia Y ↕"},(d,which)-> {
-                constraintKind=new String[]{"coincident","horizontal","vertical","fixed","parallel","perpendicular","equal","tangent","concentric","symmetric","pointOn","dimX","dimY"}[which];
+            .setItems(new String[]{"Połącz dwa punkty","Odcinek poziomy (H)","Odcinek pionowy (V)","Unieruchom punkt","Równoległość ∥","Prostopadłość ⊥","Równa długość / promień =","Styczność T","Współśrodkowość ◎","Symetria względem osi ↔","Punkt na obiekcie","Wymiar położenia X ↔","Wymiar położenia Y ↕","Współliniowość ⫽"},(d,which)-> {
+                constraintKind=new String[]{"coincident","horizontal","vertical","fixed","parallel","perpendicular","equal","tangent","concentric","symmetric","pointOn","dimX","dimY","collinear"}[which];
                 coincidenceMode=true;coincidenceFirst=null;
                 operationMessage=NonlinearConstraints.relation(constraintKind)?"Wskaż dwa elementy relacji "+NonlinearConstraints.symbol(constraintKind):which==0?"Wskaż dwa punkty różnych elementów":which==3?"Dotknij punktu, który ma pozostać na miejscu":"Dotknij odcinka lub boku konturu";
                 invalidate();
@@ -5441,7 +5496,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(inSketch()&&!SketchTransactions.active(project))beginSketchWork();
         boolean hadSketchPlane=inSketch() && sketchPlaneChosen;
         closePropertyEditor();
-        trimMode=false;cornerFilletPicking=false;cornerFirst=null;
+        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;
         dimensionMode=false;
         coincidenceMode=false;coincidenceFirst=null;
         if(tool.equals("Przesuń szkic")||tool.equals("Obróć szkic")||tool.equals("Skaluj szkic")){mode="Edytuj szkic";showSketchTransform(tool);invalidate();return;}
@@ -5458,6 +5513,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(tool.equals("Zaokrąglij szkic")){showSketchFillet();return;}
         if(tool.equals("Lustro")){mode="Edytuj szkic";showSketchMirror();invalidate();return;}
         if(tool.equals("Odsunięcie")){mode="Edytuj szkic";showSketchOffset();invalidate();return;}
+        if(tool.equals("Rzutuj")){if(!hadSketchPlane)operationMessage="Najpierw wybierz płaszczyznę szkicu";else {mode="Edytuj szkic";showEdgeProjection();}invalidate();return;}
         if(tool.equals("Przedłuż")){mode="Edytuj szkic";extendSelectedLine();invalidate();return;}
         if(tool.equals("Szyk liniowy")||tool.equals("Szyk kołowy")){mode="Edytuj szkic";showSketchPattern(tool.equals("Szyk kołowy"));invalidate();return;}
         if(tool.equals("Wymiar")) {
@@ -5980,7 +6036,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private void enterSketchEditor() {
-        trimMode=false;cornerFilletPicking=false;cornerFirst=null;
+        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;
         dimensionMode=false;
         coincidenceMode=false;coincidenceFirst=null;
         mode = "Edytuj szkic";

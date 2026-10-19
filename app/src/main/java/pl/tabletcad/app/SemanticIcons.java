@@ -87,6 +87,16 @@ public final class SemanticIcons {
             p.setPathEffect(null);canvas.drawLine(5,-3,9,-7,p);canvas.drawLine(9,-7,6,-7,p);canvas.drawLine(9,-7,9,-4,p);
             canvas.restore();return true;
         }
+        if(id.equals("Rzutuj")) {
+            // Model edge above the sketch plane, dashed projectors, projected edge drawn on the plane.
+            Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.7f);p.setStyle(Paint.Style.STROKE);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
+            canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
+            Path plane=new Path();plane.moveTo(-12,6);plane.lineTo(6,6);plane.lineTo(12,12);plane.lineTo(-6,12);plane.close();p.setStrokeWidth(1.2f);canvas.drawPath(plane,p);
+            p.setStrokeWidth(1.7f);canvas.drawLine(-6,-10,6,-6,p);
+            p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));canvas.drawLine(-6,-10,-6,7,p);canvas.drawLine(6,-6,6,9,p);p.setPathEffect(null);
+            p.setStrokeWidth(2.4f);canvas.drawLine(-6,8,6,10,p);
+            canvas.restore();return true;
+        }
         if(id.equals("Przekrój")) {
             // Cube cut by a section plane; the cut face is hatched.
             Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.5f);p.setStyle(Paint.Style.STROKE);p.setStrokeJoin(Paint.Join.ROUND);p.setStrokeCap(Paint.Cap.ROUND);

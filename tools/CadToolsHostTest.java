@@ -69,6 +69,27 @@ public final class CadToolsHostTest {
         check(SweepLoft.creates(new double[]{SweepLoft.SWEEP,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0})&&BodyGraph.creates(new double[]{SweepLoft.LOFT,4,2,0,0,0,0,0,0,0,0,0,0,0,0,0}),"loft/sweep may create a new body");
         double[] bp=SweepLoft.bodyPatternRecord(2,new double[3],new double[]{0,0,2},3,20);check(bp[8]==1&&SweepLoft.label(bp).equals("Szyk liniowy bryły"),"body pattern record");
         for(String c:new String[]{"Przejście","Przeciągnij","Lustro bryły","Szyk liniowy bryły","Szyk kołowy bryły"})check(ToolbarCatalog.allows(false,c),"solid toolbar exposes "+c);
+        // Constraint status (degrees of freedom).
+        SketchPrimitive free=new SketchPrimitive("l","Linia",0,0,10,0);
+        NonlinearConstraints.Status st=NonlinearConstraints.status(Collections.singletonList(free),new ArrayList<>());check(st.freedoms==4&&st.label().contains("niedowiązany"),"free line has 4 freedoms: "+st.label());
+        List<SketchConstraints.Link> fix=new ArrayList<>(Arrays.asList(SketchConstraints.Link.fixed(free,0),SketchConstraints.Link.fixed(free,1)));
+        st=NonlinearConstraints.status(Collections.singletonList(free),fix);check(st.full()&&st.label().equals("Szkic w pełni związany"),"line with both ends fixed is fully constrained");
+        SketchPrimitive dimmed=new SketchPrimitive("l","Linia",0,0,10,0,new double[]{10,0});
+        st=NonlinearConstraints.status(Collections.singletonList(dimmed),fix);check(st.redundant==2&&st.label().contains("nadmiernie"),"length+angle on a fixed line is redundant: "+st.label());
+        st=NonlinearConstraints.status(Collections.singletonList(dimmed),Collections.singletonList(SketchConstraints.Link.fixed(dimmed,0)));check(st.full(),"fixed start + length + angle = fully constrained");
+        SketchPrimitive c=new SketchPrimitive("c","Okrąg",5,5,8,5);
+        st=NonlinearConstraints.status(Collections.singletonList(c),Collections.singletonList(SketchConstraints.Link.fixed(c,0)));check(st.freedoms==1,"circle with fixed centre keeps only its radius free");
+        SketchPrimitive cd=new SketchPrimitive("c","Okrąg",5,5,8,5,new double[]{3});
+        st=NonlinearConstraints.status(Collections.singletonList(cd),Collections.singletonList(SketchConstraints.Link.fixed(cd,0)));check(st.full(),"fixed centre + radius is fully constrained");
+        SketchPrimitive rr=new SketchPrimitive("r","Prostokąt",0,0,30,20,new double[]{30,20});
+        List<SketchConstraints.Link> pos=Arrays.asList(new SketchConstraints.Link("dimX","r",0,"r",0,0,0),new SketchConstraints.Link("dimY","r",0,"r",0,0,0));
+        st=NonlinearConstraints.status(Collections.singletonList(rr),pos);check(st.full(),"rectangle 30×20 positioned from the origin is fully constrained: "+st.label());
+        st=NonlinearConstraints.status(Collections.singletonList(dimmed),Arrays.asList(SketchConstraints.Link.fixed(dimmed,0),new SketchConstraints.Link("fixed","l",1,"l",1,12,0)));check(st.contradictory,"violated constraints are reported as contradictory");
+        SketchPrimitive l1=new SketchPrimitive("a","Linia",0,0,10,0),l2=new SketchPrimitive("b","Linia",20,3,30,5);
+        SketchConstraints.Link col=new SketchConstraints.Link("collinear","a",0,"b",0,1,0);
+        List<SketchPrimitive> solved=SketchConstraints.connect(Arrays.asList(l1,l2),new ArrayList<>(),col);
+        near(solved.get(1).y1,0,"collinear moves the second line onto the first (start)");near(solved.get(1).y2,0,"collinear (end)");check(solved.get(0).x2==10,"first line stays");
+        st=NonlinearConstraints.status(solved,Collections.singletonList(col));check(st.freedoms==6,"collinear removes two freedoms: "+st.label());
         System.out.println("PASS CadToolsHostTest: "+checks+" checks");
     }
 }

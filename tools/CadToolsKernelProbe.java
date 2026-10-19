@@ -89,6 +89,18 @@ public final class CadToolsKernelProbe {
         add(pp,hole,"",1);UserParameters.bind(pp,UserParameters.depthKey(0),"t");
         UserParameters.apply(pp);close("parameter-driven cut depth",volume(pp),plate-Math.PI*25*20,1e-6);
         pp.parameters.get(0).expression="10";UserParameters.apply(pp);close("changing a parameter re-drives the depth",volume(pp),plate-Math.PI*25*10,1e-6);
+        // Edge projection onto the top face sketch: rectangle outline + Ø10 hole circle; side edges become points.
+        CadProject pr=plate();add(pr,ExtrusionPlan.feature(withFrame(xy(20)),new SketchPrimitive("h","Okrąg",30,30,35,30),"cut",20,0,false,false),"",1);
+        double[] ed=NativeCadEngine.modelEdges(100,60,20,0,pr.featureBase,packed(pr),null),em=NativeCadEngine.edgeMeasurements(100,60,20,0,pr.featureBase,packed(pr),null);
+        CadProject top=withFrame(xy(20));List<Integer> ids=EdgeProjection.inPlane(top,ed);
+        EdgeProjection.Result res=EdgeProjection.project(top,ed,em,ids);int lines=0,circles=0;double len=0;
+        for(SketchPrimitive q:res.created){if(q.type.equals("Linia")){lines++;len+=Math.hypot(q.x2-q.x1,q.y2-q.y1);}else if(q.type.equals("Okrąg")){circles++;close("projected hole radius",Math.hypot(q.x2-q.x1,q.y2-q.y1),5,1e-9);close("projected hole centre X",q.x1,30,1e-9);}}
+        check(lines==4&&circles==1,"top face projects to 4 lines and 1 circle ("+lines+"/"+circles+")");close("projected outline length",len,320,1e-9);
+        check(NonlinearConstraints.status(res.created,res.links).full(),"projected geometry is fully constrained");
+        Set<Integer> all=new LinkedHashSet<>();for(int i=0;i+15<ed.length;i+=16)all.add((int)ed[i+15]);
+        CadProject bottom=withFrame(xy(0));EdgeProjection.Result every=EdgeProjection.project(bottom,ed,em,all);
+        check(every.skipped>=4&&every.reason.length()>0,"vertical edges are skipped, not projected to points ("+every.skipped+")");check(every.created.size()==5,"top and bottom outlines coincide in the projection ("+every.created.size()+")");
+        CadProject dup=withFrame(xy(20));dup.sketch.addAll(res.created);check(EdgeProjection.project(dup,ed,em,ids).created.isEmpty(),"repeated projection adds no duplicates");
         System.out.println("PASS CadToolsKernelProbe: "+checks+" checks");
     }
     static CadProject withFrame(double[] f){CadProject p=new CadProject();p.sketchOriginX=f[0];p.sketchOriginY=f[1];p.sketchOriginZ=f[2];p.sketchUx=f[3];p.sketchUy=f[4];p.sketchUz=f[5];p.sketchVx=f[6];p.sketchVy=f[7];p.sketchVz=f[8];return p;}

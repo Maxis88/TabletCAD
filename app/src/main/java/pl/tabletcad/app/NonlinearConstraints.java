@@ -7,9 +7,9 @@ import pl.tabletcad.app.SketchConstraints.Link;
 /** Bounded connected-component nonlinear sketch solver. Never publishes an unconverged result. */
 public final class NonlinearConstraints {
     private NonlinearConstraints() {}
-    public static boolean relation(String kind){return Arrays.asList("parallel","perpendicular","equal","concentric","tangent","pointOn","symmetric").contains(kind);}
+    public static boolean relation(String kind){return Arrays.asList("parallel","perpendicular","equal","concentric","tangent","pointOn","symmetric","collinear").contains(kind);}
     public static boolean present(List<Link> links){for(Link l:links)if(relation(l.kind))return true;return false;}
-    public static String symbol(String kind){return kind.equals("parallel")?"∥":kind.equals("perpendicular")?"⊥":kind.equals("equal")?"=":kind.equals("concentric")?"◎":kind.equals("tangent")?"T":kind.equals("pointOn")?"P∈":kind.equals("symmetric")?"↔":kind;}
+    public static String symbol(String kind){return kind.equals("parallel")?"∥":kind.equals("perpendicular")?"⊥":kind.equals("equal")?"=":kind.equals("concentric")?"◎":kind.equals("tangent")?"T":kind.equals("pointOn")?"P∈":kind.equals("collinear")?"⫽":kind.equals("symmetric")?"↔":kind;}
     static final class Block {
         final SketchPrimitive source;final int start,size;
         Block(SketchPrimitive p,int offset){source=p;start=offset;size=p.curves!=null?0:p.vertices!=null?p.vertices.length:4;}
@@ -61,6 +61,10 @@ public final class NonlinearConstraints {
                 double[] c=circle.data(all),e=edge.data(all);double len=length(e);if(len<.001)throw new IllegalArgumentException("Zerowa linia");
                 double distance=((c[0]-e[0])*(e[3]-e[1])-(c[1]-e[1])*(e[2]-e[0]))/len;out.add(distance-(l.x<0?-1:1)*length(c));break;
             }
+            case "collinear": {
+                line(a);line(b);double d=length(p);if(d<.001||length(q)<.001)throw new IllegalArgumentException("Zerowa linia więzu");
+                for(int i=0;i<4;i+=2)out.add(((q[i]-p[0])*(p[3]-p[1])-(q[i+1]-p[1])*(p[2]-p[0]))/d);break;
+            }
             case "symmetric":
                 line(a);line(b);double[] axis=axis(l,blocks,all);
                 for(int i=0;i<2;i++){double[] r=reflected(p[2*i],p[2*i+1],axis);int j=l.bi==1?1-i:i;out.add(r[0]-q[2*j]);out.add(r[1]-q[2*j+1]);}break;
@@ -76,6 +80,42 @@ public final class NonlinearConstraints {
             else {result.add(p[2]-p[0]-d[0]*Math.cos(Math.toRadians(d[1])));result.add(p[3]-p[1]-d[0]*Math.sin(Math.toRadians(d[1])));}
         }
         double[] r=new double[result.size()];for(int i=0;i<r.length;i++)r[i]=result.get(i);return r;
+    }
+    /** Degrees-of-freedom analysis of a whole sketch (numerical Jacobian rank of all stored constraints and driving dimensions). */
+    public static final class Status {
+        public final int freedoms,redundant;public final boolean contradictory;public final int unanalysed;
+        Status(int freedoms,int redundant,boolean contradictory,int unanalysed){this.freedoms=freedoms;this.redundant=redundant;this.contradictory=contradictory;this.unanalysed=unanalysed;}
+        public boolean full(){return !contradictory&&redundant==0&&freedoms==0&&unanalysed==0;}
+        public String label() {
+            if(contradictory)return "Szkic sprzeczny geometrycznie";
+            if(redundant>0)return "Szkic nadmiernie związany ("+redundant+(redundant==1?" zbędny więz)":" zbędne więzy)");
+            if(freedoms>0)return "Szkic niedowiązany: "+freedoms+" st. swobody"+(unanalysed>0?", "+unanalysed+" el. bez analizy":"");
+            if(unanalysed>0)return "Szkic: "+unanalysed+" el. bez analizy więzów (łuki/krzywe)";
+            return "Szkic w pełni związany";
+        }
+    }
+    public static Status status(List<SketchPrimitive> geometry,List<Link> links) {
+        Map<String,Block> blocks=new LinkedHashMap<>();int size=0,circles=0,unanalysed=0;
+        for(SketchPrimitive p:geometry){Block b=new Block(p,size);if(b.size==0){unanalysed++;continue;}blocks.put(p.id,b);size+=b.size;if(b.circle())circles++;}
+        double[] all=coordinates(blocks,size);List<Link> used=new ArrayList<>();for(Link l:links)if(blocks.containsKey(l.a)&&blocks.containsKey(l.b)&&(l.axis.isEmpty()||l.axis.startsWith("@")||blocks.containsKey(l.axis)))used.add(l);
+        double[] r;try{r=residuals(blocks,all,used);}catch(IllegalArgumentException e){return new Status(0,0,true,unanalysed);}
+        boolean contradictory=maximum(r)>1e-6;int rows=r.length;
+        double[][] jac=new double[rows][size];
+        for(int j=0;j<size;j++){double old=all[j],h=1e-6*Math.max(1,Math.abs(old));all[j]=old+h;double[] plus=residuals(blocks,all,used);all[j]=old-h;double[] minus=residuals(blocks,all,used);all[j]=old;for(int i=0;i<rows;i++)jac[i][j]=(plus[i]-minus[i])/(2*h);}
+        int rank=rank(jac,size);
+        // A circle stores its radius as a second point: the direction of that point is not a real freedom.
+        int freedoms=Math.max(0,size-circles-rank);
+        return new Status(freedoms,rows-rank,contradictory,unanalysed);
+    }
+    static int rank(double[][] m,int columns) {
+        int rows=m.length,rank=0;double[][] a=new double[rows][];for(int i=0;i<rows;i++){a[i]=m[i].clone();double norm=0;for(double v:a[i])norm=Math.max(norm,Math.abs(v));if(norm>0)for(int j=0;j<columns;j++)a[i][j]/=norm;}
+        boolean[] used=new boolean[rows];
+        for(int c=0;c<columns&&rank<rows;c++) {
+            int pivot=-1;double best=1e-7;for(int i=0;i<rows;i++)if(!used[i]&&Math.abs(a[i][c])>best){best=Math.abs(a[i][c]);pivot=i;}
+            if(pivot<0)continue;used[pivot]=true;rank++;
+            for(int i=0;i<rows;i++)if(i!=pivot&&a[i][c]!=0){double f=a[i][c]/a[pivot][c];for(int j=c;j<columns;j++)a[i][j]-=f*a[pivot][j];}
+        }
+        return rank;
     }
     public static void validate(List<SketchPrimitive> geometry,Link link) {
         Map<String,Block> blocks=new LinkedHashMap<>();int size=0;for(SketchPrimitive p:geometry){Block b=new Block(p,size);blocks.put(p.id,b);size+=b.size;}
@@ -97,6 +137,11 @@ public final class NonlinearConstraints {
                 double length=length(q);q[2]=q[0]+length*Math.cos(angle);q[3]=q[1]+length*Math.sin(angle);put(b,all,q);break;
             }
             case "equal":if((a.line()&&b.line())||(a.circle()&&b.circle())) {double factor=length(p)/length(q);q[2]=q[0]+(q[2]-q[0])*factor;q[3]=q[1]+(q[3]-q[1])*factor;put(b,all,q);}break;
+            case "collinear": {
+                line(a);line(b);double dx=p[2]-p[0],dy=p[3]-p[1],dd=dx*dx+dy*dy;
+                for(int i=0;i<4;i+=2){double t=((q[i]-p[0])*dx+(q[i+1]-p[1])*dy)/dd;q[i]=p[0]+t*dx;q[i+1]=p[1]+t*dy;}
+                if(length(q)<.01)throw new IllegalArgumentException("Współliniowość zredukowałaby linię do punktu");put(b,all,q);break;
+            }
             case "concentric":if(a.circle()&&b.circle()){double dx=p[0]-q[0],dy=p[1]-q[1];for(int i=0;i<4;i+=2){q[i]+=dx;q[i+1]+=dy;}put(b,all,q);}break;
             case "symmetric": {
                 line(a);line(b);double[] axis=axis(l,blocks,all);for(int i=0;i<2;i++){double[] r=reflected(p[2*i],p[2*i+1],axis);int j=l.bi==1?1-i:i;q[2*j]=r[0];q[2*j+1]=r[1];}put(b,all,q);break;
