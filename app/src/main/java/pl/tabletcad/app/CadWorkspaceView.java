@@ -7708,8 +7708,15 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private void pill(Canvas canvas, float x, float y, float w, float h, String value, int color, int textColor) {
+        RectF box=new RectF(x, y, x + w, y + h);paint.setStyle(Paint.Style.FILL);
+        // Neutral panel buttons are drawn as outlined white buttons, like the native panel's secondary actions.
+        if(color==GRID||color==Color.rgb(226,232,236)){paint.setColor(Color.WHITE);canvas.drawRoundRect(box,dp(10),dp(10),paint);
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1.2f));paint.setColor(PanelStyle.LINE);canvas.drawRoundRect(box,dp(10),dp(10),paint);paint.setStyle(Paint.Style.FILL);
+            if(value.startsWith("Płaszczyzna")){canvas.save();canvas.translate(x+dp(26),y+h/2);canvas.scale(.55f,.55f);drawToolIcon(canvas,"Płaszczyzna odsunięta",0,0,ACCENT);canvas.restore();
+                text(canvas, value, x + dp(48), y + h / 2 + dp(5), 14, INK, false);return;}
+            text(canvas, value, x + w / 2, y + h / 2 + dp(5), 14, INK, false, Paint.Align.CENTER);return;}
         paint.setColor(color);
-        canvas.drawRoundRect(new RectF(x, y, x + w, y + h), dp(9), dp(9), paint);
+        canvas.drawRoundRect(box, dp(10), dp(10), paint);
         text(canvas, value, x + w / 2, y + h / 2 + dp(5), 14, textColor, true, Paint.Align.CENTER);
     }
 
