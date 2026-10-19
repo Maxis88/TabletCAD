@@ -928,11 +928,14 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         canvas.drawRoundRect(new RectF(badgeX, dp(12), badgeX + dp(70), dp(32)), dp(10), dp(10), paint);
         text(canvas, sketch ? "SZKIC 2D" : "BRYŁA 3D", badgeX + dp(35), dp(26), 9.5f, Color.WHITE, true, Paint.Align.CENTER);
         String projectLabel = project.name.length() > 17 ? project.name.substring(0, 15) + "…" : project.name;
-        text(canvas, projectLabel + "  ▾", dp(18), dp(50), 12, CHROME_TEXT, false);
+        text(canvas, projectLabel, dp(18), dp(50), 12, CHROME_TEXT, false);
+        paint.setTextSize(12*getResources().getDisplayMetrics().scaledDensity);paint.setTypeface(android.graphics.Typeface.DEFAULT);
+        Glyphs.chevron(canvas,paint,dp(18)+paint.measureText(projectLabel)+dp(9),dp(46),dp(3.5f),Glyphs.DOWN,CHROME_TEXT,dp(1.5f));
         text(canvas, "v" + appVersion(), toolbarX() - dp(12), dp(50), 10, Color.rgb(132, 146, 158), false, Paint.Align.RIGHT);
         paint.setColor(CHROME_RAISED);
         canvas.drawRect(toolbarX() - dp(1), dp(12), toolbarX(), topBar() - dp(12), paint);
-        pill(canvas, getWidth() - dp(312), dp(13), dp(124), dp(38), "Plik  ▾", CHROME_RAISED, Color.WHITE);
+        pill(canvas, getWidth() - dp(312), dp(13), dp(124), dp(38), "Plik", CHROME_RAISED, Color.WHITE);
+        Glyphs.chevron(canvas,paint,getWidth()-dp(312)+dp(94),dp(32),dp(3.5f),Glyphs.DOWN,CHROME_TEXT,dp(1.5f));
         pill(canvas, getWidth() - dp(172), dp(13), dp(152), dp(38), "Eksportuj", ACCENT, Color.WHITE);
         float itemWidth = topToolWidth();
         ToolbarCatalog.Group[] groups = ToolbarCatalog.groups(sketch);
@@ -991,7 +994,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 android.text.TextPaint labelPaint=new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);labelPaint.setTextSize(dp(submenu?9:8.5f));labelPaint.setColor(Color.WHITE);
                 android.text.StaticLayout layout=android.text.StaticLayout.Builder.obtain(label,0,label.length(),labelPaint,Math.max(1,getWidth()-(int)dp(8))).setAlignment(android.text.Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setMaxLines(submenu?2:1).setEllipsize(android.text.TextUtils.TruncateAt.END).build();
                 canvas.save();canvas.translate(dp(4),dp(submenu?37:32));layout.draw(canvas);canvas.restore();
-                if(dropdown)text(canvas,"▾",getWidth()-dp(9),dp(16),10,CHROME_TEXT,false,Paint.Align.CENTER);
+                if(dropdown)Glyphs.chevron(canvas,paint,getWidth()-dp(9),dp(13),dp(2.5f),Glyphs.DOWN,CHROME_TEXT,dp(1.3f));
             }
         };
         button.setFocusable(true);button.setClickable(true);button.setTooltipText(label);
@@ -1075,11 +1078,11 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         paint.setColor(DIVIDER);canvas.drawRect(left-dp(1),topBar(),left,getHeight(),paint);
         if(treeCollapsed) {
             // Collapsed rail: one tap anywhere on it restores the model tree.
-            text(canvas,"›",left/2,topBar()+dp(32),20,ACCENT,true,Paint.Align.CENTER);
+            Glyphs.chevron(canvas,paint,left/2,topBar()+dp(26),dp(6),Glyphs.RIGHT,ACCENT,dp(2));
             canvas.save();canvas.rotate(-90,left/2,topBar()+dp(110));text(canvas,"MODEL",left/2,topBar()+dp(114),11,MUTED,true,Paint.Align.CENTER);canvas.restore();
             return;
         }
-        text(canvas,"MODEL",dp(18),topBar()+dp(29),12,MUTED,true);text(canvas,"‹",left-dp(24),topBar()+dp(31),20,ACCENT,true,Paint.Align.CENTER);
+        text(canvas,"MODEL",dp(18),topBar()+dp(29),12,MUTED,true);Glyphs.chevron(canvas,paint,left-dp(24),topBar()+dp(25),dp(6),Glyphs.LEFT,ACCENT,dp(2));
         row(canvas,"Dokument",dp(18),topBar()+dp(60),true);
         canvas.save();canvas.clipRect(0,treeTop(),left,getHeight()-bottomSystemInset);
         for(int i=0;i<modelTreeRows.size();i++) {
@@ -1091,7 +1094,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 canvas.save();canvas.clipRect(dp(50),y,dp(TREE_MORE),y+dp(36));text(canvas,entry.name,dp(52),y+dp(23),11.5f,INK,entry.key.equals(selectedTreeKey));canvas.restore();
                 drawTreeControls(canvas,y,d!=null&&d.hidden);
             } else if(!entry.sketch()) {
-                text(canvas,collapsedBodies.contains(entry.body)?"›":"⌄",dp(12),y+dp(23),15,MUTED,true);
+                Glyphs.chevron(canvas,paint,dp(15),y+dp(18),dp(4),collapsedBodies.contains(entry.body)?Glyphs.RIGHT:Glyphs.DOWN,MUTED,dp(1.6f));
                 boolean component=entry.componentHeader();
                 if(entry.body>0||component){canvas.save();canvas.translate(dp(36),y+dp(18));canvas.scale(.5f,.5f);drawToolIcon(canvas,component?"Komponent":"Wyciągnij",0,0,component?Color.rgb(89,96,180):ACCENT);canvas.restore();}
                 float nameX=entry.body>0||component?dp(50):dp(28);
@@ -1109,7 +1112,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     /** Tree row controls: "⋯" (menu of the element) and the visibility eye; both at least 30 dp wide. */
     private static final float TREE_MORE=156f,TREE_EYE=188f;
     private void drawTreeControls(Canvas canvas,float y,boolean hidden) {
-        text(canvas,"⋯",dp((TREE_MORE+TREE_EYE)/2),y+dp(23),17,MUTED,true,Paint.Align.CENTER);
+        Glyphs.more(canvas,paint,dp((TREE_MORE+TREE_EYE)/2),y+dp(18),dp(4.5f),dp(1.7f),MUTED);
         float cx=dp(205),cy=y+dp(18);int color=hidden?Color.rgb(160,170,178):ACCENT;
         paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1.5f));paint.setColor(color);
         android.graphics.Path eye=new android.graphics.Path();eye.moveTo(cx-dp(8),cy);eye.quadTo(cx,cy-dp(7),cx+dp(8),cy);eye.quadTo(cx,cy+dp(7),cx-dp(8),cy);canvas.drawPath(eye,paint);
@@ -6669,7 +6672,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         // Home: isometric view.
         float hx=x-dp(52),hy=y-dp(40);paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(225,255,255,255));canvas.drawCircle(hx,hy,dp(14),paint);
         paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(Color.rgb(150,163,174));canvas.drawCircle(hx,hy,dp(14),paint);paint.setStyle(Paint.Style.FILL);
-        text(canvas,"⌂",hx,hy+dp(5),14,Color.rgb(52,66,78),true,Paint.Align.CENTER);
+        Glyphs.home(canvas,paint,hx,hy,dp(7),Color.rgb(52,66,78),dp(1.6f));
     }
     private boolean viewCubeTap(float x,float y) {
         if(viewCubeX<0||!isInsideViewport(x,y))return false;
@@ -6698,8 +6701,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         canvas.drawRect(left, top, right, getHeight(), paint);
         paint.setColor(CHROME);
         canvas.drawRoundRect(new RectF(left + dp(8), top + dp(3), right - dp(8), top + dp(59)), dp(14), dp(14), paint);
-        text(canvas, "↶", left + dp(30), top + dp(36), 22, undoStack.isEmpty() ? Color.rgb(84, 98, 110) : Color.WHITE, true, Paint.Align.CENTER);
-        text(canvas, "↷", left + dp(76), top + dp(36), 22, redoStack.isEmpty() ? Color.rgb(84, 98, 110) : Color.WHITE, true, Paint.Align.CENTER);
+        Glyphs.undo(canvas,paint,left + dp(30), top + dp(31),dp(9),false,undoStack.isEmpty() ? Color.rgb(84, 98, 110) : Color.WHITE,dp(2));
+        Glyphs.undo(canvas,paint,left + dp(76), top + dp(31),dp(9),true,redoStack.isEmpty() ? Color.rgb(84, 98, 110) : Color.WHITE,dp(2));
         paint.setColor(CHROME_RAISED);canvas.drawRect(left + dp(104), top + dp(14), left + dp(105), top + dp(48), paint);
         List<CadTimeline.Item> features=CadTimeline.entries(project);
         float startX = left + dp(116);
@@ -7574,7 +7577,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             canvas.drawRoundRect(new RectF(dp(10), top, dp(14), bottom), dp(2), dp(2), paint);
         }
         text(canvas, value, dp(26), top + dp(23), 12.5f, INK, id.equals(treeSelection));
-        if(!id.equals("Szkic"))text(canvas, "›", dp(198), top + dp(23), 15, MUTED, true, Paint.Align.CENTER);
+        if(!id.equals("Szkic"))Glyphs.chevron(canvas,paint,dp(198),top+dp(18),dp(4),Glyphs.RIGHT,MUTED,dp(1.6f));
     }
 
     private void pill(Canvas canvas, float x, float y, float w, float h, String value, int color, int textColor) {
