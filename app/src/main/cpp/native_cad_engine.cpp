@@ -1089,6 +1089,11 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
             if(count-i<16){kernelFailAt(featureNumber,"Niekompletny zapis operacji w historii");return {};}
             const double* f = values.data() + i;
             const TopoDS_Shape prior=shape;const int tag=seed?seedTag:featureNumber;featureNumber++;
+            if(f[0]==-22) {
+                // Suppressed operation / beyond the rollback marker: keeps its history index, changes nothing.
+                for(int k=1;k<16;k++)if(f[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                i+=16;continue;
+            }
             if(f[0]==-9) {
                 if(f[1]<0||f[1]!=std::floor(f[1])||f[2]<1||f[2]!=std::floor(f[2])||f[3]<16||f[3]!=std::floor(f[3])||f[3]>count-i-16){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                 for(int k=4;k<16;k++)if(f[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}

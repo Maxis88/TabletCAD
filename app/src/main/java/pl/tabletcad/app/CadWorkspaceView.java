@@ -4361,10 +4361,37 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
 
     /** Context menu of a history operation (long press on the timeline). */
     private void showTimelineActions(CadTimeline.Item item) {
-        new PropertyBuilder().setTitle((item.featureIndex+1)+". "+item.title).setItems(new String[]{"Edytuj operację","Usuń operację…"},(d,which)->{
-            if(which==0){showCommittedFeatureEditor(item.featureIndex);return;}
-            confirmFeatureRemoval(item);
-        }).setNegativeButton("Zamknij",null).show();
+        int index=item.featureIndex;boolean suppressed=project.suppressedFeatures.contains(index);
+        List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
+        labels.add("Edytuj operację");actions.add(()->showCommittedFeatureEditor(index));
+        labels.add(suppressed?"Przywróć operację (włącz)":"Wygaś operację (pomiń w przeliczeniu)");actions.add(()->changeHistory(next->FeatureHistory.setSuppressed(next,index,!suppressed),suppressed?"Przywrócono: "+item.title:"Wygaszono: "+item.title+" (pozostaje w historii)"));
+        if(index>0)labels.add("Przesuń wcześniej ◀");if(index>0)actions.add(()->changeHistory(next->FeatureHistory.swap(next,index-1),"Przesunięto wcześniej: "+item.title));
+        if(index+1<project.committedFeatures.size()){labels.add("Przesuń później ▶");actions.add(()->changeHistory(next->FeatureHistory.swap(next,index),"Przesunięto później: "+item.title));}
+        labels.add("Pokaż model do tej operacji");actions.add(()->setHistoryMarker(index+1));
+        if(project.historyMarker>=0){labels.add("Wróć na koniec historii");actions.add(()->returnToHistoryEnd(""));}
+        labels.add("Przelicz model");actions.add(()->{if(updateNativeModel())operationMessage="Przeliczono model od początku historii";invalidate();});
+        labels.add("Usuń operację…");actions.add(()->confirmFeatureRemoval(item));
+        new PropertyBuilder().setTitle((index+1)+". "+item.title+(suppressed?" (wygaszona)":"")).setItems(labels.toArray(new String[0]),(d,which)->actions.get(which).run()).setNegativeButton("Zamknij",null).show();
+    }
+    /** History edit on a document copy, evaluated by the kernel; failures keep the document. */
+    private void changeHistory(java.util.function.Consumer<CadProject> change,String success) {
+        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
+        if(SketchTransactions.active(project)){operationMessage="Najpierw zakończ lub anuluj aktywną edycję szkicu";invalidate();return;}
+        try {
+            String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
+            change.accept(next);BodyGraph.validate(next);selectedTimelineIndex=-1;
+            commitProjectAsync(next,baseline,success);
+        }catch(org.json.JSONException|IllegalArgumentException error){operationMessage="Nie zmieniono historii: "+error.getMessage();invalidate();}
+    }
+    /** Shows the model as it was after operation {@code count - 1}; view only, not saved. */
+    private void setHistoryMarker(int count) {
+        if(SketchTransactions.active(project)){operationMessage="Najpierw zakończ lub anuluj aktywną edycję szkicu";invalidate();return;}
+        int previous=project.historyMarker;project.historyMarker=count>=project.committedFeatures.size()?-1:Math.max(0,count);
+        if(!updateNativeModel()){project.historyMarker=previous;updateNativeModel();invalidate();return;}
+        operationMessage=project.historyMarker<0?"Pokazano cały model":"Model po operacji nr "+count+" (podgląd). Wybór narzędzia modelowania wraca na koniec historii.";invalidate();
+    }
+    private void returnToHistoryEnd(String prefix) {
+        if(project.historyMarker<0)return;project.historyMarker=-1;updateNativeModel();operationMessage=prefix+"Pokazano cały model";invalidate();
     }
     private void confirmFeatureRemoval(CadTimeline.Item item) {
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
@@ -5817,12 +5844,20 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         for (int i = 0; i < features.size(); i++) {
             float x = startX + i * gap;
             boolean selected = i == selectedTimelineIndex, last = i == features.size() - 1;
+            CadTimeline.Item item=features.get(i);
+            boolean off=item.kind==CadTimeline.Kind.FEATURE&&FeatureHistory.inactive(project,item.featureIndex);
+            boolean suppressed=item.kind==CadTimeline.Kind.FEATURE&&project.suppressedFeatures.contains(item.featureIndex);
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(selected ? Color.rgb(225,120,10) : last ? ACCENT : CHROME_RAISED);
+            paint.setColor(selected ? Color.rgb(225,120,10) : off ? Color.rgb(58,68,78) : last ? ACCENT : CHROME_RAISED);
             canvas.drawRoundRect(new RectF(x + dp(2), top + dp(8), x + dp(36), top + dp(40)), dp(9), dp(9), paint);
-            drawFeatureIcon(canvas, features.get(i).title, x + dp(19), top + dp(24), Color.WHITE);
-            text(canvas, features.get(i).title, x + dp(19), top + dp(53), 8,
-                selected || last ? Color.WHITE : CHROME_TEXT, selected, Paint.Align.CENTER);
+            drawFeatureIcon(canvas, item.title, x + dp(19), top + dp(24), off ? Color.rgb(132,146,158) : Color.WHITE);
+            if(suppressed){paint.setColor(Color.rgb(230,126,34));paint.setStrokeWidth(dp(2));canvas.drawLine(x+dp(6),top+dp(36),x+dp(32),top+dp(12),paint);}
+            text(canvas, item.title, x + dp(19), top + dp(53), 8,
+                off ? Color.rgb(110,124,136) : selected || last ? Color.WHITE : CHROME_TEXT, selected, Paint.Align.CENTER);
+            // Rollback marker after the last evaluated operation.
+            if(item.kind==CadTimeline.Kind.FEATURE&&project.historyMarker>=0&&item.featureIndex==project.historyMarker-1||item.kind!=CadTimeline.Kind.FEATURE&&project.historyMarker==0&&i+1<features.size()&&features.get(i+1).kind==CadTimeline.Kind.FEATURE&&features.get(i+1).featureIndex==0){
+                paint.setColor(Color.rgb(230,126,34));canvas.drawRoundRect(new RectF(x+dp(41),top+dp(4),x+dp(45),top+dp(44)),dp(2),dp(2),paint);
+            }
         }
         canvas.restore();canvas.restore();
     }
@@ -5849,7 +5884,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             || tool.equals("Szkic") && mode.equals("Szkic") && !sketchPlaneChosen;
     }
 
+    private static final java.util.Set<String> VIEW_TOOLS=new java.util.HashSet<>(java.util.Arrays.asList("Wybierz","Dopasuj","Izometryczny","Przód","Góra","Prawy bok","Rzut prostokątny","Cieniowanie","Krawędzie","Przezroczystość","Przekrój","Wyczyść widok","Zmierz","Zmierz kąt","Pole ściany","Właściwości bryły"));
     private void activateTopTool(String tool) {
+        if(project.historyMarker>=0&&!VIEW_TOOLS.contains(tool))returnToHistoryEnd("Znacznik historii wrócił na koniec – nowe operacje są dodawane na końcu historii. ");
         if(tool.equals("Gwint")){beginThreadTool();return;}
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
         if(tool.equals("Powłoka")){beginShellTool(-1);return;}

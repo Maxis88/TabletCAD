@@ -40,6 +40,10 @@ public final class CadProject {
     public final java.util.Map<String,String> parameterBindings=new java.util.LinkedHashMap<>();
     /** Construction planes, axes and points (see Datum). */
     public final List<Datum> datums=new ArrayList<>();
+    /** History indices of suppressed operations (kept in history, not evaluated). */
+    public final java.util.Set<Integer> suppressedFeatures=new java.util.TreeSet<>();
+    /** Rollback marker: only operations before this index are evaluated; -1 = end of history. Not saved. */
+    public int historyMarker=-1;
 
     public final String id;
     public String name;
@@ -137,6 +141,7 @@ public final class CadProject {
         root.put("displayDecimals", displayDecimals);
         if(!parameters.isEmpty())root.put("parameters",pl.tabletcad.app.UserParameters.toJson(this));
         if(!parameterBindings.isEmpty())root.put("parameterBindings",new JSONObject(parameterBindings));
+        if(!suppressedFeatures.isEmpty())root.put("suppressed",new JSONArray(suppressedFeatures));
         if(!datums.isEmpty()){JSONArray construction=new JSONArray();for(Datum d:datums)construction.put(d.toJson());root.put("construction",construction);}
         root.put("sketchPlane", sketchPlane);
         root.put("sketchId", sketchId);
@@ -322,6 +327,8 @@ public final class CadProject {
         JSONArray hidden=root.optJSONArray("hiddenBodies");if(hidden!=null)for(int i=0;i<hidden.length();i++)project.hiddenBodies.add(hidden.getInt(i));hidden=root.optJSONArray("hiddenSketchParts");if(hidden!=null)for(int i=0;i<hidden.length();i++)project.hiddenSketchParts.add(hidden.getString(i));
         JSONObject ranges=root.optJSONObject("extrusionExtents");if(ranges!=null){java.util.Iterator<String> keys=ranges.keys();while(keys.hasNext()){String key=keys.next();try {int index=Integer.parseInt(key);JSONArray range=ranges.getJSONArray(key);if(range.length()!=3||index<-1||index>=project.committedFeatures.size())throw new JSONException("Niepoprawny zakres wyciągania");double[] value={range.getDouble(0),range.getDouble(1),range.getDouble(2)};if(!Double.isFinite(value[0])||Math.abs(value[0])<.1||!Double.isFinite(value[1])||value[1]<0||value[1]>5000||(value[2]!=0&&value[2]!=1))throw new JSONException("Niepoprawny zakres wyciągania");project.extrusionExtents.put(index,value);}catch(NumberFormatException e){throw new JSONException("Niepoprawny indeks wyciągania");}}}
         try{pl.tabletcad.app.BodyGraph.validate(project);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
+        JSONArray suppressed=root.optJSONArray("suppressed");
+        if(suppressed!=null)for(int i=0;i<suppressed.length();i++){int index=suppressed.getInt(i);if(index<0||index>=project.committedFeatures.size())throw new JSONException("Wygaszona operacja poza historią");project.suppressedFeatures.add(index);}
         pl.tabletcad.app.SketchTransactions.validateLoaded(project);
         return project;
     }
