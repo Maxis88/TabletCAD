@@ -805,7 +805,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     selectedSketchId = draggedSketch.id;
                     dragPreview = null;
                     dragSolvedPreview=null;
-                    dragConstraintRejected=false;
+                    dragConstraintRejected=false;groupDrag=null;
                     invalidate();
                     return true;
                 }
@@ -830,6 +830,11 @@ if (isInsideViewport(e.getX(), e.getY())) {
                             else if(draggedSketch.type.equals("Okrąg")&&dragHandle==2)anchor=new double[]{draggedSketch.x2,draggedSketch.y2};
                             else anchor=SketchConstraints.anchor(draggedSketch,draggedSketch.type.equals("Prostokąt")?new int[]{0,2,1,3}[index]:index);
                             double[] hit=SketchSnapper.snap(anchor[0]+du,anchor[1]+dv,snapGeometry(),draggedSketch.id,tolerance,null,null);du=hit[0]-anchor[0];dv=hit[1]-anchor[1];
+                        }
+                        if(dragHandle==0&&sketchMulti.size()>1&&sketchMulti.contains(draggedSketch.id)) {
+                            groupDrag=new double[]{du,dv};sketchGhost.clear();
+                            for(SketchPrimitive member:project.sketch)if(sketchMulti.contains(member.id))sketchGhost.add(SketchTransform.move(member,du,dv));
+                            invalidate();return true;
                         }
                         double x1 = draggedSketch.x1, y1 = draggedSketch.y1;
                         double x2 = draggedSketch.x2, y2 = draggedSketch.y2;
@@ -868,6 +873,13 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     }
                     return true;
                 }
+                if (event.getActionMasked() == MotionEvent.ACTION_UP && groupDrag!=null) {
+                    double[] delta=groupDrag;groupDrag=null;sketchGhost.clear();draggedSketch=dragPreview=null;dragSolvedPreview=null;snapMarker=null;
+                    try{SketchPosition.Result r=SketchPosition.moveGroup(project.sketch,project.coincidences,sketchMulti,delta[0],delta[1]);
+                        if(applySolvedSketch(r.sketch,r.links))operationMessage="Przesunięto "+sketchMulti.size()+" el. o "+formatMm(delta[0])+", "+formatMm(delta[1]);}
+                    catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+                    invalidate();return true;
+                }
                 if (event.getActionMasked() == MotionEvent.ACTION_UP) {
                     SketchPrimitive original = draggedSketch, changed = dragPreview;
                     List<SketchPrimitive> solved=dragSolvedPreview;
@@ -878,6 +890,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     else if(changed!=null&&solved!=null)applySolvedSketch(solved,new ArrayList<>(project.coincidences));
                     else if (changed != null) replaceSketchEntity(original, changed);
                     else if(dragConstraintRejected)operationMessage="Ruch narusza więzy. Usuń blokadę punktu lub zmień wymiary zgodnie z więzami.";
+                    else if(multiSelect){if(!sketchMulti.remove(original.id))sketchMulti.add(original.id);selectedSketchId=original.id;operationMessage="Zaznaczonych: "+sketchMulti.size()+". Przeciągnij jeden z nich, aby przesunąć wszystkie.";}
                     else if(positionNext){positionNext=false;showSketchPosition(original.id,0,null,0);}
                     else if (dragWasSelected) showSketchEntityEditor(original);
                     else operationMessage = "Przeciągnij uchwyt, aby zmienić rozmiar; krawędź, aby przesunąć";
@@ -1103,7 +1116,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private void recoverFromError(String where,RuntimeException error) {
         CrashReport.note(getContext(),where,error);
         try{closePropertyEditor();}catch(RuntimeException ignored){}
-        draggedSketch=dragPreview=null;dragSolvedPreview=null;sketching=false;sketchRect=null;snapMarker=null;positionPickId=null;positionNext=false;
+        draggedSketch=dragPreview=null;dragSolvedPreview=null;sketching=false;sketchRect=null;snapMarker=null;positionPickId=null;positionNext=false;multiSelect=false;sketchMulti.clear();
         sketchGhost.clear();drawGrabTarget=null;removeCallbacks(drawGrab);
         operationMessage=where+": błąd ("+error.getClass().getSimpleName()+(error.getMessage()==null?"":": "+error.getMessage())+"). Dane projektu nie zostały utracone.";
         invalidate();
@@ -1380,7 +1393,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     /** Default tool contexts use the same native controls as parameter forms. */
     private void scheduleContextPanel() {
-        String key=propertyEditor!=null||!propertiesVisible()?"":mode+"|"+sketchTool+"|"+sketchPlaneChosen+"|"+project.sketchId+"|"+project.sketch.size()+"|"+project.polylineDraft.size()+"|"+project.threePointDraft.size()+"|"+arcDraft.size()+"|"+coincidenceMode+"|"+selectedSketchId+"|"+projectionMode+"|"+constraintKind+"|"+trimMode+"|"+dimensionMode+"|"+projectionMode+"|"+displayMode+"|"+(sectionPlane!=null);
+        String key=propertyEditor!=null||!propertiesVisible()?"":mode+"|"+sketchTool+"|"+sketchPlaneChosen+"|"+project.sketchId+"|"+project.sketch.size()+"|"+project.polylineDraft.size()+"|"+project.threePointDraft.size()+"|"+arcDraft.size()+"|"+coincidenceMode+"|"+selectedSketchId+"|"+projectionMode+"|"+multiSelect+"|"+sketchMulti.size()+"|"+constraintKind+"|"+trimMode+"|"+dimensionMode+"|"+projectionMode+"|"+displayMode+"|"+(sectionPlane!=null);
         if(key.equals(contextPanelKey)||contextPanelPosted)return;
         contextPanelPosted=true;post(()->{contextPanelPosted=false;if(!isAttachedToWindow()||!(getParent() instanceof android.widget.FrameLayout))return;
             removeContextPanel();if(propertyEditor!=null||!propertiesVisible())return;
@@ -1412,6 +1425,19 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     else if(!project.threePointDraft.isEmpty())contextAction(contents,"Opcje konstrukcji…",false,()->showThreePointActions(null));
                     contextText(contents,"Elementy: "+project.sketch.size(),false);
                     SketchPrimitive picked=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(selectedSketchId))picked=p;
+                    if(multiSelect||!sketchMulti.isEmpty()) {
+                        contextText(contents,"Zaznaczonych: "+sketchMulti.size(),true);
+                        contextText(contents,"Dotykaj elementów, aby je dodać lub odjąć. Przeciągnij jeden z nich, aby przesunąć wszystkie.",false);
+                        if(!sketchMulti.isEmpty()) {
+                            contextAction(contents,"Położenie i wyrównanie zaznaczenia…",false,()->showGroupPosition(0,null,0));
+                            contextAction(contents,"Przesuń o X/Y…",false,()->showGroupMove());
+                            contextAction(contents,"Usuń zaznaczone ("+sketchMulti.size()+")",false,()->confirm("Usunąć "+sketchMulti.size()+" elementów szkicu?","Cofnij przywraca usunięte elementy.",()->{
+                                if(sketchMulti.size()==1)selectedSketchId=sketchMulti.iterator().next();activateTopTool("Usuń");sketchMulti.clear();}));
+                        }
+                        contextAction(contents,"Zakończ zaznaczanie",false,()->{multiSelect=false;sketchMulti.clear();});
+                        picked=null;
+                    } else if(mode.equals("Edytuj szkic")&&!project.sketch.isEmpty()&&!coincidenceMode&&!trimMode&&!dimensionMode&&!projectionMode)
+                        contextAction(contents,"Zaznacz wiele elementów",false,()->{multiSelect=true;if(selectedSketchId!=null)sketchMulti.add(selectedSketchId);operationMessage="Dotykaj elementów, aby je zaznaczyć";});
                     if(picked!=null&&project.polylineDraft.isEmpty()&&!coincidenceMode&&!trimMode&&!dimensionMode) {
                         final SketchPrimitive chosen=picked;
                         contextText(contents,"Zaznaczony: "+sketchEntityName(chosen),true);
@@ -1972,7 +1998,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private void drawSketchEntity(Canvas canvas, SketchPrimitive entity) {
-        boolean selected = entity.id.equals(selectedSketchId) || highlightSketch || extrusionSelections.contains(entity.id)&&mode.equals("Profile wyciągnięcia");
+        boolean selected = entity.id.equals(selectedSketchId) || sketchMulti.contains(entity.id) || highlightSketch || extrusionSelections.contains(entity.id)&&mode.equals("Profile wyciągnięcia");
         PointF p1 = projectSketchPoint(entity.x1, entity.y1);
         PointF p2 = projectSketchPoint(entity.x2, entity.y2);
         paint.setStyle(Paint.Style.STROKE);
@@ -2164,6 +2190,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     /** Element being positioned while the user points at a reference (sketch point, element or body edge). */
     private String positionPickId;private int positionPickPoint;private List<String> positionGroup;
+    /** Multi-selection in a sketch: tap toggles, dragging a member moves the whole group. */
+    private final java.util.Set<String> sketchMulti=new java.util.LinkedHashSet<>();private boolean multiSelect;private double[] groupDrag;
+    private static final String GROUP_ID="\u0000group";
     /** "Położenie" chosen without a selection: the next touched element opens it. */
     private boolean positionNext;
     private String sketchEntityName(SketchPrimitive p) {
@@ -2176,6 +2205,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
      * another element (also an edge projected from the body), or aligns it with that element.
      */
     private void showSketchPosition(String id,int pointChoice,String refId,int refAnchor) {
+        if(GROUP_ID.equals(id)){showGroupPosition(pointChoice,refId,refAnchor);return;}
         SketchPrimitive element=null,reference=null;
         for(SketchPrimitive p:project.sketch){if(p.id.equals(id))element=p;if(p.id.equals(refId))reference=p;}
         if(element==null){operationMessage="Zaznacz element szkicu";invalidate();return;}
@@ -2239,17 +2269,75 @@ if (isInsideViewport(e.getX(), e.getY())) {
         Runnable ghost=()->{sketchGhost.clear();try{showSolvedGhost(compute.get().sketch);}catch(IllegalArgumentException ignored){}invalidate();};
         watchFields(form,ghost);
     }
+    /** "Położenie" of the multi-selection: a point of the common box at X/Y from a reference, or alignment. */
+    private void showGroupPosition(int pointChoice,String refId,int refAnchor) {
+        sketchMulti.removeIf(id->{for(SketchPrimitive p:project.sketch)if(p.id.equals(id))return false;return true;});
+        if(sketchMulti.isEmpty()){operationMessage="Zaznacz elementy (Zaznacz wiele)";invalidate();return;}
+        SketchPrimitive reference=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(refId))reference=p;
+        final SketchPrimitive ref=reference;final String refKey=ref==null?null:ref.id;
+        final int refPoint=ref!=null&&refAnchor>=0&&refAnchor<SketchConstraints.anchorCount(ref)?refAnchor:-1;
+        final List<String> group=ref!=null&&positionGroup!=null&&positionGroup.contains(ref.id)?new ArrayList<>(positionGroup):java.util.Collections.singletonList(ref==null?"":ref.id);positionGroup=null;
+        beginSketchWork();mode="Edytuj szkic";
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView what=new android.widget.TextView(getContext());what.setText("Zaznaczone elementy: "+sketchMulti.size()+" (przesuwane razem)");form.addView(what);
+        android.widget.Spinner point=new android.widget.Spinner(getContext());point.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,SketchPosition.GROUP_POINTS));
+        point.setSelection(Math.max(0,Math.min(pointChoice,SketchPosition.GROUP_POINTS.length-1)));form.addView(point);
+        boolean pointRef=ref==null||refPoint>=0;
+        android.widget.TextView refLabel=new android.widget.TextView(getContext());refLabel.setText("Odniesienie: "+(group.size()>1?"ściana bryły (rzut)":ref==null?"początek układu szkicu":sketchEntityName(ref)));form.addView(refLabel);
+        android.widget.Button pick=new android.widget.Button(getContext());pick.setText("Wskaż odniesienie na szkicu lub bryle…");form.addView(pick);
+        pick.setOnClickListener(v->{closePropertyEditor();sketchGhost.clear();positionPickId=GROUP_ID;positionPickPoint=point.getSelectedItemPosition();
+            if(project.hasSolid()&&project.importedMeshSource==null&&projectionEdges.length==0)loadProjectionEdges();
+            operationMessage="Dotknij punktu lub elementu szkicu, krawędzi lub ściany bryły albo początku układu";invalidate();});
+        double[] now=SketchPosition.groupPoint(project.sketch,sketchMulti,point.getSelectedItemPosition()),r=SketchPosition.reference(project.sketch,pointRef?refKey:null,Math.max(0,refPoint));
+        EditText fx=labeledCoordinate(form,"Odległość X [mm]",now[0]-r[0]),fy=labeledCoordinate(form,"Odległość Y [mm]",now[1]-r[1]);
+        if(ref!=null) {
+            android.widget.TextView alignLabel=new android.widget.TextView(getContext());alignLabel.setText("Wyrównaj zaznaczenie do: "+(group.size()>1?"obrysu ściany":sketchEntityName(ref)));form.addView(alignLabel);
+            for(int i=0;i<SketchPosition.ALIGN.length;i++) {
+                final int alignMode=i;android.widget.Button align=new android.widget.Button(getContext());align.setText(SketchPosition.ALIGN[i]);form.addView(align);
+                align.setOnClickListener(v->{closePropertyEditor();sketchGhost.clear();
+                    try{SketchPosition.Result res=SketchPosition.alignGroup(project.sketch,project.coincidences,sketchMulti,group,alignMode);
+                        if(applySolvedSketch(res.sketch,res.links))operationMessage="Wyrównano zaznaczenie: "+SketchPosition.ALIGN[alignMode].toLowerCase(java.util.Locale.ROOT);}
+                    catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+                    invalidate();});
+            }
+        }
+        java.util.function.Supplier<SketchPosition.Result> compute=()->SketchPosition.placeGroup(project.sketch,project.coincidences,sketchMulti,point.getSelectedItemPosition(),pointRef?refKey:null,Math.max(0,refPoint),parseCoordinate(fx),parseCoordinate(fy));
+        point.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
+            boolean first=true;
+            public void onItemSelected(android.widget.AdapterView<?> parent,View v,int position,long rowId){
+                if(first){first=false;return;}
+                double[] n=SketchPosition.groupPoint(project.sketch,sketchMulti,position),rr=SketchPosition.reference(project.sketch,pointRef?refKey:null,Math.max(0,refPoint));
+                fx.setText(Units.input(n[0]-rr[0],project.units));fy.setText(Units.input(n[1]-rr[1],project.units));}
+            public void onNothingSelected(android.widget.AdapterView<?> parent){}});
+        new PropertyBuilder().setTitle("Położenie zaznaczenia").setView(form).setNegativeButton("Anuluj",(d,w)->{sketchGhost.clear();invalidate();}).setPositiveButton("Zastosuj",(d,w)->{
+            sketchGhost.clear();
+            try{SketchPosition.Result res=compute.get();if(applySolvedSketch(res.sketch,res.links))operationMessage="Przesunięto zaznaczenie ("+sketchMulti.size()+" el.)";}
+            catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+            invalidate();
+        }).show();
+        Runnable ghost=()->{sketchGhost.clear();try{SketchPosition.Result res=compute.get();for(SketchPrimitive p:res.sketch)if(sketchMulti.contains(p.id))sketchGhost.add(p);}catch(IllegalArgumentException ignored){}invalidate();};
+        watchFields(form,ghost);
+    }
+    /** Shift of the multi-selection by exact X/Y. */
+    private void showGroupMove() {
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        EditText fx=labeledCoordinate(form,"Przesunięcie X [mm]",0),fy=labeledCoordinate(form,"Przesunięcie Y [mm]",0);
+        java.util.function.Supplier<SketchPosition.Result> compute=()->SketchPosition.moveGroup(project.sketch,project.coincidences,sketchMulti,parseCoordinate(fx),parseCoordinate(fy));
+        new PropertyBuilder().setTitle("Przesuń zaznaczenie").setView(form).setNegativeButton("Anuluj",(d,w)->{sketchGhost.clear();invalidate();}).setPositiveButton("Przesuń",(d,w)->{
+            sketchGhost.clear();try{SketchPosition.Result res=compute.get();if(applySolvedSketch(res.sketch,res.links))operationMessage="Przesunięto "+sketchMulti.size()+" el.";}catch(IllegalArgumentException error){operationMessage=error.getMessage();}invalidate();}).show();
+        watchFields(form,()->{sketchGhost.clear();try{for(SketchPrimitive p:compute.get().sketch)if(sketchMulti.contains(p.id))sketchGhost.add(p);}catch(IllegalArgumentException ignored){}invalidate();});
+    }
     /** Reference pick of "Położenie": origin, a point, an element or a body edge (projected first). */
     private void positionPickTap(float x,float y) {
-        String id=positionPickId;int choice=positionPickPoint;positionPickId=null;positionNext=false;
+        String id=positionPickId;int choice=positionPickPoint;positionPickId=null;
         PointF origin=projectSketchPoint(0,0);
         if(Math.hypot(x-origin.x,y-origin.y)<dp(18)){showSketchPosition(id,choice,null,0);return;}
         SketchPrimitive best=null;int anchor=-1;double distance=dp(18);
-        for(SketchPrimitive p:project.sketch){if(p.id.equals(id)||!sketchEntityVisible(p))continue;
+        for(SketchPrimitive p:project.sketch){if(p.id.equals(id)||!sketchEntityVisible(p)||GROUP_ID.equals(id)&&sketchMulti.contains(p.id))continue;
             for(int i=0;i<SketchConstraints.anchorCount(p);i++){double[] a=SketchConstraints.anchor(p,i);PointF s=projectSketchPoint(a[0],a[1]);double d=Math.hypot(x-s.x,y-s.y);if(d<distance){distance=d;best=p;anchor=i;}}}
         if(best!=null){showSketchPosition(id,choice,best.id,anchor);return;}
         SketchPrimitive entity=findSketchAt(x,y);
-        if(entity!=null&&!entity.id.equals(id)){showSketchPosition(id,choice,entity.id,nearestAnchor(entity,x,y));return;}
+        if(entity!=null&&!entity.id.equals(id)&&!(GROUP_ID.equals(id)&&sketchMulti.contains(entity.id))){showSketchPosition(id,choice,entity.id,nearestAnchor(entity,x,y));return;}
         // A body edge: project it into the sketch (fixed reference geometry), then use it.
         int edge=-1;double edgeDistance=dp(18);
         for(int i=0;i+15<projectionEdges.length;i+=16) {
@@ -7230,13 +7318,14 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(inSketch()&&!SketchTransactions.active(project))beginSketchWork();
         boolean hadSketchPlane=inSketch() && sketchPlaneChosen;
         closePropertyEditor();
-        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;positionPickId=null;positionNext=false;
+        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;positionPickId=null;positionNext=false;multiSelect=false;if(!tool.equals("Położenie")&&!tool.equals("Usuń"))sketchMulti.clear();
         dimensionMode=false;
         coincidenceMode=false;coincidenceFirst=null;
         if(tool.equals("Przesuń szkic")||tool.equals("Obróć szkic")||tool.equals("Skaluj szkic")){mode="Edytuj szkic";showSketchTransform(tool);invalidate();return;}
         if(tool.equals("Położenie")) {
             mode="Edytuj szkic";SketchPrimitive chosen=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(selectedSketchId))chosen=p;
-            if(chosen!=null)showSketchPosition(chosen.id,0,null,0);
+            if(sketchMulti.size()>1)showGroupPosition(0,null,0);
+            else if(chosen!=null)showSketchPosition(chosen.id,0,null,0);
             else{positionNext=true;operationMessage="Dotknij elementu, który chcesz ustawić";}
             invalidate();return;
         }
@@ -7348,7 +7437,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
             invalidate();return;
         }
         if(tool.equals("Usuń")) {
-            if(selectedSketchId!=null) deleteSketchEntity(selectedSketchId);
+            if(sketchMulti.size()>1){int before=project.sketch.size(),n=sketchMulti.size();for(String id:new ArrayList<>(sketchMulti))deleteSketchEntity(id);int removed=before-project.sketch.size();sketchMulti.clear();selectedSketchId=null;
+                if(removed==n)operationMessage="Usunięto zaznaczone elementy ("+n+"). Cofnij je przywraca.";else operationMessage="Usunięto "+removed+" z "+n+" el.; pozostałe są używane przez bryłę.";}
+            else if(selectedSketchId!=null) deleteSketchEntity(selectedSketchId);
             else operationMessage="Zaznacz element narzędziem Edytuj, potem wybierz Usuń";
             invalidate();return;
         }
@@ -7807,6 +7898,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     /** After a sketch the model is shown again in 3D (the sketch view looks straight at the plane). */
     private void leaveSketchView() {
+        multiSelect=false;sketchMulti.clear();groupDrag=null;
         highlightBody=0;highlightSketch=false;selectedTreeKey="";
         editingSketchPlacement=SketchPlacement.identity();editingSketchBody=0;
         if(project.hasSolid()){cameraYaw=-28f;cameraPitch=22f;}
@@ -7814,7 +7906,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     private void enterSketchEditor() {
         restoreSketchPlacement();
-        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;positionPickId=null;positionNext=false;
+        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;positionPickId=null;positionNext=false;multiSelect=false;sketchMulti.clear();
         dimensionMode=false;
         coincidenceMode=false;coincidenceFirst=null;
         mode = "Edytuj szkic";

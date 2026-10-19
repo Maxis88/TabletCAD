@@ -42,7 +42,7 @@ public final class SketchPositionHostTest {
         for(SketchConstraints.Link l:rel.links)check(!SketchConstraints.fromOrigin(l)&&l.a.equals("plate"),"dimension measured from the plate: "+l.kind);
         // The dimension follows the reference: moving the plate corner moves the hole.
         List<SketchPrimitive> edited=SketchConstraints.edit(rel.sketch,rel.links,"plate",new SketchPrimitive("plate","Prostokąt",0,0,120,60));
-        SketchPrimitive follow=get(edited,"hole");System.out.println("follow "+follow.x1+","+follow.y1+" r="+Math.hypot(follow.x2-follow.x1,follow.y2-follow.y1)+" plate x2="+get(edited,"plate").x2);
+        SketchPrimitive follow=get(edited,"hole");
         check(near(follow.x1,105)&&near(Math.hypot(follow.x2-follow.x1,follow.y2-follow.y1),5),"widening the plate moves the dimensioned hole with its corner, radius kept");
         // Rectangle centre placement keeps size and lands exactly.
         SketchPosition.Result centre=SketchPosition.place(sketch,new ArrayList<>(),"plate",SketchPosition.CENTRE,null,0,0,0,true,true);
@@ -64,6 +64,21 @@ public final class SketchPositionHostTest {
         try{SketchPosition.align(two,new ArrayList<>(),"hole","hole",0,true);check(false,"self reference rejected");}
         catch(IllegalArgumentException e){check(true,"self reference rejected");}
         check(SketchPosition.pointNames(plate).get(0).startsWith("Środek"),"rectangle offers its centre first");
+        // 0.88 groups: plate and hole move together and keep their dimension; a member held by the origin refuses to move.
+        List<String> both=Arrays.asList("plate","hole");
+        SketchPosition.Result g=SketchPosition.moveGroup(rel.sketch,rel.links,both,10,5);
+        SketchPrimitive gp=get(g.sketch,"plate"),gh=get(g.sketch,"hole");
+        check(near(gp.x1,10)&&near(gp.y1,5)&&near(gh.x1,95)&&near(gh.y1,53),"group move shifts plate and its dimensioned hole together");
+        SketchPosition.Result held=SketchPosition.place(sketch,new ArrayList<>(),"hole",0,null,0,30,30,true,true);
+        try{SketchPosition.moveGroup(held.sketch,held.links,Collections.singletonList("hole"),5,0);check(false,"held member refused");}
+        catch(IllegalArgumentException e){check(e.getMessage().contains("trzymają"),"member held by origin dimensions refuses a group move");}
+        SketchPosition.Result centredGroup=SketchPosition.placeGroup(sketch,new ArrayList<>(),both,0,null,0,0,0);
+        double[] gb=SketchPosition.groupBounds(centredGroup.sketch,both);
+        check(near((gb[0]+gb[2])/2,0)&&near((gb[1]+gb[3])/2,0),"group centred on the origin");
+        SketchPosition.Result toLine=SketchPosition.alignGroup(sketch,new ArrayList<>(),both,Collections.singletonList("edge"),4);
+        check(near(SketchPosition.groupBounds(toLine.sketch,both)[2],120),"group right side aligned with the line");
+        try{SketchPosition.alignGroup(sketch,new ArrayList<>(),both,Collections.singletonList("hole"),0);check(false,"member as reference refused");}
+        catch(IllegalArgumentException e){check(true,"a member cannot be the group reference");}
         System.out.println("PASS SketchPositionHostTest: "+checks+" checks");
     }
 }

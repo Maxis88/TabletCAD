@@ -158,6 +158,54 @@ public final class SketchPosition {
         for(String rid:ids){double[] b=bounds(find(sketch,rid));out[0]=Math.min(out[0],b[0]);out[1]=Math.min(out[1],b[1]);out[2]=Math.max(out[2],b[2]);out[3]=Math.max(out[3],b[3]);}
         return out;
     }
+    /** Moves several elements rigidly by (dx,dy); constraints are re-solved and must keep the move. */
+    public static Result moveGroup(List<SketchPrimitive> sketch,List<SketchConstraints.Link> links,java.util.Collection<String> ids,double dx,double dy) {
+        if(ids.isEmpty())throw new IllegalArgumentException("Nic nie zaznaczono");
+        if(!Double.isFinite(dx)||!Double.isFinite(dy)||Math.abs(dx)>10000||Math.abs(dy)>10000)throw new IllegalArgumentException("Niepoprawne przesunięcie");
+        List<SketchPrimitive> geometry=new ArrayList<>();
+        for(SketchPrimitive p:sketch)geometry.add(ids.contains(p.id)?SketchTransform.move(p,dx,dy):p);
+        List<SketchPrimitive> solved=links.isEmpty()?geometry:SketchConstraints.resolve(geometry,links);
+        // The solver may pull a member back (fixed point, dimension to an element outside the group).
+        for(SketchPrimitive p:solved)if(ids.contains(p.id)) {
+            SketchPrimitive wanted=find(geometry,p.id);double[] a=bounds(p),b=bounds(wanted);
+            if(Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])+Math.abs(a[2]-b[2])+Math.abs(a[3]-b[3])>1e-6)
+                throw new IllegalArgumentException("Więzy lub wymiary trzymają zaznaczony element w miejscu — usuń je albo dołącz element odniesienia do zaznaczenia");
+        }
+        SketchConstraints.validate(solved,links);
+        return new Result(solved,new ArrayList<>(links),0,0);
+    }
+    /** Group reference points: 0 centre of the common box, 1-4 its corners (min/min, max/min, max/max, min/max). */
+    public static final String[] GROUP_POINTS={"Środek zaznaczenia","Narożnik lewy dolny","Narożnik prawy dolny","Narożnik prawy górny","Narożnik lewy górny"};
+    public static double[] groupPoint(List<SketchPrimitive> sketch,java.util.Collection<String> ids,int choice) {
+        double[] b=groupBounds(sketch,new ArrayList<>(ids));
+        switch(choice){case 1:return new double[]{b[0],b[1]};case 2:return new double[]{b[2],b[1]};case 3:return new double[]{b[2],b[3]};case 4:return new double[]{b[0],b[3]};default:return new double[]{(b[0]+b[2])/2,(b[1]+b[3])/2};}
+    }
+    /** Places a group so its chosen point lies at reference+(dx,dy). */
+    public static Result placeGroup(List<SketchPrimitive> sketch,List<SketchConstraints.Link> links,java.util.Collection<String> ids,int choice,String refId,int refAnchor,double dx,double dy) {
+        if(refId!=null&&ids.contains(refId))throw new IllegalArgumentException("Odniesienie nie może należeć do zaznaczenia");
+        double[] now=groupPoint(sketch,ids,choice),ref=reference(sketch,refId,refAnchor);
+        return moveGroup(sketch,links,ids,ref[0]+dx-now[0],ref[1]+dy-now[1]);
+    }
+    /** Aligns the common box of a group with reference elements (same modes as {@link #ALIGN}). */
+    public static Result alignGroup(List<SketchPrimitive> sketch,List<SketchConstraints.Link> links,java.util.Collection<String> ids,List<String> refIds,int mode) {
+        for(String r:refIds)if(ids.contains(r))throw new IllegalArgumentException("Odniesienie nie może należeć do zaznaczenia");
+        double[] e=groupBounds(sketch,new ArrayList<>(ids)),r=groupBounds(sketch,refIds);
+        SketchPrimitive single=refIds.size()==1?find(sketch,refIds.get(0)):null;
+        double[] rc=single!=null?centre(single,r):new double[]{(r[0]+r[2])/2,(r[1]+r[3])/2},ec={(e[0]+e[2])/2,(e[1]+e[3])/2};
+        double mx,my;
+        switch(mode) {
+            case 0:mx=rc[0]-ec[0];my=rc[1]-ec[1];break;
+            case 1:mx=rc[0]-ec[0];my=0;break;
+            case 2:mx=0;my=rc[1]-ec[1];break;
+            case 3:mx=r[0]-e[0];my=0;break;
+            case 4:mx=r[2]-e[2];my=0;break;
+            case 5:mx=0;my=r[3]-e[3];break;
+            case 6:mx=0;my=r[1]-e[1];break;
+            default:throw new IllegalArgumentException("Nieznany sposób wyrównania");
+        }
+        return moveGroup(sketch,links,ids,mx,my);
+    }
+
     /** A position dimension that fixes this point of the element (from the origin or from another element). */
     static boolean touches(SketchConstraints.Link l,String id,int anchor) {
         if(!SketchConstraints.position(l.kind))return false;

@@ -81,6 +81,17 @@ public final class SketchMoveUiProbe {
         SketchPrimitive placed=circle(view);
         check(Math.abs(placed.x1-25)<1e-6&&Math.abs(placed.y1-40)<1e-6,"Położenie places the centre at X25 Y40");
         ui(()->{int dims=0;for(SketchConstraints.Link l:((CadProject)field(view,"project")).coincidences)if(SketchConstraints.position(l.kind)&&l.a.equals("probe-circle"))dims++;check(dims==2,"two driving position dimensions on the sketch");});
+        // 5. Multi-selection (0.88): two elements selected by taps move together with one drag.
+        ui(()->{CadProject p=(CadProject)field(view,"project");p.sketch.add(new SketchPrimitive("probe-second","Okrąg",-40,-20,-35,-20));
+            p.coincidences.clear();TabletFlowProbe.set(view,"multiSelect",true);((Set<?>)field(view,"sketchMulti")).clear();view.invalidate();});
+        instrumentation.waitForIdleSync();
+        SketchPrimitive first=circle(view);float[] a=screen(view,first.x1,first.y1),b=screen(view,-40,-20);
+        TabletFlowProbe.tap(a[0]+3,a[1]+3);TabletFlowProbe.tap(b[0]+2,b[1]+2);
+        ui(()->check(((Set<?>)field(view,"sketchMulti")).size()==2,"two taps select two elements"));
+        drag(b[0]+2,b[1]+2,b[0]+122,b[1]+2,0);
+        SketchPrimitive firstAfter=circle(view);SketchPrimitive[] second={null};
+        ui(()->{for(SketchPrimitive p:((CadProject)field(view,"project")).sketch)if(p.id.equals("probe-second"))second[0]=p;});
+        check(firstAfter.x1-first.x1>3&&Math.abs((firstAfter.x1-first.x1)-(second[0].x1+40))<1e-6,"dragging one selected element moves both by the same distance");
         System.out.println("PASS SketchMoveUiProbe");
     }
 }
