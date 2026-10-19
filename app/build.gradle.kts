@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 97
-        versionName = "0.86.0-sketch-position"
+        versionCode = 98
+        versionName = "0.87.0-face-projection"
     }
 
     externalNativeBuild {

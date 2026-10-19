@@ -57,7 +57,7 @@ javac -nowarn -encoding UTF-8 --release 17 -classpath "$ANDROID_JAR" -d "$OUT/cl
 CP="$OUT/probes:$OUT/classes:$JSON_JAR:$ANDROID_JAR"
 # Probes that only use the kernel and the document model run headless on the desktop JVM.
 PROBES="${PROBES:-KernelDiagnosticsProbe SolidPatternKernelProbe SketchDesignKernelProbe CadToolsKernelProbe ConstructionKernelProbe HistoryKernelProbe AnalysisKernelProbe PrintKernelProbe AssemblyKernelProbe FaceOffsetKernelProbe MateKernelProbe AcceptanceAKernelProbe ThreadProbe BodyPropertiesProbe EdgeChamferProbe SketchEditingProbe}"
-HOST_TESTS="${HOST_TESTS:-SketchDesignHostTest SolidPatternHostTest UnitsHostTest CadToolsHostTest ConstructionHostTest LinkedCopiesHostTest ProjectLibraryFilesHostTest BodyMassHostTest LibraryWorkspaceHostTest ViewCubeHostTest SketchPositionHostTest KernelCacheHostTest}"
+HOST_TESTS="${HOST_TESTS:-SketchDesignHostTest SolidPatternHostTest UnitsHostTest CadToolsHostTest ConstructionHostTest LinkedCopiesHostTest ProjectLibraryFilesHostTest BodyMassHostTest LibraryWorkspaceHostTest ViewCubeHostTest SketchPositionHostTest KernelCacheHostTest FaceProjectionHostTest}"
 status=0
 for test in $HOST_TESTS $PROBES; do
   javac -nowarn -encoding UTF-8 -classpath "$CP" -d "$OUT/probes" "$ROOT/tools/$test.java"

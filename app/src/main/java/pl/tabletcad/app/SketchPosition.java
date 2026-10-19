@@ -105,8 +105,11 @@ public final class SketchPosition {
     public static final String[] ALIGN={"Środek do środka","Środek w poziomie (X)","Środek w pionie (Y)","Do lewej krawędzi","Do prawej krawędzi","Do górnej krawędzi","Do dolnej krawędzi"};
     /** Translation that aligns the element with the reference in the given mode. */
     public static double[] alignMove(SketchPrimitive element,SketchPrimitive reference,int mode) {
-        double[] e=bounds(element),r=bounds(reference);
-        double[] ec=centre(element,e),rc=centre(reference,r);
+        double[] r=bounds(reference);return alignMove(element,r,centre(reference,r),mode);
+    }
+    /** Same, against a reference box and centre (e.g. the outline of a projected face). */
+    public static double[] alignMove(SketchPrimitive element,double[] r,double[] rc,int mode) {
+        double[] e=bounds(element);double[] ec=centre(element,e);
         switch(mode) {
             case 0:return new double[]{rc[0]-ec[0],rc[1]-ec[1]};
             case 1:return new double[]{rc[0]-ec[0],0};
@@ -127,9 +130,16 @@ public final class SketchPosition {
      * position dimensions between a point of the reference and a point of the element.
      */
     public static Result align(List<SketchPrimitive> sketch,List<SketchConstraints.Link> links,String id,String refId,int mode,boolean lock) {
-        if(id.equals(refId))throw new IllegalArgumentException("Wybierz inny element jako odniesienie");
-        SketchPrimitive element=find(sketch,id),reference=find(sketch,refId);
-        double[] move=alignMove(element,reference,mode);
+        return align(sketch,links,id,java.util.Collections.singletonList(refId),mode,lock);
+    }
+    /** Alignment with a group of reference elements (their common box; centre of a single circle). */
+    public static Result align(List<SketchPrimitive> sketch,List<SketchConstraints.Link> links,String id,List<String> refIds,int mode,boolean lock) {
+        if(refIds.isEmpty())throw new IllegalArgumentException("Brak odniesienia");
+        if(refIds.contains(id))throw new IllegalArgumentException("Wybierz inny element jako odniesienie");
+        SketchPrimitive element=find(sketch,id),reference=find(sketch,refIds.get(0));String refId=reference.id;
+        double[] box=groupBounds(sketch,refIds);
+        double[] centre=refIds.size()==1?centre(reference,box):new double[]{(box[0]+box[2])/2,(box[1]+box[3])/2};
+        double[] move=alignMove(element,box,centre,mode);
         boolean affectX=mode==0||mode==1||mode==3||mode==4,affectY=mode==0||mode==2||mode==5||mode==6;
         boolean canLock=lock&&SketchConstraints.anchorCount(element)>0&&SketchConstraints.anchorCount(reference)>0;
         if(!canLock) {
@@ -143,6 +153,11 @@ public final class SketchPosition {
         return place(sketch,links,id,0,refId,0,dx,dy,affectX,affectY);
     }
 
+    public static double[] groupBounds(List<SketchPrimitive> sketch,List<String> ids) {
+        double[] out={Double.POSITIVE_INFINITY,Double.POSITIVE_INFINITY,Double.NEGATIVE_INFINITY,Double.NEGATIVE_INFINITY};
+        for(String rid:ids){double[] b=bounds(find(sketch,rid));out[0]=Math.min(out[0],b[0]);out[1]=Math.min(out[1],b[1]);out[2]=Math.max(out[2],b[2]);out[3]=Math.max(out[3],b[3]);}
+        return out;
+    }
     /** A position dimension that fixes this point of the element (from the origin or from another element). */
     static boolean touches(SketchConstraints.Link l,String id,int anchor) {
         if(!SketchConstraints.position(l.kind))return false;

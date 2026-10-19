@@ -38,7 +38,13 @@ public final class CadScenarioProbe {
     }
     static Object field(Object o,String name)throws Exception{return TabletFlowProbe.field(o,name);}
     static Object call(Object o,String name,Class<?>[] types,Object... args)throws Exception{return TabletFlowProbe.call(o,name,types,args);}
-    static void tool(CadWorkspaceView view,String name)throws Exception{ui(()->call(view,"activateTopTool",new Class<?>[]{String.class},name));instrumentation.waitForIdleSync();}
+    static void tool(CadWorkspaceView view,String name)throws Exception{ui(()->call(view,"activateTopTool",new Class<?>[]{String.class},name));instrumentation.waitForIdleSync();settle(view);}
+    /** 0.87: finishing a sketch rebuilds the model in the background; wait until it is swapped in. */
+    static void settle(CadWorkspaceView view)throws Exception {
+        long until=System.currentTimeMillis()+60000;
+        while(System.currentTimeMillis()<until){boolean[] busy={false};ui(()->busy[0]=(boolean)field(view,"rebuilding"));if(!busy[0]){instrumentation.waitForIdleSync();return;}Thread.sleep(40);}
+        throw new AssertionError("background rebuild did not finish");
+    }
     static float[] screen(CadWorkspaceView view,double u,double v)throws Exception {
         float[] xy=new float[2];ui(()->{PointF p=(PointF)call(view,"projectSketchPoint",new Class<?>[]{double.class,double.class},u,v);int[] o=new int[2];view.getLocationOnScreen(o);xy[0]=p.x+o[0];xy[1]=p.y+o[1];});return xy;
     }
