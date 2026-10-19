@@ -1,13 +1,16 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.83.0-ui**, versionCode **93** (gałąź robocza `claude/cad-0.83`; `main` = 0.82.0).
+Wersja źródeł: **0.84.0-navigation**, versionCode **94** (gałąź robocza `claude/cad-0.84`; `main` = 0.83.0).
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
 
-Wersja 0.83 (gałąź `claude/cad-0.83`, przed testem na tablecie) — nowy wygląd paneli, pasek narzędzi, szybkie akcje
+Wersja 0.84 (gałąź `claude/cad-0.84`, przed testem na tablecie) — kostka nawigacyjna, nowy wygląd biblioteki
+projektów i panelu szkicu, test akceptacyjny A. [Audyt 0.84](docs/AUDIT-0.84.md).
+
+Wersja 0.83 — nowy wygląd paneli, pasek narzędzi, szybkie akcje
 ściany, menu Plik, gest wstecz. [Audyt 0.83](docs/AUDIT-0.83.md).
 
 Wersja 0.82 — audyt obsługi dotykowej: menu kontekstowe drzewa, dosuwanie dowolnych brył (styk, wyrównanie,
