@@ -366,10 +366,20 @@ public final class CadWorkspaceView extends View {
             Runnable close=()->{closePropertyEditor();if(dismiss>=0&&actions.get(dismiss)!=null)actions.get(dismiss).onClick(null,dismiss);invalidate();};
             body.addView(PanelStyle.header(c,title,close));
             if(content!=null){PanelStyle.form(content);body.addView(content,PanelStyle.spaced(c,4));}
-            if(items!=null) for(int i=0;i<items.length;i++) {
-                final int index=i;android.widget.Button button=new android.widget.Button(c);
-                button.setText(items[i]);PanelStyle.row(button);body.addView(button,PanelStyle.spaced(c,i==0?8:6));
-                button.setOnClickListener(v->{closePropertyEditor();itemAction.onClick(null,index);invalidate();});
+            if(items!=null) {
+                // Long menus of short commands (e.g. constraints) use two columns to stay within the screen.
+                boolean grid=items.length>7;for(String item:items)if(item.length()>26)grid=false;
+                LinearLayout pair=null;
+                for(int i=0;i<items.length;i++) {
+                    final int index=i;android.widget.Button button=new android.widget.Button(c);
+                    button.setText(items[i]);PanelStyle.row(button);
+                    button.setOnClickListener(v->{closePropertyEditor();itemAction.onClick(null,index);invalidate();});
+                    if(!grid){body.addView(button,PanelStyle.spaced(c,i==0?8:6));continue;}
+                    if(i%2==0){pair=new LinearLayout(c);pair.setOrientation(LinearLayout.HORIZONTAL);body.addView(pair,PanelStyle.spaced(c,i==0?8:6));}
+                    button.setTextSize(13);button.setPadding((int)dp(10),0,(int)dp(6),0);
+                    LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1);if(i%2==0)p.rightMargin=(int)dp(6);pair.addView(button,p);
+                    if(i%2==0&&i==items.length-1){View filler=new View(c);pair.addView(filler,new LinearLayout.LayoutParams(0,1,1));}
+                }
             }
             android.widget.Button positiveButton=null;
             // Additional actions (Do powierzchni…, Usuń, Edytuj profil…) full width, then Anuluj | main action side by side.
@@ -930,8 +940,10 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }
     }
 
+    /** Display toggles are always "on" in some variant; they do not mark their group as the active tool. */
+    private static final java.util.Set<String> DISPLAY_STATES=new java.util.HashSet<>(java.util.Arrays.asList("Cieniowanie","Krawędzie","Przezroczystość","Rzut prostokątny","Nawisy","Ukryj bryłę","Wymiary"));
     private boolean groupActive(ToolbarCatalog.Group group) {
-        for(String command:group.commands())if(isToolActive(command))return true;
+        for(String command:group.commands())if(!DISPLAY_STATES.contains(command)&&isToolActive(command))return true;
         return false;
     }
 
@@ -2449,8 +2461,10 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         SketchPrimitive found=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(cornerFirst))found=p;final SketchPrimitive first=found,second=picked;cornerFirst=null;cornerFilletPicking=false;
         if(first==null||first.id.equals(second.id)){operationMessage="Wybierz dwie różne linie";invalidate();return;}
         if(project.hasCoincidence(first.id)||project.hasCoincidence(second.id)){operationMessage="Usuń więzy wybranych linii przed zastąpieniem narożnika łukiem";invalidate();return;}
-        EditText radius=coordinateInput("Promień [mm]",1);
-        new PropertyBuilder().setTitle("Zaokrąglij dwie linie [mm]").setView(radius).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        EditText radius=labeledCoordinate(form,"Promień [mm]",1);slider(form,radius,.1,Math.max(10,modelExtent()/5),.1);
+        post(()->{Runnable ghost=()->{sketchGhost.clear();try{sketchGhost.addAll(SketchFillet.pair(first,second,parseCoordinate(radius)));}catch(IllegalArgumentException ignored){}invalidate();};watchFields(form,ghost);ghost.run();});
+        new PropertyBuilder().setTitle("Zaokrąglij dwie linie").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
             try{List<SketchPrimitive> parts=SketchFillet.pair(first,second,parseCoordinate(radius));commitModelChange(()->{
                 for(int i=0;i<project.sketch.size();i++){String id=project.sketch.get(i).id;if(id.equals(first.id))project.sketch.set(i,parts.get(0));else if(id.equals(second.id))project.sketch.set(i,parts.get(1));}project.sketch.add(parts.get(2));
             });}catch(IllegalArgumentException error){operationMessage=error.getMessage();}invalidate();
@@ -2466,11 +2480,14 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         new PropertyBuilder().setTitle("Zaokrąglij narożniki szkicu").setItems(names.toArray(new String[0]),(d,w)->showSketchFilletRadius(profiles.get(w))).setNegativeButton("Anuluj",null).show();
     }
     private void showSketchFilletRadius(SketchPrimitive source) {
-        EditText radius=coordinateInput("Promień narożników [mm]",1);
-        new PropertyBuilder().setTitle("Zaokrąglij wszystkie narożniki [mm]").setView(radius).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        EditText radius=labeledCoordinate(form,"Promień narożników [mm]",1);slider(form,radius,.1,Math.max(10,modelExtent()/5),.1);
+        new PropertyBuilder().setTitle("Zaokrąglij wszystkie narożniki").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
             try{replaceSketchEntity(source,SketchFillet.apply(source,parseCoordinate(radius)));}
             catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
         }).show();
+        Runnable ghost=()->{sketchGhost.clear();try{sketchGhost.add(SketchFillet.apply(source,parseCoordinate(radius)));}catch(IllegalArgumentException ignored){}invalidate();};
+        watchFields(form,ghost);ghost.run();
     }
 
     private SketchPrimitive selectedSketchEntity() {
