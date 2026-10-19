@@ -4319,7 +4319,21 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }).show();
         attachLivePreview(form,candidate,status,"Podgląd wystąpienia. Zastosuj zapisuje je w historii.");
     }
-    private java.util.Set<Integer> mateBodies=new java.util.LinkedHashSet<>();private double[] mateMovingAxis;
+    private java.util.Set<Integer> mateBodies=new java.util.LinkedHashSet<>();private double[] mateMovingAxis;private Integer mateMovingCreator;
+    /** Gap and kind of a persistent mate from the history. */
+    private void showMateEditor(int index) {
+        double[] original=project.committedFeatures.get(index);
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Dosunięcie jest przeliczane przy każdej zmianie modelu: bryła podąża za ścianą, do której ją dosunięto.");form.addView(info);
+        EditText gap=labeledCoordinate(form,"Odstęp [mm]",original[3]);slider(form,gap,-modelExtent()/2,modelExtent()/2,.5);
+        android.widget.CheckBox flush=new android.widget.CheckBox(getContext());flush.setText("Wyrównaj (ściany w jednej płaszczyźnie)");flush.setChecked(original[1]==MateFeature.FLUSH);form.addView(flush);
+        android.content.DialogInterface.OnClickListener apply=(d,w)->{
+            try{double[] updated=MateFeature.withGap(original,flush.isChecked()?MateFeature.FLUSH:MateFeature.CONTACT,parseCoordinate(gap));String baseline=project.toJson().toString();CadProject next=copyProject(project);next.committedFeatures.set(index,updated);commitProjectAsync(next,baseline,"Zaktualizowano: "+MateFeature.describe(updated,BodyGraph.name(next,MateFeature.other(updated))));}
+            catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+        };
+        new PropertyBuilder().setTitle("Edytuj dosunięcie").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",apply).show();
+        capturedPreview(form,apply,"Podgląd położenia bryły.");
+    }
     private void beginMate() {
         if(!project.hasSolid()||BodyGraph.bodies(project).size()<2){operationMessage="Dosuń ściany łączy dwie bryły – potrzebne są co najmniej dwie bryły (np. wyciągnięcie jako „Nowa bryła” albo wystąpienie)";invalidate();return;}
         closePropertyEditor();mode="Dosuń";mateComponent=null;mateBodies.clear();mateMovingAxis=null;mateMovingPoint=null;
@@ -4336,13 +4350,16 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(mateComponent==null&&mateBodies.isEmpty()) {
             Component c=Component.of(project.components,body);
             if(c!=null&&c.instance())mateComponent=c.id;else if(c!=null)mateBodies.addAll(c.bodies);else mateBodies.add(body);
-            mateMovingAxis=axis;mateMovingPoint=point;mateMovingNormal=normal;selectedFace=face;
+            mateMovingAxis=axis;mateMovingPoint=point;mateMovingNormal=normal;mateMovingCreator=faceFeatures.get(face);selectedFace=face;
             operationMessage=(axis!=null?"Teraz dotknij walcowej ściany, z którą oś ma być współosiowa":"Teraz dotknij ściany, do której ta ściana ma przylegać")+" (inna bryła)";invalidate();return;
         }
         java.util.Set<Integer> moving=new java.util.LinkedHashSet<>(mateBodies);if(mateComponent!=null){Component c=Assembly.find(project,mateComponent);if(c!=null)moving.addAll(c.bodies);}
         if(moving.contains(body)){operationMessage="Wybierz ścianę innej bryły";invalidate();return;}
         if((mateMovingAxis!=null)!=(axis!=null)){operationMessage=mateMovingAxis!=null?"Pierwsza ściana była walcowa – dotknij walcowej ściany drugiej bryły":"Pierwsza ściana była płaska – dotknij płaskiej ściany drugiej bryły";invalidate();return;}
         final double[] tp=point,tn=normal,ta=axis,mp=mateMovingPoint,mn=mateMovingNormal,ma=mateMovingAxis;final String component=mateComponent;final java.util.Set<Integer> bodies=new java.util.LinkedHashSet<>(mateBodies);
+        final Integer movingCreator=mateMovingCreator,targetCreator=faceFeatures.get(face);final int targetBody=body;
+        // A plane mate of one ordinary body is stored as a persistent mate (re-solved when either body changes).
+        final boolean persistent=component==null&&ta==null&&bodies.size()==1&&movingCreator!=null&&targetCreator!=null&&project.bodyGraphStart>=0;
         mode="Wybierz";selectedFace=face;
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         android.widget.TextView info=new android.widget.TextView(getContext());form.addView(info);
@@ -4358,8 +4375,14 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     Component c=Assembly.find(next,component);name=c.name;
                     for(int index:Assembly.instanceRecords(next,c))next.committedFeatures.set(index,Assembly.composeDelta(delta,next.committedFeatures.get(index)));
                 } else {
+                    if(persistent) {
+                        int movingBody=bodies.iterator().next();
+                        double[] mate=MateFeature.create(flush.isChecked()?MateFeature.FLUSH:MateFeature.CONTACT,targetBody,parseCoordinate(gapField),mp,mn,movingCreator,tp,tn,targetCreator);
+                        next.committedFeatures.add(mate);next.committedProfileIds.add("");next.featureBodyTargets.add(movingBody);next.featureBodyOutputs.add(movingBody);
+                    } else {
                     List<double[]> records=Assembly.transformRecords(delta);if(records.isEmpty())throw new IllegalArgumentException("Bryła już jest w tym położeniu");
                     for(int b:bodies)for(double[] r:records){next.committedFeatures.add(r);next.committedProfileIds.add("");next.featureBodyTargets.add(b);next.featureBodyOutputs.add(b);}
+                    }
                     name=bodies.size()==1?BodyGraph.name(next,bodies.iterator().next()):bodies.size()+" brył";
                 }
                 if(previewSink==null){mateComponent=null;mateBodies.clear();mateMovingAxis=null;}
@@ -4658,6 +4681,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(SweepLoft.loft(feature)||SweepLoft.sweep(feature)){showLoftSweepEditor(index);return;}
         if(DraftFeature.is(feature)){showDraftEditor(index);return;}
         if(FaceOffset.is(feature)){showFaceOffsetEditor(index);return;}
+        if(MateFeature.is(feature)){showMateEditor(index);return;}
         if(BodyInstance.is(feature)){int created=BodyInstance.created(feature);Component c=Component.of(project.components,created);
             if(c!=null&&c.instance())showInstanceDialog(c);else{operationMessage="Wystąpienie bez komponentu – usuń je z historii i wstaw ponownie";invalidate();}return;}
         if(BodyTransform.is(feature)){showBodyTransform((int)feature[1],index);return;}
@@ -7698,6 +7722,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(feature.equals("Powłoka")||feature.equals("Otwór")){drawToolIcon(canvas,feature,x,y,color);return;}
         if(feature.equals("Pochylenie")){drawToolIcon(canvas,"Pochyl ściany",x,y,color);return;}
         if(feature.equals("Odsunięcie ściany")){drawToolIcon(canvas,"Odsuń ścianę",x,y,color);return;}
+        if(feature.equals("Dosunięcie")){drawToolIcon(canvas,"Dosuń ściany",x,y,color);return;}
         if(feature.equals("Podział bryły")){drawToolIcon(canvas,"Podziel bryłę",x,y,color);return;}
         if(feature.equals("Wystąpienie")){drawToolIcon(canvas,"Wstaw wystąpienie",x,y,color);return;}
         if(feature.equals("Przejście")){drawToolIcon(canvas,"Przejście",x,y,color);return;}

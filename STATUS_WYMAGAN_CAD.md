@@ -215,8 +215,9 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
    ogólnego nazewnictwa krawędzi po dowolnych operacjach Boolean; utrata odniesienia
    jest zgłaszana, nigdy zgadywana.
 3. Złożenia: komponenty, powiązane wystąpienia, dosuwanie (styk, wyrównanie,
-   współosiowość), kolizje i lista części są od 0.80/0.82. Brak trwałych wiązań
-   montażowych przeliczanych po zmianie geometrii (dosunięcie zapisuje położenie).
+   współosiowość), kolizje i lista części są od 0.80/0.82. Od 0.84 dosunięcie płaskich
+   ścian zwykłych brył jest trwałym wiązaniem przeliczanym po zmianie geometrii;
+   współosiowość i wystąpienia złożenia zapisują położenie.
 4. Dokumentacja: arkusz z rzutami i przekrojem; brak swobodnego wymiarowania arkusza,
    tolerancji i tabliczek w wielu formatach.
 5. Formaty: brak IGES; 3MF tylko eksport; weryfikacja w zewnętrznych CAD do wykonania.
@@ -229,8 +230,8 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
   zwymiarowanymi 10 mm od krawędzi, zmiana szerokości, długości i grubości,
   zapis/odczyt i druga zmiana; położenia otworów i objętości sprawdzane analitycznie.
   Pełna sekwencja dotykowa tego scenariusza nie jest osobnym testem UI.
-- D — CZĘŚCIOWY: komponenty, wystąpienia, dosuwanie i kolizje są (0.80–0.82),
-  brak trwałych wiązań montażowych.
+- D — CZĘŚCIOWY: komponenty, wystąpienia, dosuwanie i kolizje są (0.80–0.82); trwałe
+  wiązania płaszczyzn zwykłych brył od 0.84, bez trwałej współosiowości.
 
 
 - Scenariusz obowiązkowy 16.3 (kroki 1–21) — PASS na HONOR YLE-W09
