@@ -3745,8 +3745,88 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         values.setText(mass+"\n\n"+String.format(java.util.Locale.US,
             "Objętość: %s\n\nPole powierzchni: %s\n\nŚrodek objętości [%s]\nX: %s\nY: %s\nZ: %s\n\nBryły: %.0f\nŚciany: %.0f\n\nWynik dla całego modelu B-Rep OCCT. Masa zakłada jednakową gęstość wszystkich brył. Środek objętości odpowiada wtedy środkowi masy. Wartości z chwili otwarcia panelu.",
             Units.volume(properties[0],u,digits),Units.area(properties[1],u,digits),u,Units.number(properties[2],u,digits),Units.number(properties[3],u,digits),Units.number(properties[4],u,digits),properties[5],properties[6]));
-        new PropertyBuilder().setTitle("Właściwości bryły · OCCT").setView(values)
-            .setNeutralButton("Gęstość materiału",(d,w)->showMaterialDensityEditor()).setNegativeButton("Zamknij",null).show();
+        // Per-body mass properties (inertia about each centroid, principal moments) with per-body densities.
+        StringBuilder perBody=new StringBuilder();
+        try {
+            List<BodyAnalysis.Body> bodies=BodyAnalysis.read(project,NativeCadEngine.bodyInertia(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,
+                evaluationBase(),kernelFeatures(),project.importedStep?importedSourceFile().getAbsolutePath():null));
+            for(BodyAnalysis.Body b:bodies) {
+                perBody.append("\n\n— ").append(BodyGraph.name(project,b.id)).append(" —\nObjętość: ").append(Units.volume(b.volume,u,digits));
+                perBody.append(String.format(java.util.Locale.US,"\nŚrodek [%s]: %s; %s; %s",u,Units.number(b.centroid[0],u,digits),Units.number(b.centroid[1],u,digits),Units.number(b.centroid[2],u,digits)));
+                if(b.hasMass()) {
+                    perBody.append(String.format(java.util.Locale.US,"\nGęstość: %.6g kg/m³ · masa: %.9g kg",b.density,b.mass()));
+                    perBody.append(String.format(java.util.Locale.US,"\nMomenty bezwładności względem środka masy [kg·mm²]:\nIxx %.6g · Iyy %.6g · Izz %.6g\nIxy %.6g · Ixz %.6g · Iyz %.6g\nGłówne: %.6g · %.6g · %.6g",
+                        b.kgmm2(b.tensor[0]),b.kgmm2(b.tensor[1]),b.kgmm2(b.tensor[2]),b.kgmm2(b.tensor[3]),b.kgmm2(b.tensor[4]),b.kgmm2(b.tensor[5]),b.kgmm2(b.principal[0]),b.kgmm2(b.principal[1]),b.kgmm2(b.principal[2])));
+                } else perBody.append(String.format(java.util.Locale.US,"\nMomenty geometryczne (gęstość 1) [mm⁵]: Ixx %.6g · Iyy %.6g · Izz %.6g\nPrzypisz gęstość, aby otrzymać masę i momenty w kg·mm².",b.tensor[0],b.tensor[1],b.tensor[2]));
+            }
+            if(bodies.size()>1){double[] c=BodyAnalysis.centre(bodies);perBody.append(String.format(java.util.Locale.US,"\n\nŚrodek %s całego modelu: %s; %s; %s",c[3]==1?"masy":"objętości",Units.number(c[0],u,digits),Units.number(c[1],u,digits),Units.number(c[2],u,digits)));}
+        }catch(IllegalArgumentException error){perBody.append("\n\nAnaliza brył: ").append(error.getMessage());}
+        values.setText(values.getText()+perBody.toString());
+        android.widget.ScrollView scroll=new android.widget.ScrollView(getContext());scroll.addView(values);
+        new PropertyBuilder().setTitle("Właściwości bryły · OCCT").setView(scroll)
+            .setNeutralButton("Materiał…",(d,w)->showMaterialChoice()).setNegativeButton("Zamknij",null).show();
+    }
+
+    /** Document or per-body material from the catalog, or a custom density. */
+    private void showMaterialChoice() {
+        List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));List<String> targets=new ArrayList<>();targets.add("Cały dokument (domyślna)");
+        for(int id:ids)targets.add(BodyGraph.name(project,id)+(project.bodyDensities.containsKey(id)?" · "+java.math.BigDecimal.valueOf(project.bodyDensities.get(id)).stripTrailingZeros().toPlainString()+" kg/m³":""));
+        new PropertyBuilder().setTitle("Materiał · zakres").setItems(targets.toArray(new String[0]),(d,w)-> {
+            if(w==0&&ids.size()<=1){showMaterialCatalog(-1);return;}
+            showMaterialCatalog(w==0?-1:ids.get(w-1));
+        }).setNegativeButton("Anuluj",null).show();
+    }
+    private void showMaterialCatalog(int body) {
+        String[] items=new String[MaterialDensity.NAMES.length+(body>0?2:1)];for(int i=0;i<MaterialDensity.NAMES.length;i++)items[i]=MaterialDensity.label(i);
+        items[MaterialDensity.NAMES.length]="Własna gęstość…";if(body>0)items[items.length-1]="Jak dokument (usuń przypisanie bryły)";
+        new PropertyBuilder().setTitle(body>0?"Materiał · "+BodyGraph.name(project,body):"Materiał dokumentu").setItems(items,(d,w)-> {
+            if(w<MaterialDensity.NAMES.length)setDensity(body,MaterialDensity.VALUES[w]);
+            else if(w==MaterialDensity.NAMES.length){if(body>0)showBodyDensityEditor(body);else showMaterialDensityEditor();}
+            else setDensity(body,0);
+        }).setNegativeButton("Anuluj",null).show();
+    }
+    private void showBodyDensityEditor(int body) {
+        EditText density=new EditText(getContext());density.setSingleLine(true);density.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        density.setKeyListener(android.text.method.DigitsKeyListener.getInstance("0123456789.,"));density.setHint("Gęstość [kg/m³]");
+        Double current=project.bodyDensities.get(body);if(current!=null)density.setText(java.math.BigDecimal.valueOf(current).stripTrailingZeros().toPlainString());
+        new PropertyBuilder().setTitle("Gęstość · "+BodyGraph.name(project,body)).setView(density).setNegativeButton("Anuluj",null).setPositiveButton("Zapisz",(d,w)->{
+            try{setDensity(body,MaterialDensity.parse(density.getText().toString()));}catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+        }).show();
+    }
+    /** body ≤ 0: document density; value 0 removes the assignment. */
+    private void setDensity(int body,double value) {
+        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
+        try {
+            String baseline=project.toJson().toString();CadProject candidate=CadProject.fromJson(new org.json.JSONObject(baseline));
+            if(body>0){if(value>0)candidate.bodyDensities.put(body,value);else candidate.bodyDensities.remove(body);}else candidate.materialDensityKgM3=value;
+            candidate.toJson();projectRepository.save(candidate);
+            project=candidate;undoStack.push(baseline);while(undoStack.size()>50)undoStack.removeLast();redoStack.clear();
+            operationMessage="Zapisano materiał";showBodyProperties();
+        }catch(Exception error){operationMessage="Nie zapisano gęstości: "+error.getMessage();}
+        invalidate();
+    }
+
+    /** Minimum distance and interference (overlap volume) between two bodies. */
+    private void showBodyDistance() {
+        if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Analiza odległości wymaga brył B-Rep";invalidate();return;}
+        List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(ids.size()<2){operationMessage="Odległość mierzy się między dwiema bryłami dokumentu";invalidate();return;}
+        String[] names=new String[ids.size()];for(int i=0;i<names.length;i++)names[i]=BodyGraph.name(project,ids.get(i));
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.Spinner a=choice(form,"Bryła A",java.util.Arrays.asList(names),0),b=choice(form,"Bryła B",java.util.Arrays.asList(names),1);
+        android.widget.TextView result=new android.widget.TextView(getContext());result.setTextSize(15);result.setPadding(0,(int)dp(12),0,0);form.addView(result);
+        Runnable compute=()-> {
+            int first=ids.get(a.getSelectedItemPosition()),second=ids.get(b.getSelectedItemPosition());
+            if(first==second){result.setText("Wybierz dwie różne bryły");return;}
+            double[] d=NativeCadEngine.bodyDistance(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),project.importedStep?importedSourceFile().getAbsolutePath():null,first,second);
+            if(d.length!=8){result.setText(previewFailure("Nie można wyznaczyć odległości"));return;}
+            String u=project.units;
+            result.setText("Odległość minimalna: "+formatMm(d[0])+(d[7]>1e-9?"\n\nKOLIZJA · objętość wspólna: "+Units.volume(d[7],u,project.displayDecimals):d[0]<1e-9?"\n\nBryły stykają się":"")
+                +"\n\nNajbliższy punkt A: "+Units.number(d[1],u,project.displayDecimals)+"; "+Units.number(d[2],u,project.displayDecimals)+"; "+Units.number(d[3],u,project.displayDecimals)
+                +"\nNajbliższy punkt B: "+Units.number(d[4],u,project.displayDecimals)+"; "+Units.number(d[5],u,project.displayDecimals)+"; "+Units.number(d[6],u,project.displayDecimals)+"\n\nWynik dokładny (BRepExtrema).");
+        };
+        android.widget.AdapterView.OnItemSelectedListener listener=new android.widget.AdapterView.OnItemSelectedListener(){public void onItemSelected(android.widget.AdapterView<?> parent,View v,int position,long id){compute.run();}public void onNothingSelected(android.widget.AdapterView<?> parent){}};
+        a.setOnItemSelectedListener(listener);b.setOnItemSelectedListener(listener);
+        new PropertyBuilder().setTitle("Odległość i kolizja brył").setView(form).setNegativeButton("Zamknij",null).show();compute.run();
     }
 
     private void showMaterialDensityEditor() {
@@ -5884,7 +5964,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             || tool.equals("Szkic") && mode.equals("Szkic") && !sketchPlaneChosen;
     }
 
-    private static final java.util.Set<String> VIEW_TOOLS=new java.util.HashSet<>(java.util.Arrays.asList("Wybierz","Dopasuj","Izometryczny","Przód","Góra","Prawy bok","Rzut prostokątny","Cieniowanie","Krawędzie","Przezroczystość","Przekrój","Wyczyść widok","Zmierz","Zmierz kąt","Pole ściany","Właściwości bryły"));
+    private static final java.util.Set<String> VIEW_TOOLS=new java.util.HashSet<>(java.util.Arrays.asList("Wybierz","Dopasuj","Izometryczny","Przód","Góra","Prawy bok","Rzut prostokątny","Cieniowanie","Krawędzie","Przezroczystość","Przekrój","Wyczyść widok","Zmierz","Zmierz kąt","Pole ściany","Właściwości bryły","Odległość brył"));
     private void activateTopTool(String tool) {
         if(project.historyMarker>=0&&!VIEW_TOOLS.contains(tool))returnToHistoryEnd("Znacznik historii wrócił na koniec – nowe operacje są dodawane na końcu historii. ");
         if(tool.equals("Gwint")){beginThreadTool();return;}
@@ -5991,6 +6071,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }
         if(tool.equals("Obrót profilu")){chooseRevolveProfile();return;}
         if(tool.equals("Właściwości bryły")){showBodyProperties();return;}
+        if(tool.equals("Odległość brył")){showBodyDistance();return;}
         for(String command:DATUM_COMMANDS)if(tool.equals(command)){mode="Wybierz";showDatumEditor(command,null,null);return;}
         if(tool.equals("Zmierz kąt")||tool.equals("Pole ściany")) {
             if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Pomiar kątów i pól wymaga bryły B-Rep";invalidate();return;}

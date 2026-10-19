@@ -147,7 +147,7 @@ public final class SemanticIcons {
     }
     /** Construction planes/axis/point and face measurement glyphs (planes drawn as parallelograms). */
     private static boolean drawConstruction(Canvas canvas,String id,float x,float y,float scale,int color) {
-        if(!java.util.Arrays.asList("Płaszczyzna odsunięta","Płaszczyzna pod kątem","Płaszczyzna przez 3 punkty","Oś konstrukcyjna","Punkt konstrukcyjny","Pole ściany","Elementy konstrukcyjne").contains(id))return false;
+        if(!java.util.Arrays.asList("Płaszczyzna odsunięta","Płaszczyzna pod kątem","Płaszczyzna przez 3 punkty","Oś konstrukcyjna","Punkt konstrukcyjny","Pole ściany","Elementy konstrukcyjne","Odległość brył").contains(id))return false;
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.6f);p.setStyle(Paint.Style.STROKE);p.setStrokeJoin(Paint.Join.ROUND);p.setStrokeCap(Paint.Cap.ROUND);
         canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
         if(id.equals("Płaszczyzna odsunięta")) {
@@ -168,6 +168,10 @@ public final class SemanticIcons {
         } else if(id.equals("Pole ściany")) {
             Path face=new Path();face.moveTo(-12,6);face.lineTo(-5,-7);face.lineTo(12,-7);face.lineTo(5,6);face.close();canvas.drawPath(face,p);
             canvas.save();canvas.clipPath(face);p.setStrokeWidth(1);for(int i=-20;i<20;i+=4)canvas.drawLine(i,8,i+10,-9,p);canvas.restore();
+        } else if(id.equals("Odległość brył")) {
+            canvas.drawRect(-12,-2,-4,8,p);canvas.drawRect(4,-10,12,0,p);
+            p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));canvas.drawLine(-4,-2,4,0,p);p.setPathEffect(null);
+            canvas.drawLine(-6,-8,2,-10,p);canvas.drawLine(-6,-8,-4,-11,p);
         } else {
             plane(canvas,p,0,4);p.setPathEffect(new DashPathEffect(new float[]{4f,2f,1.2f,2f},0));canvas.drawLine(0,-12,0,10,p);p.setPathEffect(null);
         }

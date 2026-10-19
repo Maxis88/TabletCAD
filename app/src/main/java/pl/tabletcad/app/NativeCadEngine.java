@@ -96,6 +96,19 @@ public final class NativeCadEngine {
         return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,10):new double[0];
     }
 
+    /** Per body, stride 16: id, volume, centroid xyz, inertia about the centroid for unit density (Ixx Iyy Izz Ixy Ixz Iyz,
+     *  mm^5), principal moments (mm^5), area, 0. */
+    public static double[] bodyInertia(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep) {
+        return LOADED?nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,11):new double[0];
+    }
+    /** Minimum distance between bodies a and b: distance, closest point on a xyz, on b xyz, overlap volume. */
+    public static double[] bodyDistance(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep,int a,int b) {
+        if(!LOADED)return new double[0];
+        nativeSetQueryArguments(new double[]{a,b});
+        try{return nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,12);}finally{nativeSetQueryArguments(null);}
+    }
+    private static native void nativeSetQueryArguments(double[] values);
+
     /** Exact OCCT volume, area, centroid XYZ, solid count and face count (mm units). */
     public static double[] bodyProperties(double width,double height,double depth,double radius,
             double[] base,double[] features,String sourceStep) {

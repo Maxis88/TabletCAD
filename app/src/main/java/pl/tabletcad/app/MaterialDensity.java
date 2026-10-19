@@ -4,6 +4,13 @@ package pl.tabletcad.app;
 public final class MaterialDensity {
     private MaterialDensity() {}
 
+    /** Typical densities [kg/m³] for the material picker (nominal values; enter a measured value when known). */
+    public static final String[] NAMES={"Stal konstrukcyjna","Stal nierdzewna","Żeliwo","Aluminium","Mosiądz","Miedź","Tytan","PLA","PETG","ABS","Nylon PA12","Żywica SLA","POM","Drewno sosnowe"};
+    public static final double[] VALUES={7850,8000,7200,2700,8500,8960,4510,1240,1270,1050,1010,1180,1410,520};
+    public static String label(int i){return NAMES[i]+" · "+java.math.BigDecimal.valueOf(VALUES[i]).stripTrailingZeros().toPlainString()+" kg/m³";}
+    /** Density of a body: its own assignment, otherwise the document density (0 = unspecified). */
+    public static double of(pl.tabletcad.app.model.CadProject p,int body){Double d=p.bodyDensities.get(body);return d!=null?d:p.materialDensityKgM3;}
+
     /** Zero means unspecified. A specified density must be finite and positive, in kg/m³. */
     public static void validate(double density) {
         if (!Double.isFinite(density) || density < 0)

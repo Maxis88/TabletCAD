@@ -13,6 +13,8 @@
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
+#include <GProp_PrincipalProps.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
@@ -94,6 +96,7 @@ struct KernelError { int feature=-2; std::string message; };
 thread_local KernelError g_kernelError;
 // View-only section plane for query mode 9 (point xyz, normal xyz; material behind the normal is kept).
 thread_local std::array<double,6> g_sectionPlane{};thread_local bool g_sectionActive=false;
+thread_local std::vector<double> g_queryArguments;
 void kernelReset(){g_kernelError=KernelError();}
 void kernelReason(const char* message){if(g_kernelError.message.empty())g_kernelError.message=message;}
 void kernelFailAt(int feature,const char* message){g_kernelError.feature=feature;kernelReason(message);}
@@ -1284,6 +1287,13 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_pl_tabletcad_app_NativeCadEngine_nativeSetQueryArguments(JNIEnv* env,jclass,jdoubleArray values) {
+    g_queryArguments.clear();if(values==nullptr)return;const jsize n=env->GetArrayLength(values);if(n<=0||n>64)return;
+    g_queryArguments.resize(n);env->GetDoubleArrayRegion(values,0,n,g_queryArguments.data());
+    for(double v:g_queryArguments)if(!std::isfinite(v)){g_queryArguments.clear();return;}
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_pl_tabletcad_app_NativeCadEngine_nativeSetSectionPlane(JNIEnv* env,jclass,jdoubleArray plane) {
     g_sectionActive=false;if(plane==nullptr||env->GetArrayLength(plane)!=6)return;
     env->GetDoubleArrayRegion(plane,0,6,g_sectionPlane.data());
@@ -1296,7 +1306,7 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         jdouble radius, jdoubleArray javaBase, jdoubleArray javaFeatures, jstring javaExportPath,
         jstring javaSourceStep, jint queryMode) {
     kernelReset();
-    if((queryMode<0||queryMode>3)&&queryMode!=6&&queryMode!=8&&queryMode!=9&&queryMode!=10)return env->NewDoubleArray(0);
+    if((queryMode<0||queryMode>3)&&queryMode!=6&&queryMode!=8&&queryMode!=9&&queryMode!=10&&queryMode!=11&&queryMode!=12)return env->NewDoubleArray(0);
     if(queryMode==9&&!g_sectionActive){kernelFailAt(-2,"Brak płaszczyzny przekroju");return env->NewDoubleArray(0);}
     if (javaFeatures == nullptr || width <= 0 || height <= 0 || depth <= 0) {
         kernelFailAt(-1,"Niepoprawne wymiary bryły bazowej");
@@ -1450,6 +1460,31 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
             if(queryMode==8&&!cylinders.empty()){info.push_back(-8);info.push_back(static_cast<double>(cylinders.size()/15));info.push_back(0);info.insert(info.end(),cylinders.begin(),cylinders.end());}
             if(queryMode==8){std::vector<double> mesh=tessellatedTriangles(shape);if(mesh.empty()){kernelFailAt(-2,"Triangulacja bryły nie powiodła się");return env->NewDoubleArray(0);}std::vector<double> combined;combined.reserve(1+mesh.size()+info.size());combined.push_back(static_cast<double>(mesh.size()));combined.insert(combined.end(),mesh.begin(),mesh.end());combined.insert(combined.end(),info.begin(),info.end());info=std::move(combined);}
             jdoubleArray result=env->NewDoubleArray(static_cast<jsize>(info.size()));if(result&&!info.empty())env->SetDoubleArrayRegion(result,0,static_cast<jsize>(info.size()),info.data());return result;
+        }
+        if(queryMode==11||queryMode==12) {
+            if(bodies.empty())bodies[1]=shape;
+            std::vector<double> out;
+            if(queryMode==11) {
+                // Per body (unit density): id, volume, centroid xyz, inertia tensor about the centroid
+                // (Ixx Iyy Izz Ixy Ixz Iyz as returned by OCCT), principal moments, surface area, 0.
+                for(const auto& body:bodies) {
+                    GProp_GProps v,a;BRepGProp::VolumeProperties(body.second,v);BRepGProp::SurfaceProperties(body.second,a);
+                    const gp_Pnt c=v.CentreOfMass();const gp_Mat m=v.MatrixOfInertia();double i1=0,i2=0,i3=0;v.PrincipalProperties().Moments(i1,i2,i3);
+                    for(double value:{static_cast<double>(body.first),std::abs(v.Mass()),c.X(),c.Y(),c.Z(),m(1,1),m(2,2),m(3,3),m(1,2),m(1,3),m(2,3),i1,i2,i3,std::abs(a.Mass()),0.0})out.push_back(value);
+                }
+            } else {
+                // Minimum distance between two bodies: distance, closest points, overlap volume.
+                if(g_queryArguments.size()!=2){kernelFailAt(-2,"Brak wskazanych brył");return env->NewDoubleArray(0);}
+                const int a=static_cast<int>(g_queryArguments[0]),b=static_cast<int>(g_queryArguments[1]);
+                if(a==b||!bodies.contains(a)||!bodies.contains(b)){kernelFailAt(-2,"Wskazane bryły nie istnieją w modelu");return env->NewDoubleArray(0);}
+                BRepExtrema_DistShapeShape distance(bodies[a],bodies[b]);distance.Perform();
+                if(!distance.IsDone()||distance.NbSolution()<1){kernelFailAt(-2,"OCCT nie wyznaczył odległości brył");return env->NewDoubleArray(0);}
+                BRepAlgoAPI_Common common(bodies[a],bodies[b]);common.Build();double overlap=0;if(common.IsDone())overlap=shapeVolume(common.Shape());
+                const gp_Pnt p=distance.PointOnShape1(1),q=distance.PointOnShape2(1);
+                for(double value:{distance.Value(),p.X(),p.Y(),p.Z(),q.X(),q.Y(),q.Z(),overlap})out.push_back(value);
+            }
+            for(double value:out)if(!std::isfinite(value)){kernelFailAt(-2,"Niepoprawny wynik analizy");return env->NewDoubleArray(0);}
+            jdoubleArray result=env->NewDoubleArray(static_cast<jsize>(out.size()));if(result&&!out.empty())env->SetDoubleArrayRegion(result,0,static_cast<jsize>(out.size()),out.data());return result;
         }
         if(queryMode==10) {
             // Exact per-face analysis: face, body, area, type (0 plane, 1 cylinder, 2 cone, 3 sphere, 4 torus, 5 other),

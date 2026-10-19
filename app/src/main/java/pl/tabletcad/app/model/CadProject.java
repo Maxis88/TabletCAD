@@ -33,6 +33,8 @@ public final class CadProject {
     public double drawingSectionFraction = .5;
     /** Uniform density for all solids; 0 means unspecified. */
     public double materialDensityKgM3;
+    /** Densities of individual bodies [kg/m³]; bodies without one use materialDensityKgM3. */
+    public final java.util.Map<Integer,Double> bodyDensities=new java.util.TreeMap<>();
     /** Decimal places of lengths shown on the canvas (values are stored exactly in mm). */
     public int displayDecimals=3;
     /** Named user parameters and the model values driven by them (see UserParameters). */
@@ -104,6 +106,7 @@ public final class CadProject {
         JSONObject root = new JSONObject();
         root.put("schema", CURRENT_SCHEMA);
         root.put("materialDensityKgM3", materialDensityKgM3);
+        if(!bodyDensities.isEmpty()){JSONObject densities=new JSONObject();for(java.util.Map.Entry<Integer,Double> e:bodyDensities.entrySet()){try{pl.tabletcad.app.MaterialDensity.validate(e.getValue());}catch(IllegalArgumentException x){throw new JSONException(x.getMessage());}if(e.getValue()<=0)throw new JSONException("Gęstość bryły musi być dodatnia");densities.put(e.getKey().toString(),e.getValue());}root.put("bodyDensities",densities);}
         if(sketchEditBaseline!=null) {
             root.put("sketchEditBaseline",sketchEditBaseline);
             root.put("sketchLineage",new JSONObject(sketchLineage));root.put("sketchBindings",new JSONObject(sketchBindings));
@@ -327,6 +330,10 @@ public final class CadProject {
         JSONArray hidden=root.optJSONArray("hiddenBodies");if(hidden!=null)for(int i=0;i<hidden.length();i++)project.hiddenBodies.add(hidden.getInt(i));hidden=root.optJSONArray("hiddenSketchParts");if(hidden!=null)for(int i=0;i<hidden.length();i++)project.hiddenSketchParts.add(hidden.getString(i));
         JSONObject ranges=root.optJSONObject("extrusionExtents");if(ranges!=null){java.util.Iterator<String> keys=ranges.keys();while(keys.hasNext()){String key=keys.next();try {int index=Integer.parseInt(key);JSONArray range=ranges.getJSONArray(key);if(range.length()!=3||index<-1||index>=project.committedFeatures.size())throw new JSONException("Niepoprawny zakres wyciągania");double[] value={range.getDouble(0),range.getDouble(1),range.getDouble(2)};if(!Double.isFinite(value[0])||Math.abs(value[0])<.1||!Double.isFinite(value[1])||value[1]<0||value[1]>5000||(value[2]!=0&&value[2]!=1))throw new JSONException("Niepoprawny zakres wyciągania");project.extrusionExtents.put(index,value);}catch(NumberFormatException e){throw new JSONException("Niepoprawny indeks wyciągania");}}}
         try{pl.tabletcad.app.BodyGraph.validate(project);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
+        JSONObject densities=root.optJSONObject("bodyDensities");
+        if(densities!=null){java.util.Iterator<String> keys=densities.keys();while(keys.hasNext()){String key=keys.next();double value=densities.getDouble(key);int body;
+            try{body=Integer.parseInt(key);}catch(NumberFormatException e){throw new JSONException("Niepoprawny identyfikator bryły gęstości");}
+            if(!(value>0)||!Double.isFinite(value))throw new JSONException("Gęstość bryły musi być dodatnia");project.bodyDensities.put(body,value);}}
         JSONArray suppressed=root.optJSONArray("suppressed");
         if(suppressed!=null)for(int i=0;i<suppressed.length();i++){int index=suppressed.getInt(i);if(index<0||index>=project.committedFeatures.size())throw new JSONException("Wygaszona operacja poza historią");project.suppressedFeatures.add(index);}
         pl.tabletcad.app.SketchTransactions.validateLoaded(project);
