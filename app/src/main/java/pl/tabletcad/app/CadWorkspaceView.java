@@ -1084,42 +1084,58 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             if(entry.datum()) {
                 Datum d=datum(entry.datum);String glyph=d==null?"?":d.plane()?"▱":d.axis()?"⟋":"⊕";
                 text(canvas,glyph,dp(34),y+dp(23),13,Color.rgb(214,137,16),true);
-                canvas.save();canvas.clipRect(dp(50),y,dp(143),y+dp(36));text(canvas,entry.name,dp(52),y+dp(23),11.5f,INK,entry.key.equals(selectedTreeKey));canvas.restore();
-                text(canvas,"✎",dp(165),y+dp(23),15,ACCENT,true);text(canvas,d!=null&&d.hidden?"○":"●",dp(207),y+dp(23),13,ACCENT,true);
+                canvas.save();canvas.clipRect(dp(50),y,dp(TREE_MORE),y+dp(36));text(canvas,entry.name,dp(52),y+dp(23),11.5f,INK,entry.key.equals(selectedTreeKey));canvas.restore();
+                drawTreeControls(canvas,y,d!=null&&d.hidden);
             } else if(!entry.sketch()) {
                 text(canvas,collapsedBodies.contains(entry.body)?"›":"⌄",dp(12),y+dp(23),15,MUTED,true);
-                canvas.save();canvas.clipRect(dp(26),y,dp(194),y+dp(36));text(canvas,entry.name,dp(28),y+dp(23),12,INK,true);canvas.restore();
-                if(entry.body>0)text(canvas,project.hiddenBodies.contains(entry.body)?"○":"●",dp(207),y+dp(23),13,ACCENT,true);
-                if(entry.componentHeader()){Component c=Assembly.find(project,entry.component);boolean hidden=c!=null&&!c.bodies.isEmpty()&&project.hiddenBodies.containsAll(c.bodies);
-                    text(canvas,"✎",dp(180),y+dp(23),15,ACCENT,true);text(canvas,hidden?"○":"●",dp(207),y+dp(23),13,ACCENT,true);}
+                boolean component=entry.componentHeader();
+                if(entry.body>0||component){canvas.save();canvas.translate(dp(36),y+dp(18));canvas.scale(.5f,.5f);drawToolIcon(canvas,component?"Komponent":"Wyciągnij",0,0,component?Color.rgb(89,96,180):ACCENT);canvas.restore();}
+                float nameX=entry.body>0||component?dp(50):dp(28);
+                canvas.save();canvas.clipRect(nameX-dp(2),y,dp(TREE_MORE),y+dp(36));text(canvas,entry.name,nameX,y+dp(23),12,INK,true);canvas.restore();
+                if(component){Component c=Assembly.find(project,entry.component);drawTreeControls(canvas,y,c!=null&&!c.bodies.isEmpty()&&project.hiddenBodies.containsAll(c.bodies));}
+                else if(entry.body>0)drawTreeControls(canvas,y,project.hiddenBodies.contains(entry.body));
             } else {
-                canvas.save();canvas.clipRect(dp(32),y,dp(143),y+dp(36));text(canvas,entry.name+" ("+entry.entities.size()+")",dp(34),y+dp(23),11.5f,INK,entry.key.equals(selectedTreeKey));canvas.restore();
-                text(canvas,"✎",dp(153),y+dp(23),15,ACCENT,true);text(canvas,"Aa",dp(176),y+dp(23),11,ACCENT,true);text(canvas,project.hiddenSketchParts.contains(entry.key)?"○":"●",dp(207),y+dp(23),13,ACCENT,true);
+                canvas.save();canvas.translate(dp(44),y+dp(18));canvas.scale(.45f,.45f);drawToolIcon(canvas,"Szkic",0,0,Color.rgb(196,120,24));canvas.restore();
+                canvas.save();canvas.clipRect(dp(56),y,dp(TREE_MORE),y+dp(36));text(canvas,entry.name+" ("+entry.entities.size()+")",dp(58),y+dp(23),11.5f,INK,entry.key.equals(selectedTreeKey));canvas.restore();
+                drawTreeControls(canvas,y,project.hiddenSketchParts.contains(entry.key));
             }
         }
         canvas.restore();
+    }
+    /** Tree row controls: "⋯" (menu of the element) and the visibility eye; both at least 30 dp wide. */
+    private static final float TREE_MORE=156f,TREE_EYE=188f;
+    private void drawTreeControls(Canvas canvas,float y,boolean hidden) {
+        text(canvas,"⋯",dp((TREE_MORE+TREE_EYE)/2),y+dp(23),17,MUTED,true,Paint.Align.CENTER);
+        float cx=dp(205),cy=y+dp(18);int color=hidden?Color.rgb(160,170,178):ACCENT;
+        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1.5f));paint.setColor(color);
+        android.graphics.Path eye=new android.graphics.Path();eye.moveTo(cx-dp(8),cy);eye.quadTo(cx,cy-dp(7),cx+dp(8),cy);eye.quadTo(cx,cy+dp(7),cx-dp(8),cy);canvas.drawPath(eye,paint);
+        if(hidden)canvas.drawLine(cx-dp(7),cy+dp(6),cx+dp(7),cy-dp(6),paint);
+        else {paint.setStyle(Paint.Style.FILL);canvas.drawCircle(cx,cy,dp(2.6f),paint);}
+        paint.setStyle(Paint.Style.FILL);
     }
     private void treeTap(float x,float y) {
         int index=(int)((y-treeTop()+treeScroll)/dp(36));if(index<0||index>=modelTreeRows.size())return;
         ModelTree.Row entry=modelTreeRows.get(index);long now=android.os.SystemClock.uptimeMillis();boolean edit=entry.key.equals(selectedTreeKey)&&now-treeLastTap<android.view.ViewConfiguration.getDoubleTapTimeout();treeLastTap=now;
         if(entry.datum()) {
             Datum d=datum(entry.datum);if(d==null)return;
-            if(x>dp(196)){d.hidden=!d.hidden;projectRepository.save(project);}
+            if(x>dp(TREE_EYE)){d.hidden=!d.hidden;projectRepository.save(project);}
+            else if(x>dp(TREE_MORE)){treeLongPress(y);return;}
             else if(mode.equals("Szkic")&&!sketchPlaneChosen&&d.plane())sketchOnDatum(d);
-            else if(x>dp(150)||edit)showDatumEditor(commandOf(d),d,null);
+            else if(edit)showDatumEditor(commandOf(d),d,null);
             else {selectedTreeKey=entry.key;highlightBody=0;highlightFeature=Integer.MIN_VALUE;highlightSketch=false;operationMessage=d.name+" · "+d.describe()+(d.plane()?". Szkic → wybierz tę płaszczyznę w drzewie, aby na niej rysować.":"");}
         } else if(entry.componentHeader()) {
             Component c=Assembly.find(project,entry.component);if(c==null)return;
             if(x<dp(26)){if(!collapsedBodies.add(entry.body))collapsedBodies.remove(entry.body);}
-            else if(x>dp(196)){boolean hide=!project.hiddenBodies.containsAll(c.bodies);if(hide)project.hiddenBodies.addAll(c.bodies);else project.hiddenBodies.removeAll(c.bodies);projectRepository.save(project);}
-            else if(x>dp(168)||edit)showComponentActions(c);
-            else {selectedTreeKey=entry.key;highlightBody=c.bodies.isEmpty()?0:c.bodies.iterator().next();highlightFeature=Integer.MIN_VALUE;highlightSketch=false;operationMessage=c.name+" · "+c.bodies.size()+" brył"+(c.instance()?" · powiązana kopia":"")+". Dotknij ✎, aby zarządzać.";}
+            else if(x>dp(TREE_EYE)){boolean hide=!project.hiddenBodies.containsAll(c.bodies);if(hide)project.hiddenBodies.addAll(c.bodies);else project.hiddenBodies.removeAll(c.bodies);projectRepository.save(project);}
+            else if(x>dp(TREE_MORE)||edit)showComponentActions(c);
+            else {selectedTreeKey=entry.key;highlightBody=c.bodies.isEmpty()?0:c.bodies.iterator().next();highlightFeature=Integer.MIN_VALUE;highlightSketch=false;operationMessage=c.name+" · "+c.bodies.size()+" brył"+(c.instance()?" · powiązana kopia":"")+". Dotknij ⋯, aby zarządzać.";}
         } else if(!entry.sketch()) {
             if(x<dp(26)){if(!collapsedBodies.add(entry.body))collapsedBodies.remove(entry.body);}
-            else if(x>dp(196)&&entry.body>0){if(!project.hiddenBodies.add(entry.body))project.hiddenBodies.remove(entry.body);projectRepository.save(project);}
+            else if(x>dp(TREE_EYE)&&entry.body>0){if(!project.hiddenBodies.add(entry.body))project.hiddenBodies.remove(entry.body);projectRepository.save(project);}
+            else if(x>dp(TREE_MORE)&&entry.body>0){treeLongPress(y);return;}
             else {selectedTreeKey=entry.key;project.selectedBody=entry.body>0?entry.body:1;highlightBody=Math.max(0,entry.body);highlightFeature=Integer.MIN_VALUE;highlightSketch=false;}
-        } else if(x>dp(196)) {if(!project.hiddenSketchParts.add(entry.key))project.hiddenSketchParts.remove(entry.key);else if(selectedTreeKey.equals(entry.key)){selectedTreeKey="";highlightSketch=false;}projectRepository.save(project);}
-        else if(x>dp(167))renameTreeSketch(entry);
+        } else if(x>dp(TREE_EYE)) {if(!project.hiddenSketchParts.add(entry.key))project.hiddenSketchParts.remove(entry.key);else if(selectedTreeKey.equals(entry.key)){selectedTreeKey="";highlightSketch=false;}projectRepository.save(project);}
+        else if(x>dp(TREE_MORE)){treeLongPress(y);return;}
         else {selectedTreeKey=entry.key;highlightSketch=true;highlightBody=0;highlightFeature=Integer.MIN_VALUE;selectedSketchId=null;editTreeSketch(entry);}
         invalidate();
     }

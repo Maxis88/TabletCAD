@@ -7,6 +7,9 @@ Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
 
+Wersja 0.83 (gałąź `claude/cad-0.83`, przed testem na tablecie) — nowy wygląd paneli, pasek narzędzi, szybkie akcje
+ściany, menu Plik, gest wstecz. [Audyt 0.83](docs/AUDIT-0.83.md).
+
 Wersja 0.82 — audyt obsługi dotykowej: menu kontekstowe drzewa, dosuwanie dowolnych brył (styk, wyrównanie,
 współosiowość), klawiatura numeryczna, edycja wymiaru jednym dotknięciem. [Audyt 0.82](docs/AUDIT-0.82.md).
 
