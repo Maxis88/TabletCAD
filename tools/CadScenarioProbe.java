@@ -108,7 +108,8 @@ public final class CadScenarioProbe {
         // 6-7. Finish sketch and extrude 20 mm.
         tool(view,"Wyciągnij");
         ui(()->{View panel=(View)field(view,"propertyEditor");check(panel!=null,"extrusion panel opens ("+state(view)+")");List<EditText> inputs=new ArrayList<>();WorkspaceUiProbe.editors(panel,inputs);inputs.get(0).setText("20");});
-        Thread.sleep(400);float[] inside=screen(view,(rect[0].x1+rect[0].x2)/2,(rect[0].y1+rect[0].y2)/2);TabletFlowProbe.tap(inside[0],inside[1]);Thread.sleep(400);
+        Thread.sleep(400);boolean[] auto={false};ui(()->auto[0]=((Set<?>)field(view,"extrusionSelections")).size()==1);
+        if(auto[0])check(true,"7 the only closed profile is selected automatically");else{float[] inside=screen(view,(rect[0].x1+rect[0].x2)/2,(rect[0].y1+rect[0].y2)/2);TabletFlowProbe.tap(inside[0],inside[1]);}Thread.sleep(400);
         View[] apply={null};ui(()->{check(((Set<?>)field(view,"extrusionSelections")).size()==1,"7 tap selects the profile to extrude");apply[0]=WorkspaceUiProbe.button((View)field(view,"propertyEditor"),"Zastosuj");});
         instrumentation.waitForIdleSync();float[] arrow=new float[4];float[] arrowYaw={0};
         ui(()->{PointF h=(PointF)field(view,"extrusionHandle");check(h!=null,"7 current profile selection shows the extrusion arrow");int[] o=new int[2];view.getLocationOnScreen(o);
@@ -170,7 +171,8 @@ public final class CadScenarioProbe {
         // 11. Cut through the whole body.
         tool(view,"Wyciągnij");
         ui(()->{View panel=(View)field(view,"propertyEditor");check(panel!=null,"11 extrusion panel opens on face sketch ("+describe(view)+")");spinner(panel).setSelection(2);List<EditText> inputs=new ArrayList<>();WorkspaceUiProbe.editors(panel,inputs);inputs.get(0).setText("20");});
-        Thread.sleep(400);float[] holeCentre=screen(view,25,30);TabletFlowProbe.tap(holeCentre[0],holeCentre[1]);Thread.sleep(400);
+        Thread.sleep(400);boolean[] autoHole={false};ui(()->autoHole[0]=((Set<?>)field(view,"extrusionSelections")).size()==1);
+        if(!autoHole[0]){float[] holeCentre=screen(view,25,30);TabletFlowProbe.tap(holeCentre[0],holeCentre[1]);}Thread.sleep(400);
         ui(()->{check(((Set<?>)field(view,"extrusionSelections")).size()==1,"11 tap selects the circle profile");apply[0]=WorkspaceUiProbe.button((View)field(view,"propertyEditor"),"Zastosuj");});
         // "Do powierzchni…": rotate during the extrusion (one finger), tap the bottom face → length 20 mm.
         ui(()->{View panel=(View)field(view,"propertyEditor");List<EditText> inputs=new ArrayList<>();WorkspaceUiProbe.editors(panel,inputs);inputs.get(0).setText("5");WorkspaceUiProbe.button(panel,"Do powierzchni…").performClick();});
