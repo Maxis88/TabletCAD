@@ -20,8 +20,9 @@ public final class InteractionFixProbe {
     static Object dimension(CadWorkspaceView v,String kind)throws Exception {for(Object hit:(List<?>)field(v,"dimensionHits"))if(field(hit,"kind").equals(kind))return hit;throw new AssertionError("missing dimension "+kind);}
     static void edit(CadWorkspaceView view,String kind,String value)throws Exception {
         RectF bounds=(RectF)field(dimension(view,kind),"bounds");
-        WorkspaceUiProbe.tap(view,bounds.centerX(),bounds.centerY());check(field(view,"propertyEditor")==null,"single dimension tap selects without editing");
-        WorkspaceUiProbe.tap(view,bounds.centerX(),bounds.centerY());View panel=(View)field(view,"propertyEditor");check(panel!=null,"dimension double tap opens numeric editor "+kind);
+        WorkspaceUiProbe.tap(view,bounds.centerX(),bounds.centerY());View panel=(View)field(view,"propertyEditor");check(panel!=null,"single dimension tap opens numeric editor "+kind);
+        check((input(panel).getInputType()&android.text.InputType.TYPE_MASK_CLASS)==android.text.InputType.TYPE_CLASS_NUMBER||input(panel).getText().toString().matches(".*[A-Za-z_].*"),"dimension editor uses the numeric keypad");
+        WorkspaceUiProbe.tap(view,bounds.centerX(),bounds.centerY());check(field(view,"propertyEditor")==panel,"a repeated tap keeps the open editor");
         input(panel).setText(value);Button apply=WorkspaceUiProbe.button(panel,"Zastosuj");check(apply!=null,"numeric dimension has apply action");apply.performClick();
     }
     static void run(String[] args)throws Exception {
