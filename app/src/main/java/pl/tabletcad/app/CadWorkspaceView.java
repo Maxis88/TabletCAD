@@ -566,6 +566,7 @@ public final class CadWorkspaceView extends View {
                 }
                 if(e.getX()<leftWidth()&&e.getY()>=treeTop()) {treeTap(e.getX(),e.getY());return true;}
                 if(selectionChipTap(e.getX(),e.getY()))return true;
+                if(viewCubeTap(e.getX(),e.getY()))return true;
 
                 
 if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234)) {
@@ -906,7 +907,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             else drawVisibleTreeSketches(canvas);
             if (mode.equals("Zmierz")) drawDimensions(canvas, left, top, right, bottom);
         }
-        if(!mode.equals("Rysunek")) drawAxis(canvas, right - dp(70), bottom - dp(60));
+        if(!mode.equals("Rysunek")) drawViewCube(canvas, right - dp(66), bottom - dp(70));
         drawExtrusionManipulator(canvas,left,top,right,bottom);
         drawFieldHandle(canvas,left,top,right,bottom);
         if(!propertiesVisible()&&!operationMessage.isEmpty()&&messageFresh())drawViewportMessage(canvas,left,right,bottom);
@@ -6648,6 +6649,35 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }
     }
 
+    private float viewCubeX=-1,viewCubeY,viewCubeHalf;
+    /** Navigation cube in the viewport corner: turns with the camera; a face sets that view, ⌂ the isometric one. */
+    private void drawViewCube(Canvas canvas,float x,float y) {
+        if(inSketch()&&sketchPlaneChosen){viewCubeX=-1;drawAxis(canvas,x-dp(4),y+dp(10));return;}
+        float half=dp(21);viewCubeX=x;viewCubeY=y;viewCubeHalf=half;
+        for(ViewCube.Projected f:ViewCube.visible(cameraYaw,cameraPitch,x,y,half)) {
+            android.graphics.Path path=new android.graphics.Path();path.moveTo(f.polygon[0],f.polygon[1]);for(int i=1;i<4;i++)path.lineTo(f.polygon[2*i],f.polygon[2*i+1]);path.close();
+            int shade=(int)Math.round(206+40*f.facing);paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(235,Math.min(255,shade),Math.min(255,shade+4),Math.min(255,shade+6)));canvas.drawPath(path,paint);
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(Color.rgb(150,163,174));canvas.drawPath(path,paint);paint.setStyle(Paint.Style.FILL);
+            if(f.facing>.45)text(canvas,f.face.label,f.cx,f.cy+dp(3),7.5f,Color.rgb(52,66,78),true,Paint.Align.CENTER);
+        }
+        // Axis triad from the cube's back-left-bottom corner.
+        double[] o=ViewCube.project(cameraYaw,cameraPitch,new double[]{-1,-1,-1});float ox=(float)(x+o[0]*half),oy=(float)(y+o[1]*half);
+        String[] names={"X","Y","Z"};int[] colors={Color.rgb(220,60,60),Color.rgb(50,155,75),Color.rgb(55,105,210)};
+        for(int k=0;k<3;k++){double[] d=new double[3];d[k]=1;double[] p=ViewCube.project(cameraYaw,cameraPitch,new double[]{-1+d[0]*2.8,-1+d[1]*2.8,-1+d[2]*2.8});
+            float px=(float)(x+p[0]*half),py=(float)(y+p[1]*half);paint.setStrokeWidth(dp(2));paint.setColor(colors[k]);canvas.drawLine(ox,oy,px,py,paint);
+            text(canvas,names[k],px+(px-ox)*.18f,py+(py-oy)*.18f+dp(4),10,colors[k],true,Paint.Align.CENTER);}
+        // Home: isometric view.
+        float hx=x-dp(52),hy=y-dp(40);paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(225,255,255,255));canvas.drawCircle(hx,hy,dp(14),paint);
+        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(Color.rgb(150,163,174));canvas.drawCircle(hx,hy,dp(14),paint);paint.setStyle(Paint.Style.FILL);
+        text(canvas,"⌂",hx,hy+dp(5),14,Color.rgb(52,66,78),true,Paint.Align.CENTER);
+    }
+    private boolean viewCubeTap(float x,float y) {
+        if(viewCubeX<0||!isInsideViewport(x,y))return false;
+        if(Math.hypot(x-(viewCubeX-dp(52)),y-(viewCubeY-dp(40)))<dp(20)){applyStandardView("Izometryczny");invalidate();return true;}
+        String view=ViewCube.hit(cameraYaw,cameraPitch,viewCubeX,viewCubeY,viewCubeHalf,x,y);
+        if(view==null)return false;
+        performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);applyStandardView(view);invalidate();return true;
+    }
     private void drawAxis(Canvas canvas, float x, float y) {
         paint.setStrokeWidth(dp(2));
         paint.setColor(Color.rgb(220, 60, 60)); canvas.drawLine(x, y, x + dp(30), y, paint);
