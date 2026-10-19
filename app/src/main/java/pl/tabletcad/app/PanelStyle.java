@@ -60,7 +60,10 @@ public final class PanelStyle {
         LinearLayout row=new LinearLayout(c);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);
         TextView heading=new TextView(c);heading.setText(title);heading.setTextColor(INK);heading.setTextSize(17);heading.setTypeface(Typeface.DEFAULT_BOLD);
         row.addView(heading,new LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1));
-        TextView x=new TextView(c);x.setText("✕");x.setTextSize(18);x.setTextColor(MUTED);x.setGravity(Gravity.CENTER);x.setContentDescription("Zamknij panel");
+        android.view.View x=new android.view.View(c){
+            final android.graphics.Paint paint=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(android.graphics.Canvas canvas){super.onDraw(canvas);Glyphs.close(canvas,paint,getWidth()/2f,getHeight()/2f,dp(c,6.5f),MUTED,dp(c,1.8f));}
+        };x.setContentDescription("Zamknij panel");
         x.setBackground(ripple(c,shape(c,Color.TRANSPARENT,0,22),Color.argb(40,0,0,0)));x.setClickable(true);x.setOnClickListener(v->close.run());
         row.addView(x,new LinearLayout.LayoutParams((int)dp(c,44),(int)dp(c,44)));
         return row;
