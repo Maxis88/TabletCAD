@@ -34,6 +34,7 @@ public final class MainActivity extends Activity {
         if(report!=null){prefs.edit().putLong("seen",System.currentTimeMillis()).apply();
             Toast.makeText(this,"Poprzednie uruchomienie zakończyło się błędem. Raport: Android/data/pl.tabletcad.app/files/"+CrashReport.NAME,Toast.LENGTH_LONG).show();}
         requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().setDecorFitsSystemWindows(false);
         workspace = new CadWorkspaceView(this, new CadWorkspaceView.FileRequestListener() {
             @Override public void requestExport(String format) { requestExportFile(format); }
             @Override public void requestOpenStep() {
@@ -54,7 +55,8 @@ public final class MainActivity extends Activity {
         WindowInsetsController insetsController =
             getWindow().getDecorView().getWindowInsetsController();
         if (insetsController != null) {
-            insetsController.hide(WindowInsets.Type.statusBars());
+            insetsController.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            insetsController.hide(WindowInsets.Type.systemBars());
         }
     }
 

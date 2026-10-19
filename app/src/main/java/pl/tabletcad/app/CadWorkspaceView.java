@@ -45,8 +45,8 @@ public final class CadWorkspaceView extends View {
     private int bottomSystemInset;
 
     @Override public WindowInsets onApplyWindowInsets(WindowInsets insets) {
-        bottomSystemInset = insets.getInsets(WindowInsets.Type.navigationBars()
-            | WindowInsets.Type.mandatorySystemGestures()).bottom;
+        bottomSystemInset = insets.getInsets(WindowInsets.Type.navigationBars()).bottom;
+        layoutPropertyEditor();
         invalidate();
         return super.onApplyWindowInsets(insets);
     }
@@ -250,8 +250,27 @@ public final class CadWorkspaceView extends View {
 
     private float viewportRight() { return getWidth() - (propertyEditor!=null ? dp(PANEL_DP) : propertiesVisible() ? dp(252) : 0); }
 
+    /** History is application chrome, independent of either side panel. */
+    private float timelineTop() { return getHeight() - dp(62) - bottomSystemInset; }
+
+    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh) {
+        super.onSizeChanged(w,h,oldw,oldh);
+        layoutPropertyEditor();
+    }
+
+    /** Keep native panels above history after rotation, keyboard or system-bar changes. */
+    private void layoutPropertyEditor() {
+        if(propertyEditor==null||propertyEditor.getChildCount()==0)return;
+        View body=propertyEditor.getChildAt(0);
+        body.measure(MeasureSpec.makeMeasureSpec((int)dp(PANEL_DP),MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(0,MeasureSpec.UNSPECIFIED));
+        android.widget.FrameLayout.LayoutParams p=(android.widget.FrameLayout.LayoutParams)propertyEditor.getLayoutParams();
+        int height=Math.min(body.getMeasuredHeight(),Math.max(0,(int)(timelineTop()-viewTop())));
+        if(p.height!=height){p.height=height;propertyEditor.setLayoutParams(p);}
+    }
+
     private float maxTimelineScroll() {
-        return Math.max(0, leftWidth() + dp(116) + CadTimeline.entries(project).size() * dp(64) - viewportRight());
+        return Math.max(0, dp(116) + CadTimeline.entries(project).size() * dp(64) - (getWidth()-dp(10)));
     }
     private final List<double[]> arcDraft=new ArrayList<>();
     private SketchPrimitive threePointPreview;
@@ -410,7 +429,7 @@ public final class CadWorkspaceView extends View {
             body.measure(View.MeasureSpec.makeMeasureSpec((int)dp(PANEL_DP),View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
             android.widget.FrameLayout.LayoutParams layout=new android.widget.FrameLayout.LayoutParams(
-                (int)dp(PANEL_DP),Math.min(body.getMeasuredHeight(),Math.max((int)dp(100),getHeight()-(int)viewTop()-bottomSystemInset)));
+                (int)dp(PANEL_DP),Math.min(body.getMeasuredHeight(),Math.max(0,(int)(timelineTop()-viewTop()))));
             layout.gravity=android.view.Gravity.TOP|android.view.Gravity.RIGHT;layout.topMargin=(int)viewTop();
             ((android.widget.FrameLayout)getParent()).addView(propertyEditor,layout);
             panelDismiss=close;
@@ -487,14 +506,14 @@ public final class CadWorkspaceView extends View {
                 if(SketchTransactions.active(project)&&e.getY()<topBar()&&e.getX()<toolbarX()) {
                     showSketchSessionActions();return true;
                 }
-                if(!project.threePointDraft.isEmpty()&&(e.getX()<leftWidth()||(e.getY()<topBar()&&e.getX()<toolbarX()))) {showThreePointActions(null);return true;}
-                if(!arcDraft.isEmpty()&&(e.getX()<leftWidth()||(e.getY()<topBar()&&e.getX()<toolbarX()))) {showArcDraftActions(null);return true;}
-                if(!project.polylineDraft.isEmpty() && ((e.getX()<leftWidth()&&e.getY()>topBar())
+                if(!project.threePointDraft.isEmpty()&&((e.getX()<leftWidth()&&e.getY()<timelineTop())||(e.getY()<topBar()&&e.getX()<toolbarX()))) {showThreePointActions(null);return true;}
+                if(!arcDraft.isEmpty()&&((e.getX()<leftWidth()&&e.getY()<timelineTop())||(e.getY()<topBar()&&e.getX()<toolbarX()))) {showArcDraftActions(null);return true;}
+                if(!project.polylineDraft.isEmpty() && ((e.getX()<leftWidth()&&e.getY()>topBar()&&e.getY()<timelineTop())
                         ||(e.getY()<topBar()&&e.getX()>getWidth()-dp(330)))) {
                     showPolylineActions(null);return true;
                 }
                 if(mode.equals("Szkic")&&(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn"))&&sketchPlaneChosen
-                        && e.getX()>getWidth()-dp(234)&&e.getY()>topBar()) {
+                        && e.getX()>getWidth()-dp(234)&&e.getY()>topBar()&&e.getY()<timelineTop()) {
                     float y=e.getY()+propertiesShift();
                     if(y>=dp(374)&&y<=dp(422))finishPolyline(true);
                     else if(y>=dp(432)&&y<=dp(480))finishPolyline(false);
@@ -503,22 +522,22 @@ public final class CadWorkspaceView extends View {
                     return true;
                 }
                 if(e.getX()<leftWidth() || e.getY()>getHeight()-dp(68)-bottomSystemInset) closePropertyEditor();
-                float historyY = getHeight() - dp(62) - bottomSystemInset;
-                if (e.getX() >= leftWidth() && e.getX() <= leftWidth()+dp(104) && e.getY() >= historyY) {
+                float historyY = timelineTop();
+                if (e.getX() >= 0 && e.getX() <= dp(104) && e.getY() >= historyY) {
                     if(!arcDraft.isEmpty()){
-                        if(e.getX()<leftWidth()+dp(52)){arcDraft.remove(arcDraft.size()-1);arcPreview=null;operationMessage="Cofnięto punkt rozpoczętego łuku";}
+                        if(e.getX()<dp(52)){arcDraft.remove(arcDraft.size()-1);arcPreview=null;operationMessage="Cofnięto punkt rozpoczętego łuku";}
                         else operationMessage="Zakończ lub anuluj rozpoczęty łuk przed Ponów";
                         invalidate();return true;
                     }
-                    if (e.getX() < leftWidth()+dp(52)) undo(); else redo();
+                    if (e.getX() < dp(52)) undo(); else redo();
                     return true;
                 }
-                if (e.getY() >= historyY && e.getX() >= leftWidth()+dp(116)
-                        && e.getX() < viewportRight()) {
+                if (e.getY() >= historyY && e.getX() >= dp(116)
+                        && e.getX() < getWidth()) {
                     if(!project.threePointDraft.isEmpty()){showThreePointActions(null);return true;}
                     if(!arcDraft.isEmpty()){showArcDraftActions(null);return true;}
                     if(!project.polylineDraft.isEmpty()){showPolylineActions(null);return true;}
-                    int index = (int)((e.getX() - leftWidth() - dp(116) + timelineScroll) / dp(64));
+                    int index = (int)((e.getX() - dp(116) + timelineScroll) / dp(64));
                     List<CadTimeline.Item> items=CadTimeline.entries(project);
                     if(index>=0&&index<items.size()) {
                         CadTimeline.Item item=items.get(index);
@@ -638,10 +657,10 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             }
 
             @Override public void onLongPress(MotionEvent e) {
-                if(!treeCollapsed&&e.getX()<leftWidth()&&e.getY()>treeTop()){treeLongPress(e.getY());return;}
-                float historyY=getHeight()-dp(62)-bottomSystemInset;
-                if(e.getY()>=historyY&&e.getX()>=leftWidth()+dp(116)&&e.getX()<viewportRight()) {
-                    int index=(int)((e.getX()-leftWidth()-dp(116)+timelineScroll)/dp(64));List<CadTimeline.Item> items=CadTimeline.entries(project);
+                if(!treeCollapsed&&e.getX()<leftWidth()&&e.getY()>treeTop()&&e.getY()<timelineTop()){treeLongPress(e.getY());return;}
+                float historyY=timelineTop();
+                if(e.getY()>=historyY&&e.getX()>=dp(116)&&e.getX()<getWidth()) {
+                    int index=(int)((e.getX()-dp(116)+timelineScroll)/dp(64));List<CadTimeline.Item> items=CadTimeline.entries(project);
                     if(index>=0&&index<items.size()&&items.get(index).kind==CadTimeline.Kind.FEATURE) {
                         performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);selectedTimelineIndex=index;highlightFeature=items.get(index).featureIndex;showTimelineActions(items.get(index));invalidate();
                     }
@@ -656,9 +675,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             }
 
             @Override public boolean onScroll(MotionEvent e1, MotionEvent e2, float dx, float dy) {
-                if(e1!=null&&!treeCollapsed&&e1.getX()<leftWidth()&&e1.getY()>treeTop()) {treeScroll=Math.max(0,Math.min(Math.max(0,modelTreeRows.size()*dp(36)-(getHeight()-treeTop()-dp(16)-bottomSystemInset)),treeScroll+dy));invalidate();return true;}
-                if (e1 != null && e1.getX() >= leftWidth()+dp(104)
-                        && e1.getY() >= getHeight()-dp(62)-bottomSystemInset) {
+                if(e1!=null&&!treeCollapsed&&e1.getX()<leftWidth()&&e1.getY()>treeTop()&&e1.getY()<timelineTop()) {treeScroll=Math.max(0,Math.min(Math.max(0,modelTreeRows.size()*dp(36)-(timelineTop()-treeTop()-dp(16))),treeScroll+dy));invalidate();return true;}
+                if (e1 != null && e1.getX() >= dp(104)
+                        && e1.getY() >= timelineTop()) {
                     timelineScroll=Math.max(0,Math.min(maxTimelineScroll(),timelineScroll+dx));
                     invalidate();return true;
                 }
@@ -1080,7 +1099,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }
         text(canvas,"MODEL",dp(18),topBar()+dp(29),12,MUTED,true);text(canvas,"‹",left-dp(24),topBar()+dp(31),20,ACCENT,true,Paint.Align.CENTER);
         row(canvas,"Dokument",dp(18),topBar()+dp(60),true);
-        canvas.save();canvas.clipRect(0,treeTop(),left,getHeight()-bottomSystemInset);
+        canvas.save();canvas.clipRect(0,treeTop(),left,timelineTop());
         for(int i=0;i<modelTreeRows.size();i++) {
             ModelTree.Row entry=modelTreeRows.get(i);float y=treeTop()+i*dp(36)-treeScroll;if(y+dp(36)<treeTop()||y>getHeight())continue;
             if(entry.key.equals(selectedTreeKey)){paint.setColor(Color.rgb(226,242,240));canvas.drawRoundRect(new RectF(dp(8),y,dp(220),y+dp(34)),dp(6),dp(6),paint);}
@@ -6659,15 +6678,14 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     private void drawTimeline(Canvas canvas) {
-        float top = getHeight() - dp(62) - bottomSystemInset;
-        float left = leftWidth();
-        float right = viewportRight();
+        float top = timelineTop();
+        float left = 0;
+        float right = getWidth();
         canvas.save();canvas.clipRect(left,top,right,getHeight());
-        // Light strip under the dock keeps the system navigation area visually quiet.
-        paint.setStyle(Paint.Style.FILL);paint.setColor(BG);
+        paint.setStyle(Paint.Style.FILL);paint.setColor(CHROME);
         canvas.drawRect(left, top, right, getHeight(), paint);
-        paint.setColor(CHROME);
-        canvas.drawRoundRect(new RectF(left + dp(8), top + dp(3), right - dp(8), top + dp(59)), dp(14), dp(14), paint);
+        paint.setColor(CHROME_RAISED);
+        canvas.drawRect(left,top,right,top+dp(1),paint);
         text(canvas, "↶", left + dp(30), top + dp(36), 22, undoStack.isEmpty() ? Color.rgb(84, 98, 110) : Color.WHITE, true, Paint.Align.CENTER);
         text(canvas, "↷", left + dp(76), top + dp(36), 22, redoStack.isEmpty() ? Color.rgb(84, 98, 110) : Color.WHITE, true, Paint.Align.CENTER);
         paint.setColor(CHROME_RAISED);canvas.drawRect(left + dp(104), top + dp(14), left + dp(105), top + dp(48), paint);

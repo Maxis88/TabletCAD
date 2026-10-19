@@ -66,10 +66,25 @@ public final class WorkspaceUiProbe {
         }
         Bitmap bitmap=Bitmap.createBitmap(2200,1400,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(bitmap);int saves=canvas.getSaveCount();view.draw(canvas);
         check(canvas.getSaveCount()==saves,"drawing restores all canvas clipping state");
+        float historyTop=result(view,"timelineTop"),historyRange=result(view,"maxTimelineScroll");
+        int chrome=Color.rgb(20,26,33);
+        check(bitmap.getPixel(1,1399)==chrome&&bitmap.getPixel(2198,1399)==chrome,"history reaches both bottom corners without a grey footer");
+        set(view,"treeCollapsed",true);set(view,"mode","Edytuj szkic");view.draw(canvas);
+        check(result(view,"timelineTop")==historyTop&&result(view,"maxTimelineScroll")==historyRange,"history bounds and scroll range are independent of both side panels");
+        set(view,"treeCollapsed",false);set(view,"mode","Wybierz");
+        call(view,"showProjectMenu");view.draw(canvas);
+        android.widget.FrameLayout.LayoutParams panel=(android.widget.FrameLayout.LayoutParams)((View)field(view,"propertyEditor")).getLayoutParams();
+        check(panel.topMargin+panel.height<=historyTop+1,"native menu ends above history");
+        check(result(view,"maxTimelineScroll")==historyRange,"native menu does not shrink history");
+        call(view,"closePropertyEditor");
+        float treeOffset=(float)field(view,"treeScroll");
+        swipe(view,210*density,120*density,1400-40*density);
+        check((float)field(view,"timelineScroll")>0&&(float)field(view,"treeScroll")==treeOffset,"history swipe below tree scrolls history rather than tree");
+        set(view,"timelineScroll",0f);
         float yaw=(float)field(view,"cameraYaw"),pitch=(float)field(view,"cameraPitch");
         float y=1400-40*density;swipe(view,2000,800,y);float offset=(float)field(view,"timelineScroll");
         check(offset>0&&(float)field(view,"cameraYaw")==yaw&&(float)field(view,"cameraPitch")==pitch,"timeline swipe scrolls features without orbiting camera");
-        float x=400*density;int index=(int)((x-340*density+offset)/(64*density));
+        float x=400*density;int index=(int)((x-116*density+offset)/(64*density));
         CadTimeline.Item selected=CadTimeline.entries(project).get(index);check(selected.kind==CadTimeline.Kind.FEATURE,"scrolled test item is a model feature");
         tap(view,x,y);check(field(view,"propertyEditor")!=null&&visible(view),"single history tap selects and opens the native parameter editor");
         List<EditText> fields=new ArrayList<>();editors((View)field(view,"propertyEditor"),fields);

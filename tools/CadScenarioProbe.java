@@ -57,8 +57,8 @@ public final class CadScenarioProbe {
         ui(()->{view.invalidate();});instrumentation.waitForIdleSync();Thread.sleep(150);
         Object hit=dimension(view,entity,kind);check(hit!=null,"dimension label "+kind+" visible on sketch ("+state(view)+")");
         RectF b=(RectF)field(hit,"bounds");int[] o=new int[2];ui(()->view.getLocationOnScreen(o));
-        TabletFlowProbe.tap(b.centerX()+o[0],b.centerY()+o[1]);Thread.sleep(80);TabletFlowProbe.tap(b.centerX()+o[0],b.centerY()+o[1]);Thread.sleep(300);
-        View[] apply={null};ui(()->{View panel=(View)field(view,"propertyEditor");check(panel!=null,"double tap on "+kind+" opens value editor");InteractionFixProbe.input(panel).setText(value);apply[0]=WorkspaceUiProbe.button(panel,"Zastosuj");});
+        TabletFlowProbe.tap(b.centerX()+o[0],b.centerY()+o[1]);Thread.sleep(300);
+        View[] apply={null};ui(()->{View panel=(View)field(view,"propertyEditor");check(panel!=null,"single tap on "+kind+" opens value editor");InteractionFixProbe.input(panel).setText(value);apply[0]=WorkspaceUiProbe.button(panel,"Zastosuj");});
         TabletFlowProbe.click(apply[0]);instrumentation.waitForIdleSync();Thread.sleep(200);
     }
     static Spinner spinner(View v){if(v instanceof Spinner)return (Spinner)v;if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++){Spinner f=spinner(((ViewGroup)v).getChildAt(i));if(f!=null)return f;}return null;}

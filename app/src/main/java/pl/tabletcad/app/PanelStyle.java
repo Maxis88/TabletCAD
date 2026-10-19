@@ -81,7 +81,8 @@ public final class PanelStyle {
             android.widget.EditText e=(android.widget.EditText)view;e.setTextSize(16);e.setTextColor(INK);e.setBackgroundTintList(accent);e.setMinHeight((int)dp(c,46));
         } else if(view instanceof Button) {
             // Buttons placed inside forms by tools (e.g. "Do powierzchni…", "Powiel całą bryłę…").
-            Button b=(Button)view;if(!(b.getBackground() instanceof RippleDrawable))secondary(b);
+            // Android's default button also has a RippleDrawable; style it explicitly.
+            secondary((Button)view);
         } else if(view instanceof TextView) {
             TextView t=(TextView)view;if(t.getCurrentTextColor()==themeDefault){t.setTextColor(MUTED);t.setTextSize(13);t.setLineSpacing(0,1.1f);t.setPadding(t.getPaddingLeft(),(int)dp(c,6),t.getPaddingRight(),(int)dp(c,2));}
         } else if(view instanceof android.widget.SeekBar) {
