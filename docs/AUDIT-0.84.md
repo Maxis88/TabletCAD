@@ -19,8 +19,8 @@ instrumentacyjnych przeszły; uruchomienie na urządzeniu jest wymagane przed sc
   innej bryły (styk lub wyrównanie, z odstępem) jest zapisywane jako operacja przeliczana przy
   każdej zmianie modelu — bryła podąża za ścianą, do której ją dosunięto (np. po pogrubieniu
   płyty). Edycja odstępu i rodzaju z historii, podgląd na żywo; ściana, której nie da się
-  odnaleźć, jest zgłaszana. Dosunięcie walców (współosiowość) i wystąpień złożenia pozostaje
-  zapisem położenia. Test: `MateKernelProbe` (nowe sprawdzenia: podążanie za szerszą i grubszą
+  odnaleźć, jest zgłaszana. Trwała jest też **współosiowość** walców (np. sworzeń podąża za
+  przesuniętym otworem); dosunięcie wystąpień złożenia pozostaje zapisem położenia. Test: `MateKernelProbe` (nowe sprawdzenia: podążanie za szerszą i grubszą
   płytą, odstęp, zapis, referencje, utrata ściany).
 - **Ikony zamiast znaków Unicode** w elementach interfejsu: strzałki zwijania, cofnij/ponów,
   „więcej” w drzewie, dom w kostce nawigacyjnej, zamykanie panelu.
