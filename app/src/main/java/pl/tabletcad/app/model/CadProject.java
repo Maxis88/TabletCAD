@@ -469,5 +469,12 @@ public final class CadProject {
     public void pruneCoincidences() {
         java.util.Set<String> ids=new java.util.HashSet<>();for(SketchPrimitive p:sketch)ids.add(p.id);
         coincidences.removeIf(link->!ids.contains(link.a)||!ids.contains(link.b)||(!link.axis.isEmpty()&&!link.axis.startsWith("@")&&!ids.contains(link.axis)));
+        // A linked copy whose source or copy changed kind (split, converted) no longer has a rigid relation.
+        java.util.Map<String,SketchPrimitive> byId=new java.util.HashMap<>();for(SketchPrimitive p:sketch)byId.put(p.id,p);
+        coincidences.removeIf(link->link.kind.equals("rigid")&&!rigidCompatible(byId.get(link.a),byId.get(link.b)));
+    }
+    static boolean rigidCompatible(SketchPrimitive a,SketchPrimitive b) {
+        if(a==null||b==null||!a.type.equals(b.type)||a.curves!=null||b.curves!=null)return false;
+        return (a.vertices==null)==(b.vertices==null)&&(a.vertices==null||a.vertices.length==b.vertices.length);
     }
 }

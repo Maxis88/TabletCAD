@@ -2133,6 +2133,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             List<SketchPrimitive> pieces=SketchTrimmer.trim(project.sketch,target,point[0],point[1]);
             checkpoint();SketchTransactions.replace(project,target.id,pieces);
             int index=project.sketch.indexOf(target);project.sketch.remove(index);project.sketch.addAll(index,pieces);
+            project.coincidences.removeIf(l->l.kind.equals("rigid")&&l.uses(target.id));project.pruneCoincidences();
             selectedSketchId=null;projectRepository.save(project);
             operationMessage="Gotowe: usunięto fragment pomiędzy przecięciami. Możesz cofnąć zmianę.";
         } catch(IllegalArgumentException e){operationMessage=e.getMessage();}
@@ -2337,8 +2338,13 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 if(a!=Math.rint(a)||(!circular&&c!=Math.rint(c)))throw new IllegalArgumentException("Liczba elementów musi być całkowita");
                 copies=circular?SketchPattern.circular(selected,(int)a,c,e,b):SketchPattern.grid(selected,(int)a,(int)c,b,e);
                 checkpoint();project.sketch.addAll(copies);mode="Edytuj szkic";
+                final double pcx=c,pcy=e;
+                int linked=linkCopies(selected,copies,copy->{double[] p0=firstPoint(selected),q0=firstPoint(copy);
+                    if(!circular)return NonlinearConstraints.translation(q0[0]-p0[0],q0[1]-p0[1]);
+                    double[] p=p0,q=q0;if(Math.hypot(p[0]-pcx,p[1]-pcy)<1e-9){p=secondPoint(selected);q=secondPoint(copy);}
+                    return NonlinearConstraints.rotation(pcx,pcy,Math.toDegrees(Math.atan2(q[1]-pcy,q[0]-pcx)-Math.atan2(p[1]-pcy,p[0]-pcx)));});
                 projectRepository.save(project);
-                operationMessage="Utworzono szyk: "+(copies.size()+1)+" elementów. Kopie są niezależne. Zakończ zatwierdza szkic.";
+                operationMessage="Utworzono szyk: "+(copies.size()+1)+" elementów"+(linked==copies.size()?"; kopie powiązane ze źródłem ⧉.":linked>0?"; powiązano "+linked+" kopii.":"; kopie niezależne (tego typu geometrii nie można powiązać).")+" Zakończ zatwierdza szkic.";
             }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
             invalidate();
         }).show();
@@ -2381,6 +2387,19 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         }).show();
     }
 
+    private static double[] firstPoint(SketchPrimitive p){return p.vertices!=null?new double[]{p.vertices[0],p.vertices[1]}:new double[]{p.x1,p.y1};}
+    private static double[] secondPoint(SketchPrimitive p){return p.vertices!=null?new double[]{p.vertices[2],p.vertices[3]}:new double[]{p.x2,p.y2};}
+    /** Adds a "rigid" relation source → copy for every copy whose geometry satisfies it exactly; returns how many were linked. */
+    private int linkCopies(SketchPrimitive source,List<SketchPrimitive> copies,java.util.function.Function<SketchPrimitive,String> transform) {
+        int linked=0;
+        for(SketchPrimitive copy:copies) {
+            try {
+                SketchConstraints.Link link=new SketchConstraints.Link("rigid",source.id,0,copy.id,0,0,0,transform.apply(copy));
+                NonlinearConstraints.validate(project.sketch,link);project.coincidences.add(link);linked++;
+            }catch(IllegalArgumentException ignored){}
+        }
+        return linked;
+    }
     private void showSketchMirror() {
         List<SketchPrimitive> sources=new ArrayList<>();List<String> labels=new ArrayList<>();
         for(SketchPrimitive entity:project.sketch) {
@@ -2407,8 +2426,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     double[] axis=axes.get(w);
                     SketchPrimitive copy=SketchMirror.copy(source,UUID.randomUUID().toString(),axis[0],axis[1],axis[2],axis[3]);
                     checkpoint();project.sketch.add(copy);selectedSketchId=copy.id;mode="Edytuj szkic";
+                    int linked=linkCopies(source,java.util.Collections.singletonList(copy),c->NonlinearConstraints.mirror(axis[0],axis[1],axis[2],axis[3]));
                     projectRepository.save(project);
-                    operationMessage="Utworzono niezależną kopię lustrzaną. Więzy źródła nie są kopiowane. Zakończ zatwierdza szkic.";
+                    operationMessage=linked>0?"Utworzono powiązaną kopię lustrzaną ⧉ – zmiana źródła zmienia kopię (oś stała). Zakończ zatwierdza szkic.":"Utworzono niezależną kopię lustrzaną (tego typu geometrii nie można powiązać). Zakończ zatwierdza szkic.";
                 }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
                 invalidate();
             }).setNegativeButton("Anuluj",null).show();
@@ -2448,6 +2468,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     int index=project.sketch.indexOf(source);if(index<0)return;
                     checkpoint();SketchTransactions.replace(project,source.id,edges);
                     project.sketch.remove(index);project.sketch.addAll(index,edges);
+                    project.coincidences.removeIf(l->l.kind.equals("rigid")&&l.uses(source.id));project.pruneCoincidences();
                     selectedSketchId=edges.get(0).id;
                     projectRepository.save(project);
                     operationMessage="Rozbito figurę: "+edges.size()+" odcinków. Możesz je edytować, przycinać i usuwać.";

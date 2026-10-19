@@ -7,9 +7,9 @@ import pl.tabletcad.app.SketchConstraints.Link;
 /** Bounded connected-component nonlinear sketch solver. Never publishes an unconverged result. */
 public final class NonlinearConstraints {
     private NonlinearConstraints() {}
-    public static boolean relation(String kind){return Arrays.asList("parallel","perpendicular","equal","concentric","tangent","pointOn","symmetric","collinear").contains(kind);}
+    public static boolean relation(String kind){return Arrays.asList("parallel","perpendicular","equal","concentric","tangent","pointOn","symmetric","collinear","rigid").contains(kind);}
     public static boolean present(List<Link> links){for(Link l:links)if(relation(l.kind))return true;return false;}
-    public static String symbol(String kind){return kind.equals("parallel")?"∥":kind.equals("perpendicular")?"⊥":kind.equals("equal")?"=":kind.equals("concentric")?"◎":kind.equals("tangent")?"T":kind.equals("pointOn")?"P∈":kind.equals("collinear")?"⫽":kind.equals("symmetric")?"↔":kind;}
+    public static String symbol(String kind){return kind.equals("parallel")?"∥":kind.equals("perpendicular")?"⊥":kind.equals("equal")?"=":kind.equals("concentric")?"◎":kind.equals("tangent")?"T":kind.equals("pointOn")?"P∈":kind.equals("collinear")?"⫽":kind.equals("rigid")?"⧉":kind.equals("symmetric")?"↔":kind;}
     static final class Block {
         final SketchPrimitive source;final int start,size;
         Block(SketchPrimitive p,int offset){source=p;start=offset;size=p.curves!=null?0:p.vertices!=null?p.vertices.length:4;}
@@ -33,6 +33,28 @@ public final class NonlinearConstraints {
     private static double[] reflected(double x,double y,double[] axis) {
         double dx=axis[2]-axis[0],dy=axis[3]-axis[1],length=dx*dx+dy*dy;if(length<1e-10)throw new IllegalArgumentException("Zerowa oś symetrii");
         double t=((x-axis[0])*dx+(y-axis[1])*dy)/length;return new double[]{2*(axis[0]+t*dx)-x,2*(axis[1]+t*dy)-y};
+    }
+    /** Rigid transform of a "rigid" relation: "@T:cx,cy,degrees,dx,dy" (rotate about c, then translate) or "@M:ax,ay,bx,by" (mirror). */
+    static double[] transformOf(String axis) {
+        if(axis==null||!(axis.startsWith("@T:")||axis.startsWith("@M:")))throw new IllegalArgumentException("Niepoprawne przekształcenie powiązanej kopii");
+        String[] parts=axis.substring(3).split(",");double[] v=new double[parts.length];
+        try{for(int i=0;i<v.length;i++){v[i]=Double.parseDouble(parts[i]);if(!Double.isFinite(v[i]))throw new NumberFormatException();}}catch(NumberFormatException e){throw new IllegalArgumentException("Niepoprawne przekształcenie powiązanej kopii");}
+        if(axis.startsWith("@T:")&&v.length!=5||axis.startsWith("@M:")&&(v.length!=4||Math.hypot(v[2]-v[0],v[3]-v[1])<1e-9))throw new IllegalArgumentException("Niepoprawne przekształcenie powiązanej kopii");
+        return v;
+    }
+    public static String translation(double dx,double dy){return "@T:0,0,0,"+dx+","+dy;}
+    public static String rotation(double cx,double cy,double degrees){return "@T:"+cx+","+cy+","+degrees+",0,0";}
+    public static String mirror(double ax,double ay,double bx,double by){return "@M:"+ax+","+ay+","+bx+","+by;}
+    static double[] mapped(String axis,double x,double y) {
+        double[] t=transformOf(axis);
+        if(axis.startsWith("@T:")){double a=Math.toRadians(t[2]),c=Math.cos(a),s=Math.sin(a);return new double[]{t[0]+(x-t[0])*c-(y-t[1])*s+t[3],t[1]+(x-t[0])*s+(y-t[1])*c+t[4]};}
+        return reflected(x,y,t);
+    }
+    /** Data of the source block mapped by the relation, in the copy's storage convention. */
+    static double[] mappedData(Block a,double[] p,String axis) {
+        double[] r=new double[p.length];for(int i=0;i+1<p.length;i+=2){double[] q=mapped(axis,p[i],p[i+1]);r[i]=q[0];r[i+1]=q[1];}
+        if(a.source.type.equals("Prostokąt"))return new double[]{Math.min(r[0],r[2]),Math.min(r[1],r[3]),Math.max(r[0],r[2]),Math.max(r[1],r[3])};
+        return r;
     }
     private static void residual(Link l,Map<String,Block> blocks,double[] all,List<Double> out) {
         Block a=block(blocks,l.a),b=block(blocks,l.b);double[] p=a.data(all),q=b.data(all);
@@ -60,6 +82,11 @@ public final class NonlinearConstraints {
                 Block circle=a.circle()?a:b,edge=a.circle()?b:a;if(!circle.circle()||!edge.line())throw new IllegalArgumentException("Styczność: okrąg i linia lub dwa okręgi");
                 double[] c=circle.data(all),e=edge.data(all);double len=length(e);if(len<.001)throw new IllegalArgumentException("Zerowa linia");
                 double distance=((c[0]-e[0])*(e[3]-e[1])-(c[1]-e[1])*(e[2]-e[0]))/len;out.add(distance-(l.x<0?-1:1)*length(c));break;
+            }
+            case "rigid": {
+                if(!a.source.type.equals(b.source.type)||a.size!=b.size||a.size==0)throw new IllegalArgumentException("Powiązana kopia musi mieć ten sam typ geometrii co źródło");
+                double[] m=mappedData(a,p,l.axis);double[] c=b.source.type.equals("Prostokąt")?new double[]{Math.min(q[0],q[2]),Math.min(q[1],q[3]),Math.max(q[0],q[2]),Math.max(q[1],q[3])}:q;
+                for(int i=0;i<m.length;i++)out.add(m[i]-c[i]);break;
             }
             case "collinear": {
                 line(a);line(b);double d=length(p);if(d<.001||length(q)<.001)throw new IllegalArgumentException("Zerowa linia więzu");
@@ -103,8 +130,14 @@ public final class NonlinearConstraints {
         double[][] jac=new double[rows][size];
         for(int j=0;j<size;j++){double old=all[j],h=1e-6*Math.max(1,Math.abs(old));all[j]=old+h;double[] plus=residuals(blocks,all,used);all[j]=old-h;double[] minus=residuals(blocks,all,used);all[j]=old;for(int i=0;i<rows;i++)jac[i][j]=(plus[i]-minus[i])/(2*h);}
         int rank=rank(jac,size);
-        // A circle stores its radius as a second point: the direction of that point is not a real freedom.
-        int freedoms=Math.max(0,size-circles-rank);
+        // A circle stores its radius as a second point: turning that point about the centre is not a real freedom.
+        // Such gauge motions are subtracted only where the constraints leave them free: k − rank(J·G).
+        List<double[]> gauges=new ArrayList<>();
+        for(Block b:blocks.values())if(b.circle()){double[] g=new double[size];g[b.start+2]=-(all[b.start+3]-all[b.start+1]);g[b.start+3]=all[b.start+2]-all[b.start];gauges.add(g);}
+        double[][] jg=new double[rows][gauges.size()];
+        for(int i=0;i<rows;i++)for(int k=0;k<gauges.size();k++){double sum=0;double[] g=gauges.get(k);for(int j=0;j<size;j++)sum+=jac[i][j]*g[j];jg[i][k]=sum;}
+        int gaugeFree=gauges.size()-(rows==0?0:rank(jg,gauges.size()));
+        int freedoms=Math.max(0,size-gaugeFree-rank);
         return new Status(freedoms,rows-rank,contradictory,unanalysed);
     }
     static int rank(double[][] m,int columns) {
@@ -137,6 +170,7 @@ public final class NonlinearConstraints {
                 double length=length(q);q[2]=q[0]+length*Math.cos(angle);q[3]=q[1]+length*Math.sin(angle);put(b,all,q);break;
             }
             case "equal":if((a.line()&&b.line())||(a.circle()&&b.circle())) {double factor=length(p)/length(q);q[2]=q[0]+(q[2]-q[0])*factor;q[3]=q[1]+(q[3]-q[1])*factor;put(b,all,q);}break;
+            case "rigid":{double[] m=mappedData(a,p,l.axis);if(m.length==q.length){System.arraycopy(m,0,q,0,m.length);put(b,all,q);}break;}
             case "collinear": {
                 line(a);line(b);double dx=p[2]-p[0],dy=p[3]-p[1],dd=dx*dx+dy*dy;
                 for(int i=0;i<4;i+=2){double t=((q[i]-p[0])*dx+(q[i+1]-p[1])*dy)/dd;q[i]=p[0]+t*dx;q[i+1]=p[1]+t*dy;}
