@@ -13,6 +13,7 @@
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
 #include <GProp_PrincipalProps.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
@@ -120,8 +121,8 @@ int countShapes(const TopoDS_Shape& shape, TopAbs_ShapeEnum type) {
     return count;
 }
 
-std::vector<double> tessellatedTriangles(const TopoDS_Shape& shape) {
-    BRepMesh_IncrementalMesh mesher(shape, 0.15, false, 0.35, true);
+std::vector<double> tessellatedTriangles(const TopoDS_Shape& shape,double linear=0.15,double angular=0.35) {
+    BRepMesh_IncrementalMesh mesher(shape, linear, false, angular, true);
     mesher.Perform();
     if (!mesher.IsDone()) return {};
 
@@ -1306,7 +1307,7 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         jdouble radius, jdoubleArray javaBase, jdoubleArray javaFeatures, jstring javaExportPath,
         jstring javaSourceStep, jint queryMode) {
     kernelReset();
-    if((queryMode<0||queryMode>3)&&queryMode!=6&&queryMode!=8&&queryMode!=9&&queryMode!=10&&queryMode!=11&&queryMode!=12)return env->NewDoubleArray(0);
+    if((queryMode<0||queryMode>3)&&queryMode!=6&&queryMode!=8&&queryMode!=9&&queryMode!=10&&queryMode!=11&&queryMode!=12&&queryMode!=13)return env->NewDoubleArray(0);
     if(queryMode==9&&!g_sectionActive){kernelFailAt(-2,"Brak płaszczyzny przekroju");return env->NewDoubleArray(0);}
     if (javaFeatures == nullptr || width <= 0 || height <= 0 || depth <= 0) {
         kernelFailAt(-1,"Niepoprawne wymiary bryły bazowej");
@@ -1460,6 +1461,19 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
             if(queryMode==8&&!cylinders.empty()){info.push_back(-8);info.push_back(static_cast<double>(cylinders.size()/15));info.push_back(0);info.insert(info.end(),cylinders.begin(),cylinders.end());}
             if(queryMode==8){std::vector<double> mesh=tessellatedTriangles(shape);if(mesh.empty()){kernelFailAt(-2,"Triangulacja bryły nie powiodła się");return env->NewDoubleArray(0);}std::vector<double> combined;combined.reserve(1+mesh.size()+info.size());combined.push_back(static_cast<double>(mesh.size()));combined.insert(combined.end(),mesh.begin(),mesh.end());combined.insert(combined.end(),info.begin(),info.end());info=std::move(combined);}
             jdoubleArray result=env->NewDoubleArray(static_cast<jsize>(info.size()));if(result&&!info.empty())env->SetDoubleArrayRegion(result,0,static_cast<jsize>(info.size()),info.data());return result;
+        }
+        if(queryMode==13) {
+            // Export tessellation with the requested chordal (mm) and angular (rad) deflection, on a copy so the
+            // display triangulation of the cached shape is not refined. Result: [n, mesh(n), per face: face, body].
+            if(g_queryArguments.size()!=2||!(g_queryArguments[0]>=0.0005&&g_queryArguments[0]<=5)||!(g_queryArguments[1]>=0.01&&g_queryArguments[1]<=1.0)){kernelFailAt(-2,"Niepoprawna dokładność siatki eksportu");return env->NewDoubleArray(0);}
+            BRepBuilderAPI_Copy copier(shape,true,false);const TopoDS_Shape copy=copier.Shape();
+            std::vector<double> mesh=tessellatedTriangles(copy,g_queryArguments[0],g_queryArguments[1]);
+            if(mesh.empty()){kernelFailAt(-2,"Triangulacja eksportu nie powiodła się");return env->NewDoubleArray(0);}
+            if(bodies.empty())bodies[1]=shape;
+            std::vector<double> info;int face=0;
+            for(TopExp_Explorer e(shape,TopAbs_FACE);e.More();e.Next()){face++;int bodyId=1;for(const auto& body:bodies){bool found=false;for(TopExp_Explorer g(body.second,TopAbs_FACE);g.More();g.Next())if(e.Current().IsSame(g.Current())){found=true;break;}if(found){bodyId=body.first;break;}}info.push_back(face);info.push_back(bodyId);}
+            std::vector<double> combined;combined.reserve(1+mesh.size()+info.size());combined.push_back(static_cast<double>(mesh.size()));combined.insert(combined.end(),mesh.begin(),mesh.end());combined.insert(combined.end(),info.begin(),info.end());
+            jdoubleArray result=env->NewDoubleArray(static_cast<jsize>(combined.size()));if(result)env->SetDoubleArrayRegion(result,0,static_cast<jsize>(combined.size()),combined.data());return result;
         }
         if(queryMode==11||queryMode==12) {
             if(bodies.empty())bodies[1]=shape;

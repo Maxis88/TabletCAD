@@ -108,6 +108,12 @@ public final class NativeCadEngine {
         try{return nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,12);}finally{nativeSetQueryArguments(null);}
     }
     private static native void nativeSetQueryArguments(double[] values);
+    /** Export tessellation [n, mesh(n), face, body …] with chordal deviation [mm] and angular deviation [°]. */
+    public static double[] exportMesh(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep,double deflection,double angleDegrees) {
+        if(!LOADED)return new double[0];
+        nativeSetQueryArguments(new double[]{deflection,Math.toRadians(angleDegrees)});
+        try{return nativeEvaluateFeatures(width,height,depth,radius,base,features,null,sourceStep,13);}finally{nativeSetQueryArguments(null);}
+    }
 
     /** Exact OCCT volume, area, centroid XYZ, solid count and face count (mm units). */
     public static double[] bodyProperties(double width,double height,double depth,double radius,

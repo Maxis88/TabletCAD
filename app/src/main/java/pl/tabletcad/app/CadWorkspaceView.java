@@ -153,6 +153,8 @@ public final class CadWorkspaceView extends View {
     /** View-only display style; never changes the document or the B-Rep. */
     private static final int DISPLAY_SHADED=0,DISPLAY_EDGES=1,DISPLAY_TRANSPARENT=2;
     private int displayMode=DISPLAY_SHADED;
+    /** 3D printing view: faces that need supports (steeper than the project overhang angle, not on the bed) are red. */
+    private boolean overhangView;
     /** View-only section plane (point xyz, normal xyz) and its OCCT result for the current mesh. */
     private double[] sectionPlane;private CadModelResult sectionResult;private double[] sectionSource;private GeometryPreviewWorker sectionWorker;
     private boolean showingSection(){return sectionPlane!=null&&sectionResult!=null&&featurePreview==null;}
@@ -1297,6 +1299,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         for (ProjectedTriangle triangle : projectedTriangles) {
             int color;
             if (highlighted(triangle)) color=Color.rgb(255,190,70);
+            else if(overhangView&&overhangTriangle(triangle))color=Color.rgb(226,88,72);
             else color=meshFaceColor(triangle);
             for(int i=0;i<3;i++){surfaceVertices[position++]=triangle.sx[i];surfaceVertices[position++]=triangle.sy[i];surfaceColors[colorIndex++]=color;}
         }
@@ -2889,6 +2892,14 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         point.sy = cy - (float)(ry * scale * perspective);
     }
 
+    private double overhangBed=Double.NaN;private double[] overhangSource;
+    private double[] displayedMeshForOverhang(){return featurePreview!=null?featurePreview:showingSection()?sectionResult.mesh:nativeMesh;}
+    private boolean overhangTriangle(ProjectedTriangle triangle) {
+        double[] mesh=displayedMeshForOverhang();int o=triangle.meshIndex*13;if(mesh==null||o+12>=mesh.length)return false;
+        if(overhangSource!=mesh){overhangSource=mesh;double min=Double.POSITIVE_INFINITY;for(int i=0;i+12<mesh.length;i+=13)for(int k=2;k<9;k+=3)min=Math.min(min,mesh[i+k]);overhangBed=min;}
+        if(Math.abs(mesh[o+2]-overhangBed)<1e-3&&Math.abs(mesh[o+5]-overhangBed)<1e-3&&Math.abs(mesh[o+8]-overhangBed)<1e-3)return false;// lies on the bed
+        return PrintExport.overhang(mesh[o+11],project.overhangAngle);
+    }
     private int meshFaceColor(ProjectedTriangle triangle) {
         int shade = 207 + (int)Math.round(22.0 * Math.abs(triangle.nz)
             + 9.0 * Math.abs(triangle.ny));
@@ -3857,6 +3868,17 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             operationMessage="Zapisano materiał";showBodyProperties();
         }catch(Exception error){operationMessage="Nie zapisano gęstości: "+error.getMessage();}
         invalidate();
+    }
+
+    /** Rotates the body of the selected planar face so the face lies on the build plate (Z = 0), as history operations. */
+    private void layFlatSelectedFace() {
+        double[] face=selectedPlanarFace();
+        if(face==null||project.importedMeshSource!=null){operationMessage="Zaznacz płaską ścianę bryły, na której ma leżeć na stole drukarki";invalidate();return;}
+        try {
+            int body=faceBodies.getOrDefault(selectedFace,1);String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
+            for(double[] record:PrintExport.layFlat(new double[]{face[0],face[1],face[2]},new double[]{face[3],face[4],face[5]})){next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
+            BodyGraph.validate(next);commitProjectAsync(next,baseline,"Położono "+BodyGraph.name(next,body)+" wskazaną ścianą na stole (Z = 0)");
+        }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
     }
 
     /** Minimum distance and interference (overlap volume) between two bodies. */
@@ -5582,8 +5604,27 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         cameraDistance = Math.max(420.0, modelRadius * 4.0);
     }
 
+    private void showExportQuality() {
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        List<String> presets=new ArrayList<>();for(int i=0;i<PrintExport.PRESETS.length;i++)presets.add(PrintExport.PRESETS[i]+" · "+PrintExport.VALUES[i][0]+" mm / "+(int)PrintExport.VALUES[i][1]+"°");presets.add("Własna");
+        int current=presets.size()-1;for(int i=0;i<PrintExport.VALUES.length;i++)if(PrintExport.VALUES[i][0]==project.exportDeflection&&PrintExport.VALUES[i][1]==project.exportAngle)current=i;
+        android.widget.Spinner preset=choice(form,"Dokładność siatki STL / OBJ / 3MF",presets,current);
+        EditText deflection=labeledCoordinate(form,"Odchyłka cięciwy [mm]",project.exportDeflection),angle=labeledCoordinate(form,"Odchyłka kątowa [°]",project.exportAngle);
+        EditText overhang=labeledCoordinate(form,"Nawis bez podpór – kąt od pionu [°] (widok Nawisy)",project.overhangAngle);
+        android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Mniejsza odchyłka = gładsze otwory i zaokrąglenia, ale większy plik. Widok na ekranie nie zmienia się.");form.addView(info);
+        preset.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onItemSelected(android.widget.AdapterView<?> parent,View v,int position,long id){if(position<PrintExport.VALUES.length){setLengthText(deflection,PrintExport.VALUES[position][0]);angle.setText(String.valueOf(PrintExport.VALUES[position][1]));}}public void onNothingSelected(android.widget.AdapterView<?> parent){}});
+        new PropertyBuilder().setTitle("Jakość eksportu i druk 3D").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zapisz",(d,w)->{
+            try {
+                double dv=parseCoordinate(deflection),av=parseCoordinate(angle),ov=parseCoordinate(overhang);PrintExport.validate(dv,av);
+                if(!(ov>=10&&ov<=80))throw new IllegalArgumentException("Kąt nawisu: 10–80°");
+                if(commitModelChange(()->{project.exportDeflection=dv;project.exportAngle=av;project.overhangAngle=ov;}))operationMessage="Zapisano jakość eksportu: "+formatMm(dv)+" / "+av+"°";
+            }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+            invalidate();
+        }).show();
+    }
+
     private void showExportPicker() {
-        String[] formats = {"STEP — precyzyjna bryła", "STL — siatka binarna", "STL — tekst ASCII", "DXF — szkic 2D", "PDF — arkusz techniczny A4", "OBJ — siatka, jednostki mm"};
+        String[] formats = {"STEP — precyzyjna bryła", "STL — siatka binarna", "STL — tekst ASCII", "DXF — szkic 2D", "PDF — arkusz techniczny A4", "OBJ — siatka, jednostki mm", "3MF — druk 3D, bryły jako obiekty", "Jakość siatki eksportu…"};
         new PropertyBuilder()
             .setTitle("Eksportuj projekt")
             .setItems(formats, (dialog, which) -> {
@@ -5591,8 +5632,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     operationMessage="Eksport STEP wymaga bryły B-Rep; siatkę zapisz jako STL";
                     invalidate(); return;
                 }
+                if(which==7){showExportQuality();return;}
                 if (fileRequestListener != null) {
-                    fileRequestListener.requestExport(which == 0 ? "step" : which == 1 ? "stl" : which == 2 ? "stla" : which==3 ? "dxf" : which==4 ? "pdf" : "obj");
+                    fileRequestListener.requestExport(which == 0 ? "step" : which == 1 ? "stl" : which == 2 ? "stla" : which==3 ? "dxf" : which==4 ? "pdf" : which==5 ? "obj" : "3mf");
                 }
             })
             .setNegativeButton("Anuluj", null)
@@ -5850,12 +5892,32 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         finishModelImport("Gotowe: wczytano siatkę OBJ ("+mesh.length/13+" trójkątów)");
     }
 
-    public void writeObj(OutputStream output) throws IOException {
+    /** Export-quality tessellation of the B-Rep model (project deviations); an imported mesh is exported as is. */
+    private PrintExport.Mesh exportMesh() throws IOException {
         if(SketchTransactions.active(project)) throw new IOException("Zakończ albo anuluj edycję szkicu przed eksportem");
-        ObjExporter.write(output,nativeMesh);
+        if(project.importedMeshSource!=null||!project.hasSolid()){double[] copy=nativeMesh.clone();if(copy.length==0)throw new IOException("Brak geometrii do eksportu");return PrintExport.parse(prepend(copy));}
+        double[] packed=NativeCadEngine.exportMesh(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),
+            project.importedStep?importedSourceFile().getAbsolutePath():null,project.exportDeflection,project.exportAngle);
+        if(packed.length==0)throw new IOException(previewFailure("Triangulacja eksportu nie powiodła się"));
+        PrintExport.Mesh mesh=PrintExport.parse(packed);
+        // Hidden bodies are not exported.
+        if(!project.hiddenBodies.isEmpty()){List<Double> kept=new ArrayList<>();for(int i=0;i+13<=mesh.triangles.length;i+=13)if(!project.hiddenBodies.contains(mesh.faceBodies.getOrDefault((int)mesh.triangles[i+12],1)))for(int k=0;k<13;k++)kept.add(mesh.triangles[i+k]);
+            double[] t=new double[kept.size()];for(int i=0;i<t.length;i++)t[i]=kept.get(i);if(t.length==0)throw new IOException("Wszystkie bryły są ukryte");
+            PrintExport.Mesh visible=PrintExport.parse(prepend(t));visible.faceBodies.putAll(mesh.faceBodies);return visible;}
+        return mesh;
+    }
+    private static double[] prepend(double[] mesh){double[] r=new double[mesh.length+1];r[0]=mesh.length;System.arraycopy(mesh,0,r,1,mesh.length);return r;}
+    public void writeObj(OutputStream output) throws IOException {
+        ObjExporter.write(output,exportMesh().triangles);
+    }
+    public void write3mf(OutputStream output) throws IOException {
+        PrintExport.Mesh mesh=exportMesh();java.util.Map<Integer,String> names=new java.util.HashMap<>();
+        for(int id:BodyGraph.bodies(project))names.put(id,BodyGraph.name(project,id));
+        PrintExport.write3mf(mesh.byBody(),names,output);
     }
 
     public void writeBinaryStl(OutputStream output) throws IOException {
+        double[] nativeMesh=exportMesh().triangles;
         int count = nativeMesh.length / 13;
         byte[] header = new byte[80];
         byte[] title = "TabletCAD binary STL".getBytes(StandardCharsets.US_ASCII);
@@ -5877,6 +5939,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     public void writeAsciiStl(OutputStream output) throws IOException {
+        double[] nativeMesh=exportMesh().triangles;
         Writer writer=new OutputStreamWriter(output,StandardCharsets.US_ASCII);
         writer.write("solid TabletCAD\n");
         for(int i=0;i+12<nativeMesh.length;i+=13) {
@@ -6049,6 +6112,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if (tool.equals("Cieniowanie")) return displayMode==DISPLAY_SHADED;
         if (tool.equals("Krawędzie")) return displayMode==DISPLAY_EDGES;
         if (tool.equals("Przezroczystość")) return displayMode==DISPLAY_TRANSPARENT;
+        if (tool.equals("Nawisy")) return overhangView;
         if (tool.equals("Powłoka")) return mode.equals("Powłoka");
         if (tool.equals("Otwór")) return mode.equals("Otwór");
         if (tool.equals("Pochyl ściany")) return mode.equals("Pochyl ściany");
@@ -6163,6 +6227,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(tool.equals("Obrót profilu")){chooseRevolveProfile();return;}
         if(tool.equals("Właściwości bryły")){showBodyProperties();return;}
         if(tool.equals("Odległość brył")){showBodyDistance();return;}
+        if(tool.equals("Połóż na stole")){layFlatSelectedFace();return;}
         for(String command:DATUM_COMMANDS)if(tool.equals(command)){mode="Wybierz";showDatumEditor(command,null,null);return;}
         if(tool.equals("Zmierz kąt")||tool.equals("Pole ściany")) {
             if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Pomiar kątów i pól wymaga bryły B-Rep";invalidate();return;}
@@ -6176,6 +6241,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             applyStandardView(tool);invalidate();return;
         }
         if(tool.equals("Przekrój")){showSectionDialog();return;}
+        if(tool.equals("Nawisy")){overhangView=!overhangView;if(overhangView)displayMode=DISPLAY_SHADED;operationMessage=overhangView?"Nawisy: na czerwono ściany bardziej poziome niż "+new java.math.BigDecimal(project.overhangAngle).stripTrailingZeros().toPlainString()+"° od pionu (kierunek druku +Z); ściany na stole pominięte. Kąt: Eksportuj → Jakość siatki.":"Wyłączono widok nawisów";invalidate();return;}
         if(tool.equals("Cieniowanie")||tool.equals("Krawędzie")||tool.equals("Przezroczystość")) {
             displayMode=tool.equals("Cieniowanie")?DISPLAY_SHADED:tool.equals("Krawędzie")?DISPLAY_EDGES:DISPLAY_TRANSPARENT;
             operationMessage=tool.equals("Cieniowanie")?"Widok cieniowany":tool.equals("Krawędzie")?"Tryb krawędzi: ukryte krawędzie przerywane":"Tryb przezroczysty: widoczne ukryte krawędzie i ściany tylne";

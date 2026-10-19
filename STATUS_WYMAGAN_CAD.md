@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.78.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.79.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -14,6 +14,9 @@ edycji/kończenia/anulowania szkicu oraz usuwania cechy/encji. Błąd geometrii
 lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT-0.46.md.
 
 ## Działające podzbiory
+
+0.79.0: wstawianie przy znaczniku historii, wybór konstrukcji dotykiem, edycja szyku
+szkicu, eksport siatki z dokładnością, 3MF, nawisy, połóż na stole. Audyt: docs/AUDIT-0.79.md.
 
 0.78.0: powiązane (asocjacyjne) szyki i lustro szkicu. Audyt: docs/AUDIT-0.78.md.
 

@@ -37,6 +37,10 @@ public final class CadProject {
     public final java.util.Map<Integer,Double> bodyDensities=new java.util.TreeMap<>();
     /** Decimal places of lengths shown on the canvas (values are stored exactly in mm). */
     public int displayDecimals=3;
+    /** Mesh export (STL/OBJ/3MF) chordal deviation [mm] and angular deviation [°]. */
+    public double exportDeflection=.02,exportAngle=10;
+    /** 3D printing overhang check: maximum overhang angle from vertical [°]. */
+    public double overhangAngle=45;
     /** Named user parameters and the model values driven by them (see UserParameters). */
     public final List<pl.tabletcad.app.UserParameters.Parameter> parameters=new ArrayList<>();
     public final java.util.Map<String,String> parameterBindings=new java.util.LinkedHashMap<>();
@@ -143,6 +147,8 @@ public final class CadProject {
         try{pl.tabletcad.app.Units.validateDecimals(displayDecimals);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
         root.put("units", units);
         root.put("displayDecimals", displayDecimals);
+        try{pl.tabletcad.app.PrintExport.validate(exportDeflection,exportAngle);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
+        root.put("exportDeflection",exportDeflection).put("exportAngle",exportAngle).put("overhangAngle",overhangAngle);
         if(!parameters.isEmpty())root.put("parameters",pl.tabletcad.app.UserParameters.toJson(this));
         if(!parameterBindings.isEmpty())root.put("parameterBindings",new JSONObject(parameterBindings));
         if(!suppressedFeatures.isEmpty())root.put("suppressed",new JSONArray(suppressedFeatures));
@@ -332,6 +338,9 @@ public final class CadProject {
         JSONArray hidden=root.optJSONArray("hiddenBodies");if(hidden!=null)for(int i=0;i<hidden.length();i++)project.hiddenBodies.add(hidden.getInt(i));hidden=root.optJSONArray("hiddenSketchParts");if(hidden!=null)for(int i=0;i<hidden.length();i++)project.hiddenSketchParts.add(hidden.getString(i));
         JSONObject ranges=root.optJSONObject("extrusionExtents");if(ranges!=null){java.util.Iterator<String> keys=ranges.keys();while(keys.hasNext()){String key=keys.next();try {int index=Integer.parseInt(key);JSONArray range=ranges.getJSONArray(key);if(range.length()!=3||index<-1||index>=project.committedFeatures.size())throw new JSONException("Niepoprawny zakres wyciągania");double[] value={range.getDouble(0),range.getDouble(1),range.getDouble(2)};if(!Double.isFinite(value[0])||Math.abs(value[0])<.1||!Double.isFinite(value[1])||value[1]<0||value[1]>5000||(value[2]!=0&&value[2]!=1))throw new JSONException("Niepoprawny zakres wyciągania");project.extrusionExtents.put(index,value);}catch(NumberFormatException e){throw new JSONException("Niepoprawny indeks wyciągania");}}}
         try{pl.tabletcad.app.BodyGraph.validate(project);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
+        project.exportDeflection=root.optDouble("exportDeflection",.02);project.exportAngle=root.optDouble("exportAngle",10);project.overhangAngle=root.optDouble("overhangAngle",45);
+        try{pl.tabletcad.app.PrintExport.validate(project.exportDeflection,project.exportAngle);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
+        if(!(project.overhangAngle>=10&&project.overhangAngle<=80))throw new JSONException("Kąt nawisu: 10–80°");
         JSONObject densities=root.optJSONObject("bodyDensities");
         if(densities!=null){java.util.Iterator<String> keys=densities.keys();while(keys.hasNext()){String key=keys.next();double value=densities.getDouble(key);int body;
             try{body=Integer.parseInt(key);}catch(NumberFormatException e){throw new JSONException("Niepoprawny identyfikator bryły gęstości");}
