@@ -42,8 +42,8 @@ public final class FeatureRemoval {
             if(EdgeFillet.is(f)||EdgeChamfer.is(f))plan.consequences.add("Operacja nr "+(i+1)+" odnosi się do krawędzi; zostanie sprawdzona przy przeliczeniu");
         }
         // A removed body creator must not leave later operations without their target.
-        for(int i:gone)if(i<p.featureBodyTargets.size()&&(p.featureBodyTargets.get(i)==0||BodySplit.is(p.committedFeatures.get(i)))) {
-            int body=BodySplit.is(p.committedFeatures.get(i))?BodySplit.created(p.committedFeatures.get(i)):p.featureBodyOutputs.get(i);
+        for(int i:gone)if(i<p.featureBodyTargets.size()&&(p.featureBodyTargets.get(i)==0||BodyGraph.createdBody(p.committedFeatures.get(i))>0)) {
+            int body=BodyGraph.createdBody(p.committedFeatures.get(i))>0?BodyGraph.createdBody(p.committedFeatures.get(i)):p.featureBodyOutputs.get(i);
             for(int j=0;j<p.featureBodyTargets.size();j++)if(!gone.contains(j)&&j!=i&&(p.featureBodyTargets.get(j)==body||(BodyCombine.is(p.committedFeatures.get(j))&&BodyCombine.tool(p.committedFeatures.get(j))==body)))
                 throw new IllegalArgumentException("Operacja tworzy bryłę „"+BodyGraph.name(p,body)+"”, której używa operacja nr "+(j+1)+". Usuń najpierw operacje tej bryły.");
         }

@@ -55,7 +55,7 @@ public final class MainActivity extends Activity {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(format.equals("pdf") ? "application/pdf" : format.equals("step") ? "application/step"
-            : format.startsWith("stl") ? "model/stl" : format.equals("obj") ? "model/obj" : format.equals("3mf") ? "model/3mf" : "application/dxf");
+            : format.startsWith("stl") ? "model/stl" : format.equals("obj") ? "model/obj" : format.equals("3mf") ? "model/3mf" : format.equals("csv") ? "text/csv" : "application/dxf");
         intent.putExtra(Intent.EXTRA_TITLE, "TabletCAD-model." + (format.equals("stla") ? "stl" : format));
         startActivityForResult(intent, CREATE_EXPORT_FILE);
     }
@@ -89,6 +89,8 @@ public final class MainActivity extends Activity {
                 workspace.writeAsciiStl(output);
             } else if (pendingExportFormat.equals("obj")) {
                 workspace.writeObj(output);
+            } else if (pendingExportFormat.equals("csv")) {
+                workspace.writeBomCsv(output);
             } else if (pendingExportFormat.equals("3mf")) {
                 workspace.write3mf(output);
             } else if (pendingExportFormat.equals("dxf")) {

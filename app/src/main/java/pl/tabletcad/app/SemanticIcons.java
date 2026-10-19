@@ -147,7 +147,7 @@ public final class SemanticIcons {
     }
     /** Construction planes/axis/point and face measurement glyphs (planes drawn as parallelograms). */
     private static boolean drawConstruction(Canvas canvas,String id,float x,float y,float scale,int color) {
-        if(!java.util.Arrays.asList("Płaszczyzna odsunięta","Płaszczyzna pod kątem","Płaszczyzna przez 3 punkty","Oś konstrukcyjna","Punkt konstrukcyjny","Pole ściany","Elementy konstrukcyjne","Odległość brył","Nawisy","Połóż na stole").contains(id))return false;
+        if(!java.util.Arrays.asList("Płaszczyzna odsunięta","Płaszczyzna pod kątem","Płaszczyzna przez 3 punkty","Oś konstrukcyjna","Punkt konstrukcyjny","Pole ściany","Elementy konstrukcyjne","Odległość brył","Nawisy","Połóż na stole","Komponent","Nowy komponent","Wstaw wystąpienie","Dosuń ściany","Kolizje","Lista części").contains(id))return false;
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.6f);p.setStyle(Paint.Style.STROKE);p.setStrokeJoin(Paint.Join.ROUND);p.setStrokeCap(Paint.Cap.ROUND);
         canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
         if(id.equals("Płaszczyzna odsunięta")) {
@@ -168,6 +168,18 @@ public final class SemanticIcons {
         } else if(id.equals("Pole ściany")) {
             Path face=new Path();face.moveTo(-12,6);face.lineTo(-5,-7);face.lineTo(12,-7);face.lineTo(5,6);face.close();canvas.drawPath(face,p);
             canvas.save();canvas.clipPath(face);p.setStrokeWidth(1);for(int i=-20;i<20;i+=4)canvas.drawLine(i,8,i+10,-9,p);canvas.restore();
+        } else if(id.equals("Komponent")||id.equals("Nowy komponent")) {
+            canvas.drawRect(-11,-3,-1,7,p);canvas.drawRect(2,-9,12,1,p);p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));canvas.drawRoundRect(new RectF(-14,-12,14,10),3,3,p);p.setPathEffect(null);
+            if(id.equals("Nowy komponent")){canvas.drawLine(8,6,8,12,p);canvas.drawLine(5,9,11,9,p);}
+        } else if(id.equals("Wstaw wystąpienie")) {
+            canvas.drawRect(-12,-2,-2,8,p);p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));canvas.drawRect(2,-10,12,0,p);p.setPathEffect(null);
+            canvas.drawLine(-4,-4,1,-8,p);canvas.drawLine(1,-8,-2,-8,p);canvas.drawLine(1,-8,1,-5,p);
+        } else if(id.equals("Dosuń ściany")) {
+            canvas.drawRect(-12,-8,-3,8,p);canvas.drawRect(5,-8,12,8,p);canvas.drawLine(-1,0,4,0,p);canvas.drawLine(4,0,1,-3,p);canvas.drawLine(4,0,1,3,p);
+        } else if(id.equals("Kolizje")) {
+            canvas.drawRect(-12,-8,3,6,p);canvas.drawRect(-3,-3,12,11,p);Paint f=new Paint(p);f.setStyle(Paint.Style.FILL);f.setAlpha(110);canvas.drawRect(-3,-3,3,6,f);
+        } else if(id.equals("Lista części")) {
+            for(int i=0;i<4;i++){float yy=-9+i*6;canvas.drawRect(-12,yy-1.5f,-9,yy+1.5f,p);canvas.drawLine(-5,yy,12,yy,p);}
         } else if(id.equals("Połóż na stole")) {
             canvas.drawLine(-12,11,12,11,p);canvas.drawRect(-6,1,8,11,p);
             canvas.drawArc(new RectF(-12,-12,6,6),200,110,false,p);canvas.drawLine(1,-11,3,-7,p);canvas.drawLine(1,-11,-3,-9,p);

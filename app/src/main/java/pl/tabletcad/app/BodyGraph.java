@@ -30,9 +30,11 @@ public final class BodyGraph {
     public static void removeRoute(CadProject p,int index){Map<Integer,double[]> shifted=new LinkedHashMap<>();for(Map.Entry<Integer,double[]> e:p.extrusionExtents.entrySet())if(e.getKey()!=index)shifted.put(e.getKey()>index?e.getKey()-1:e.getKey(),e.getValue());p.extrusionExtents.clear();p.extrusionExtents.putAll(shifted);if(index<p.featureBodyTargets.size()){p.featureBodyTargets.remove(index);p.featureBodyOutputs.remove(index);}if(p.bodyGraphStart>index)p.bodyGraphStart--;}
     public static LinkedHashSet<Integer> bodies(CadProject p) {
         LinkedHashSet<Integer> ids=new LinkedHashSet<>();if(p.hasSolid())ids.add(1);
-        for(int i=0;i<p.featureBodyOutputs.size();i++){if(p.featureBodyTargets.get(i)==0)ids.add(p.featureBodyOutputs.get(i));if(i<p.committedFeatures.size()&&BodyCombine.consumes(p.committedFeatures.get(i)))ids.remove(BodyCombine.tool(p.committedFeatures.get(i)));if(i<p.committedFeatures.size()&&BodySplit.is(p.committedFeatures.get(i)))ids.add(BodySplit.created(p.committedFeatures.get(i)));}
+        for(int i=0;i<p.featureBodyOutputs.size();i++){if(p.featureBodyTargets.get(i)==0)ids.add(p.featureBodyOutputs.get(i));if(i<p.committedFeatures.size()&&BodyCombine.consumes(p.committedFeatures.get(i)))ids.remove(BodyCombine.tool(p.committedFeatures.get(i)));if(i<p.committedFeatures.size()&&createdBody(p.committedFeatures.get(i))>0)ids.add(createdBody(p.committedFeatures.get(i)));}
         if(p.featureOperation.equals("new")&&p.activeBodyOutput>0)ids.add(p.activeBodyOutput);return ids;
     }
+    /** Body created by a routed record (split part, instance), or 0. */
+    public static int createdBody(double[] f){return BodySplit.is(f)?BodySplit.created(f):BodyInstance.is(f)?BodyInstance.created(f):0;}
     public static String name(CadProject p,int id){return p.bodyNames.getOrDefault(id,"Bryła "+id);}
     public static int profileBody(CadProject p,String profile) {
         if(profile==null)return 0;if(profile.equals(p.featureBaseProfileId))return 1;
@@ -85,7 +87,7 @@ public final class BodyGraph {
         Set<Integer> ids=new HashSet<>();ids.add(1);int max=1;
         for(int i=0;i<p.featureBodyTargets.size();i++) {
             int target=p.featureBodyTargets.get(i),output=p.featureBodyOutputs.get(i);
-            if(target==-1){if(p.bodyGraphStart>=0&&i>=p.bodyGraphStart)throw new IllegalArgumentException("Brak celu operacji");if(FeaturePattern.is(p.committedFeatures.get(i))||ShellFeature.is(p.committedFeatures.get(i))||BodyCombine.is(p.committedFeatures.get(i))||BodySplit.is(p.committedFeatures.get(i)))throw new IllegalArgumentException("Szyk i powłoka wymagają celu w grafie brył");continue;}
+            if(target==-1){if(p.bodyGraphStart>=0&&i>=p.bodyGraphStart)throw new IllegalArgumentException("Brak celu operacji");if(FeaturePattern.is(p.committedFeatures.get(i))||ShellFeature.is(p.committedFeatures.get(i))||BodyCombine.is(p.committedFeatures.get(i))||createdBody(p.committedFeatures.get(i))>0)throw new IllegalArgumentException("Szyk i powłoka wymagają celu w grafie brył");continue;}
             if((FeaturePattern.is(p.committedFeatures.get(i))||ShellFeature.is(p.committedFeatures.get(i)))&&target<1)throw new IllegalArgumentException("Szyk i powłoka nie tworzą nowej bryły");
             if(target==0){if(!creates(p.committedFeatures.get(i))||ids.contains(output)||output<2)throw new IllegalArgumentException("Powtórzona bryła");ids.add(output);max=Math.max(max,output);}
             else if(!ids.contains(target)||target!=output)throw new IllegalArgumentException("Operacja odwołuje się do nieistniejącej bryły");
@@ -95,8 +97,8 @@ public final class BodyGraph {
                 if(target<1||tool==target||!ids.contains(tool))throw new IllegalArgumentException("Operacja na bryłach odwołuje się do nieistniejącej bryły");
                 if(BodyCombine.consumes(combine))ids.remove(tool);
             }
-            if(BodySplit.is(combine)) {
-                int created=BodySplit.created(combine);
+            if(createdBody(combine)>0) {
+                int created=createdBody(combine);
                 if(target<1||ids.contains(created)||created<2||!p.bodyUuids.containsKey(created))throw new IllegalArgumentException("Podział tworzy bryłę o powtórzonym identyfikatorze");
                 for(int j=0;j<i;j++)if(p.featureBodyOutputs.get(j)==created)throw new IllegalArgumentException("Podział tworzy bryłę o powtórzonym identyfikatorze");
                 ids.add(created);max=Math.max(max,created);

@@ -10,9 +10,13 @@ public final class ModelTree {
     /** Pseudo body id of the construction geometry group. */
     public static final int CONSTRUCTION=-1;
     public static final class Row {
-        public final int body;public final String sketchId,name,key,datum;public final JSONObject snapshot;public final Set<String> entities;
-        Row(int body,String id,String name,JSONObject snapshot,Set<String> ids){this(body,id,name,snapshot,ids,null);}
-        Row(int body,String id,String name,JSONObject snapshot,Set<String> ids,String datum){this.body=body;this.sketchId=id;this.name=name;this.snapshot=snapshot;this.entities=ids;this.datum=datum;key=datum!=null?"datum:"+datum:body+":"+(id==null?"body":id);}
+        public final int body;public final String sketchId,name,key,datum,component;public final JSONObject snapshot;public final Set<String> entities;
+        Row(int body,String id,String name,JSONObject snapshot,Set<String> ids){this(body,id,name,snapshot,ids,null,null);}
+        Row(int body,String id,String name,JSONObject snapshot,Set<String> ids,String datum){this(body,id,name,snapshot,ids,datum,null);}
+        Row(int body,String id,String name,JSONObject snapshot,Set<String> ids,String datum,String component){this.body=body;this.sketchId=id;this.name=name;this.snapshot=snapshot;this.entities=ids;this.datum=datum;this.component=component;
+            key=component!=null?"component:"+component:datum!=null?"datum:"+datum:body+":"+(id==null?"body":id);}
+        /** Header of an assembly component (its bodies follow). */
+        public boolean componentHeader(){return component!=null;}
         public boolean sketch(){return snapshot!=null;}
         public boolean datum(){return datum!=null;}
     }
@@ -32,10 +36,18 @@ public final class ModelTree {
                 if(geometry.length()==0&&snapshot.getString("id").equals(p.sketchId))scope.put(0,new LinkedHashSet<>());
                 for(Map.Entry<Integer,Set<String>> entry:scope.entrySet())parts.computeIfAbsent(entry.getKey(),k->new ArrayList<>()).add(new Row(entry.getKey(),snapshot.getString("id"),snapshot.optString("name","Szkic"),snapshot,entry.getValue()));
             }
-            List<Row> result=new ArrayList<>();for(Map.Entry<Integer,List<Row>> entry:parts.entrySet()) {
-                int body=entry.getKey();if(body==0&&entry.getValue().isEmpty())continue;
-                result.add(new Row(body,null,body==0?"Szkice nieprzypisane":BodyGraph.name(p,body),null,new LinkedHashSet<>()));
-                if(!collapsed.contains(body))result.addAll(entry.getValue());
+            List<Row> result=new ArrayList<>();
+            // Assembly components first: header, then their bodies; ungrouped bodies after them.
+            List<Integer> order=new ArrayList<>();Set<Integer> placed=new HashSet<>();
+            for(int ci=0;ci<p.components.size();ci++) {
+                Component c=p.components.get(ci);List<Integer> members=new ArrayList<>();for(int b:c.bodies)if(parts.containsKey(b))members.add(b);
+                int code=componentCode(ci);result.add(new Row(code,null,c.name+(c.instance()?" (wystąpienie)":"")+" · "+members.size(),null,new LinkedHashSet<>(),null,c.id));
+                placed.addAll(members);if(collapsed.contains(code))continue;
+                for(int body:members)addBody(p,result,body,parts.get(body),collapsed);
+            }
+            for(Map.Entry<Integer,List<Row>> entry:parts.entrySet()) {
+                int body=entry.getKey();if(placed.contains(body))continue;if(body==0&&entry.getValue().isEmpty())continue;
+                addBody(p,result,body,entry.getValue(),collapsed);
             }
             if(!p.datums.isEmpty()) {
                 result.add(new Row(CONSTRUCTION,null,"Konstrukcja",null,new LinkedHashSet<>()));
@@ -43,6 +55,12 @@ public final class ModelTree {
             }
             return result;
         }catch(JSONException error){throw new IllegalArgumentException("Nie można odczytać drzewa szkiców",error);}
+    }
+    /** Collapse code of a component header (distinct from body ids and the construction group). */
+    public static int componentCode(int index){return -1000-index;}
+    static void addBody(CadProject p,List<Row> result,int body,List<Row> sketches,Set<Integer> collapsed) {
+        result.add(new Row(body,null,body==0?"Szkice nieprzypisane":BodyGraph.name(p,body),null,new LinkedHashSet<>()));
+        if(!collapsed.contains(body))result.addAll(sketches);
     }
     public static CadProject display(CadProject model,Row row) {
         try {

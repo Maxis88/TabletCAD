@@ -32,7 +32,7 @@ public final class FeatureHistory {
     public static List<Integer> bodyUsers(CadProject p,int index) {
         List<Integer> users=new ArrayList<>();if(index>=p.featureBodyTargets.size())return users;
         double[] f=p.committedFeatures.get(index);int body;
-        if(BodySplit.is(f))body=BodySplit.created(f);else if(p.featureBodyTargets.get(index)==0)body=p.featureBodyOutputs.get(index);else return users;
+        if(BodyGraph.createdBody(f)>0)body=BodyGraph.createdBody(f);else if(p.featureBodyTargets.get(index)==0)body=p.featureBodyOutputs.get(index);else return users;
         for(int j=index+1;j<p.featureBodyTargets.size();j++)
             if(p.featureBodyTargets.get(j)==body||(BodyCombine.is(p.committedFeatures.get(j))&&BodyCombine.tool(p.committedFeatures.get(j))==body))users.add(j);
         return users;

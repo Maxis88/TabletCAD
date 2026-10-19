@@ -1120,6 +1120,18 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                     BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
                     updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
                 }
+                if(length==16&&record[0]==-23) {
+                    // Associative instance: a rigid copy of the target body as a new body; the target stays.
+                    const double* c=record.data();const int created=static_cast<int>(c[1]);const double n=c[5]*c[5]+c[6]*c[6]+c[7]*c[7];
+                    if(target==0||c[1]!=std::floor(c[1])||created<2||bodies.contains(created)||(n==0?(c[8]!=0):std::abs(n-1)>1e-6)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    for(int k=12;k<16;k++)if(c[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    gp_Trsf rotation,translation;if(n>0&&c[8]!=0)rotation.SetRotation(gp_Ax1(gp_Pnt(c[9],c[10],c[11]),gp_Dir(c[5],c[6],c[7])),c[8]*M_PI/180.0);
+                    translation.SetTranslation(gp_Vec(c[2],c[3],c[4]));const gp_Trsf transform=translation.Multiplied(rotation);
+                    BRepBuilderAPI_Transform copy(bodies[target],transform,true);if(!copy.IsDone()||copy.Shape().IsNull()){kernelFailAt(tag,"Nie można utworzyć wystąpienia bryły");return {};}
+                    bodies[created]=copy.Shape();
+                    BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
+                    updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
+                }
                 if(length==16&&record[0]==-15) {
                     // Body Boolean: the tool body is another document body, consumed unless kept.
                     const double* c=record.data();const int tool=static_cast<int>(c[2]);
