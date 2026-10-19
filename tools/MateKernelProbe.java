@@ -57,6 +57,15 @@ public final class MateKernelProbe {
         double[] lost=MateFeature.create(MateFeature.CONTACT,1,0,new double[]{200,5,15},new double[]{1,1,0},0,new double[]{100,30,10},new double[]{1,0,0},-1);
         CadProject bad=twoBodies(new SketchPrimitive("b","Prostokąt",200,0,220,10),30);bad.committedFeatures.add(lost);bad.committedProfileIds.add("");bad.featureBodyTargets.add(blk);bad.featureBodyOutputs.add(blk);
         check(NativeCadEngine.bodyInertia(100,60,20,0,bad.featureBase,packed(bad),null).length==0,"a face that cannot be found is reported, not guessed: "+NativeCadEngine.lastFailure().getMessage());
+        // Persistent coaxial mate: a pin in a hole follows the hole when the hole is moved.
+        CadProject h=new CadProject();h.emptyDocument=false;h.width=100;h.height=60;h.depth=20;h.featureBase=new double[]{0,0,0,100,60,0,20};BodyGraph.begin(h);
+        CadProject top=new CadProject();top.sketchOriginZ=20;
+        h.committedFeatures.add(ExtrusionPlan.feature(top,new SketchPrimitive("h","Okrąg",50,30,55,30),"cut",20,0,false,false));h.committedProfileIds.add("h");h.featureBodyTargets.add(1);h.featureBodyOutputs.add(1);
+        h.committedFeatures.add(ExtrusionPlan.feature(new CadProject(),new SketchPrimitive("p","Okrąg",300,0,305,0),"new",30,0,false,false));h.committedProfileIds.add("p");h.featureBodyTargets.add(0);int peg=BodyGraph.allocate(h);h.featureBodyOutputs.add(peg);
+        h.committedFeatures.add(MateFeature.create(MateFeature.AXIS,1,0,new double[]{300,0,0},new double[]{0,0,1},1,new double[]{50,30,10},new double[]{0,0,-1},0));h.committedProfileIds.add("");h.featureBodyTargets.add(peg);h.featureBodyOutputs.add(peg);
+        BodyAnalysis.Body pinIn=body(h,peg);close("persistent coaxial pin X",pinIn.centroid[0],50,1e-7);close("persistent coaxial pin Y",pinIn.centroid[1],30,1e-7);
+        h.committedFeatures.set(0,ExtrusionPlan.feature(top,new SketchPrimitive("h","Okrąg",70,20,75,20),"cut",20,0,false,false));
+        BodyAnalysis.Body pinMoved=body(h,peg);close("pin follows the moved hole (X)",pinMoved.centroid[0],70,1e-7);close("pin follows the moved hole (Y)",pinMoved.centroid[1],20,1e-7);close("axial position unchanged",pinMoved.centroid[2],15,1e-7);
         System.out.println("PASS MateKernelProbe: "+checks+" checks");
     }
 }

@@ -4325,10 +4325,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
         double[] original=project.committedFeatures.get(index);
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Dosunięcie jest przeliczane przy każdej zmianie modelu: bryła podąża za ścianą, do której ją dosunięto.");form.addView(info);
+        final boolean coaxial=original[1]==MateFeature.AXIS;
         EditText gap=labeledCoordinate(form,"Odstęp [mm]",original[3]);slider(form,gap,-modelExtent()/2,modelExtent()/2,.5);
         android.widget.CheckBox flush=new android.widget.CheckBox(getContext());flush.setText("Wyrównaj (ściany w jednej płaszczyźnie)");flush.setChecked(original[1]==MateFeature.FLUSH);form.addView(flush);
+        if(coaxial){gap.setEnabled(false);flush.setEnabled(false);info.setText("Współosiowość jest przeliczana przy każdej zmianie modelu. Położenie wzdłuż osi ustawisz dosunięciem płaskich ścian.");}
         android.content.DialogInterface.OnClickListener apply=(d,w)->{
-            try{double[] updated=MateFeature.withGap(original,flush.isChecked()?MateFeature.FLUSH:MateFeature.CONTACT,parseCoordinate(gap));String baseline=project.toJson().toString();CadProject next=copyProject(project);next.committedFeatures.set(index,updated);commitProjectAsync(next,baseline,"Zaktualizowano: "+MateFeature.describe(updated,BodyGraph.name(next,MateFeature.other(updated))));}
+            try{double[] updated=coaxial?original.clone():MateFeature.withGap(original,flush.isChecked()?MateFeature.FLUSH:MateFeature.CONTACT,parseCoordinate(gap));String baseline=project.toJson().toString();CadProject next=copyProject(project);next.committedFeatures.set(index,updated);commitProjectAsync(next,baseline,"Zaktualizowano: "+MateFeature.describe(updated,BodyGraph.name(next,MateFeature.other(updated))));}
             catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
         };
         new PropertyBuilder().setTitle("Edytuj dosunięcie").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",apply).show();
@@ -4359,7 +4361,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         final double[] tp=point,tn=normal,ta=axis,mp=mateMovingPoint,mn=mateMovingNormal,ma=mateMovingAxis;final String component=mateComponent;final java.util.Set<Integer> bodies=new java.util.LinkedHashSet<>(mateBodies);
         final Integer movingCreator=mateMovingCreator,targetCreator=faceFeatures.get(face);final int targetBody=body;
         // A plane mate of one ordinary body is stored as a persistent mate (re-solved when either body changes).
-        final boolean persistent=component==null&&ta==null&&bodies.size()==1&&movingCreator!=null&&targetCreator!=null&&project.bodyGraphStart>=0;
+        final boolean persistent=component==null&&bodies.size()==1&&movingCreator!=null&&targetCreator!=null&&project.bodyGraphStart>=0;
         mode="Wybierz";selectedFace=face;
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         android.widget.TextView info=new android.widget.TextView(getContext());form.addView(info);
@@ -4377,7 +4379,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 } else {
                     if(persistent) {
                         int movingBody=bodies.iterator().next();
-                        double[] mate=MateFeature.create(flush.isChecked()?MateFeature.FLUSH:MateFeature.CONTACT,targetBody,parseCoordinate(gapField),mp,mn,movingCreator,tp,tn,targetCreator);
+                        double[] mate=ta!=null?MateFeature.create(MateFeature.AXIS,targetBody,0,new double[]{ma[0],ma[1],ma[2]},new double[]{ma[3],ma[4],ma[5]},movingCreator,new double[]{ta[0],ta[1],ta[2]},new double[]{ta[3],ta[4],ta[5]},targetCreator)
+                            :MateFeature.create(flush.isChecked()?MateFeature.FLUSH:MateFeature.CONTACT,targetBody,parseCoordinate(gapField),mp,mn,movingCreator,tp,tn,targetCreator);
                         next.committedFeatures.add(mate);next.committedProfileIds.add("");next.featureBodyTargets.add(movingBody);next.featureBodyOutputs.add(movingBody);
                     } else {
                     List<double[]> records=Assembly.transformRecords(delta);if(records.isEmpty())throw new IllegalArgumentException("Bryła już jest w tym położeniu");

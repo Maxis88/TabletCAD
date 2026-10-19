@@ -1,3 +1,5 @@
+#include <ElCLib.hxx>
+#include <gp_Lin.hxx>
 #include <jni.h>
 #include <array>
 #include <cmath>
@@ -1016,6 +1018,33 @@ TopoDS_Shape offsetFace(const TopoDS_Shape& shape,const double* f,const FaceOrig
     return result;
 }
 
+// Cylindrical/conical face referenced by an axis point, axis direction (either sense) and creating operation.
+// Several candidates are resolved by the stored axis point; never falls back to the nearest face.
+TopoDS_Face axisFace(const TopoDS_Shape& solid,const double* ref,const FaceOrigins& origins,std::string& error,const char* subject) {
+    const std::string lost=std::string("Nie odnaleziono ściany ")+subject+" – topologia zmieniła się. Wskaż ścianę ponownie";
+    const gp_Pnt point(ref[0],ref[1],ref[2]);const gp_Dir direction(ref[3],ref[4],ref[5]);const int origin=static_cast<int>(ref[6]);
+    std::vector<TopoDS_Face> candidates;
+    for(TopExp_Explorer e(solid,TopAbs_FACE);e.More();e.Next()) {
+        const TopoDS_Face face=TopoDS::Face(e.Current());BRepAdaptor_Surface surface(face);
+        gp_Ax1 axis;if(surface.GetType()==GeomAbs_Cylinder)axis=surface.Cylinder().Axis();else if(surface.GetType()==GeomAbs_Cone)axis=surface.Cone().Axis();else continue;
+        if(std::abs(axis.Direction().Dot(direction))<1-1e-6)continue;
+        bool created=false;
+        for(const auto& known:origins)if(face.IsSame(known.first)){created=known.second==origin||std::find(known.lineage.begin(),known.lineage.end(),origin)!=known.lineage.end();break;}
+        if(!created)continue;
+        bool duplicate=false;for(const auto& c:candidates)if(c.IsSame(face))duplicate=true;if(!duplicate)candidates.push_back(face);
+    }
+    // Faces of one cylinder split by seams share the axis: keep one per axis line.
+    std::vector<TopoDS_Face> unique;
+    for(const auto& face:candidates){BRepAdaptor_Surface s(face);const gp_Ax1 a=s.GetType()==GeomAbs_Cylinder?s.Cylinder().Axis():s.Cone().Axis();bool same=false;
+        for(const auto& u:unique){BRepAdaptor_Surface t(u);const gp_Ax1 b=t.GetType()==GeomAbs_Cylinder?t.Cylinder().Axis():t.Cone().Axis();if(gp_Lin(b).Distance(a.Location())<1e-6)same=true;}
+        if(!same)unique.push_back(face);}
+    if(unique.size()==1)return unique.front();
+    if(unique.empty()){error=lost;return {};}
+    std::vector<TopoDS_Face> on;
+    for(const auto& face:unique){BRepAdaptor_Surface s(face);const gp_Ax1 a=s.GetType()==GeomAbs_Cylinder?s.Cylinder().Axis():s.Cone().Axis();if(gp_Lin(a).Distance(point)<1e-3)on.push_back(face);}
+    if(on.size()==1)return on.front();
+    error=on.empty()?lost:std::string("Ściana ")+subject+" jest niejednoznaczna – wskaż ją ponownie";return {};
+}
 // Parametric hole on a planar face. The stored point is projected onto the CURRENT plane of the
 // referenced face (same creator and normal), so the hole follows parametric edits of that face.
 TopoDS_Shape holeFeature(const TopoDS_Shape& shape,const double* f,const FaceOrigins& origins) {
@@ -1156,10 +1185,27 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                     // (contact: opposite normals, flush: equal normals) at the gap; re-solved on every rebuild.
                     const double* c=record.data();const int other=static_cast<int>(c[2]);
                     const double mn=c[7]*c[7]+c[8]*c[8]+c[9]*c[9],tn=c[14]*c[14]+c[15]*c[15]+c[16]*c[16];
-                    if(target==0||(c[1]!=1&&c[1]!=2)||c[2]!=std::floor(c[2])||other==target||std::abs(c[3])>5000||std::abs(mn-1)>1e-6||std::abs(tn-1)>1e-6||c[10]!=std::floor(c[10])||c[17]!=std::floor(c[17])){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    if(target==0||(c[1]!=1&&c[1]!=2&&c[1]!=3)||c[2]!=std::floor(c[2])||other==target||std::abs(c[3])>5000||std::abs(mn-1)>1e-6||std::abs(tn-1)>1e-6||c[10]!=std::floor(c[10])||c[17]!=std::floor(c[17])){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                     for(int k=18;k<24;k++)if(c[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                     if(!bodies.contains(other)){kernelFailAt(tag,"Bryła, do której dosunięto ścianę, nie istnieje");return {};}
                     std::string error;
+                    if(c[1]==3) {
+                        // Coaxial: the moving cylinder axis is turned onto the target axis and moved onto its line.
+                        const TopoDS_Face moving=axisFace(bodies[target],c+4,origins,error,"walcowej dosuwanej");if(moving.IsNull()){kernelFailAt(tag,error.c_str());return {};}
+                        const TopoDS_Face fixed=axisFace(bodies[other],c+11,origins,error,"walcowej docelowej");if(fixed.IsNull()){kernelFailAt(tag,error.c_str());return {};}
+                        auto axisOf=[](const TopoDS_Face& face){BRepAdaptor_Surface s(face);return s.GetType()==GeomAbs_Cylinder?s.Cylinder().Axis():s.Cone().Axis();};
+                        const gp_Ax1 ma=axisOf(moving),ta=axisOf(fixed);
+                        gp_Dir m=ma.Direction(),d=ta.Direction();if(m.Dot(gp_Dir(c[7],c[8],c[9]))<0)m.Reverse();if(d.Dot(gp_Dir(c[14],c[15],c[16]))<0)d.Reverse();if(m.Dot(d)<0)d.Reverse();
+                        gp_Pnt p=ElCLib::Value(ElCLib::Parameter(gp_Lin(ma),gp_Pnt(c[4],c[5],c[6])),gp_Lin(ma));
+                        gp_Trsf rotation;const double angle=m.Angle(d);
+                        if(angle>1e-12){gp_Vec axis=gp_Vec(m).Crossed(gp_Vec(d));if(axis.Magnitude()<1e-9)axis=gp_Vec(m).Crossed(std::abs(m.X())<.9?gp_Vec(1,0,0):gp_Vec(0,1,0));rotation.SetRotation(gp_Ax1(p,gp_Dir(axis)),angle);}
+                        gp_Vec v(p,ta.Location());v-=gp_Vec(d)*v.Dot(gp_Vec(d));gp_Trsf translation;translation.SetTranslation(v);
+                        BRepBuilderAPI_Transform moved(bodies[target],translation.Multiplied(rotation),true);
+                        if(!moved.IsDone()||moved.Shape().IsNull()){kernelFailAt(tag,"Nie można ustawić brył współosiowo");return {};}
+                        bodies[target]=moved.Shape();
+                        BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
+                        updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
+                    }
                     const TopoDS_Face moving=shellFace(bodies[target],c+4,origins,error,"dosuwanej");if(moving.IsNull()){kernelFailAt(tag,error.c_str());return {};}
                     const TopoDS_Face fixed=shellFace(bodies[other],c+11,origins,error,"docelowej");if(fixed.IsNull()){kernelFailAt(tag,error.c_str());return {};}
                     const gp_Pln mp=BRepAdaptor_Surface(moving).Plane(),tp=BRepAdaptor_Surface(fixed).Plane();
