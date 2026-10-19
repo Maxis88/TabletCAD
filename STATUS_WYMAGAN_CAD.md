@@ -206,44 +206,32 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
 - Cieniowany widok 3D, zaznaczanie ścian/krawędzi, podgląd operacji,
   ukrywanie zasłoniętych fragmentów i izolowanie zakrytego szkicu.
 
-## Najważniejsze pozostałe luki
+## Najważniejsze pozostałe luki (stan 0.84)
 
-1. Szkice: elipsa i dalsze prymitywy, rzutowanie
-   krawędzi modelu, parametryczne (powiązane) szyki i pełne więzy parametryczne,
-   w tym styczność oraz trwała zależność symetrii. Lustro i szyki obecnie kopiują.
-   Splajn istnieje; okrąg 3 pkt i szczelina podłączone w 0.72, z runtime
-   gestów i nowych ścieżek OCCT nadal do potwierdzenia.
-2. Podstawowe bryły: od 0.73 są Powłoka i Otwór (prosty, pogłębiony walcowo
-   i stożkowo). Brak wymiarowania środka otworu względem krawędzi ściany.
-3. Referencje topologiczne: od 0.44 powiązania obsługiwanych krawędzi bazowych
-   śledzą zmianę parametrów generatora. Nadal brak ogólnego nazewnictwa
-   krawędzi/ścian po dowolnych operacjach, aktualizacji wszystkich płaszczyzn
-   szkiców i odniesień wycięć. Nie wolno zastępować brakującej referencji
-   najbliższą krawędzią.
-4. Historia: kompletne drzewo brył/komponentów, zmiana kolejności operacji,
-   szersze zarządzanie zależnościami i diagnostyka regeneracji.
-5. Parametry użytkownika: nazwy, wyrażenia powiązane z wymiarami i cykle zależności.
-   Od 0.73 są jednostki projektu (mm/cm/m/in), dokładność wyświetlania i wyrażenia
-   arytmetyczne z jednostkami w polach wartości (obliczane jednorazowo).
-6. Sweep, Loft i narzędzia powierzchniowe; szyki i lustra
-   całych brył oraz szyk po ścieżce. Od 0.73: lustro i szyki operacji oraz
-   operacje Boolean między bryłami, pochylenie ścian, przesunięcie/obrót/skala brył.
-7. Zespoły: komponenty, instancje, wiązania montażowe i kolizje.
-8. Analizy OCCT: katalog materiałów, różne gęstości poszczególnych brył,
-   bezwładność i odległość minimalna. Masa z własnej jednorodnej gęstości
-   jest od 0.70; powierzchnia, objętość i środek objętości są od 0.43.
-9. Dokumentacja: dowolne wymiary cech, tolerancje, szczegóły i oznaczenia,
-   wszystkie wymagane formaty arkusza oraz szersza edycja rzutów i opisów.
-10. IGES/3MF/SVG, import OBJ, pełne ustawienia dokładności i zakresu eksportu,
-    weryfikacja we wskazanych zewnętrznych programach CAD.
-11. UI/renderowanie: pełny ViewCube (ortografia i standardowe orientacje są od 0.58),
-    motywy i szersza obsługa urządzeń wejścia. Tryby krawędzi/przezroczystości
-    i przekrój są od 0.73.
-12. Wydajność: przeniesienie wszystkich kosztownych obliczeń poza wątek UI,
-    anulowanie/postęp, testy obciążeniowe i zużycia pamięci/temperatury.
-13. Gwinty, biblioteki techniczne, blachy i rozwinięcia: późniejszy zakres.
+1. Szkice: pełny solver nieliniowy działa dla relacji z menu Więzy; brak jeszcze
+   szyku po ścieżce i wymiarów kątowych między dowolnymi elementami różnych szkiców.
+2. Referencje topologiczne: ściany są identyfikowane przez operację źródłową, normalną
+   i punkt (otwory, powłoka, pochylenie, odsunięcie ściany, wymiary otworów). Brak
+   ogólnego nazewnictwa krawędzi po dowolnych operacjach Boolean; utrata odniesienia
+   jest zgłaszana, nigdy zgadywana.
+3. Złożenia: komponenty, powiązane wystąpienia, dosuwanie (styk, wyrównanie,
+   współosiowość), kolizje i lista części są od 0.80/0.82. Brak trwałych wiązań
+   montażowych przeliczanych po zmianie geometrii (dosunięcie zapisuje położenie).
+4. Dokumentacja: arkusz z rzutami i przekrojem; brak swobodnego wymiarowania arkusza,
+   tolerancji i tabliczek w wielu formatach.
+5. Formaty: brak IGES; 3MF tylko eksport; weryfikacja w zewnętrznych CAD do wykonania.
+6. Powierzchnie, blachy i rozwinięcia: poza obecnym zakresem.
+7. Wydajność: zatwierdzanie i podglądy są w tle; pomiary i eksport częściowo w wątku UI.
 
 ## Testy akceptacyjne pełnego promptu
+
+- A — PASS (poziom jądra, `AcceptanceAKernelProbe`): płyta z czterema otworami Ø6,5
+  zwymiarowanymi 10 mm od krawędzi, zmiana szerokości, długości i grubości,
+  zapis/odczyt i druga zmiana; położenia otworów i objętości sprawdzane analitycznie.
+  Pełna sekwencja dotykowa tego scenariusza nie jest osobnym testem UI.
+- D — CZĘŚCIOWY: komponenty, wystąpienia, dosuwanie i kolizje są (0.80–0.82),
+  brak trwałych wiązań montażowych.
+
 
 - Scenariusz obowiązkowy 16.3 (kroki 1–21) — PASS na HONOR YLE-W09
   (CadScenarioProbe, widoczne okno, rzeczywiste zdarzenia dotyku): szkic
@@ -252,9 +240,6 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
   otwarcie, edycja szerokości 100 → 120 z przebudową otworu i R3, eksport STEP
   i ponowny import; objętości B-Rep sprawdzane analitycznie na każdym etapie.
 
-- A — NIEPOTWIERDZONY w całości. Częściowe testy wyciągnięć, wycięć,
-  zaokrągleń, zapisu i STEP istnieją; pełna sekwencja czterech otworów,
-  zmiany wysokości i zachowania wszystkich odniesień wymaga osobnego testu.
 - B — PASS w zautomatyzowanym przebiegu geometrii/parametryki/STEP:
   RootEdgeReferenceProbe tworzy wałek, rowek i fazę, zmienia promień/długość,
   kontroluje analityczną objętość i STEP oraz zapis/edycję źródła.
@@ -262,7 +247,6 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
   w UI sprawdzono zmianę źródła wałka z fazą, edycję, historię i restart.
 - C — CZĘŚCIOWY: istnieją rzuty/przekrój/eksport, brak pełnego dowolnego
   wymiarowania dokumentacji i pełnego testu scenariusza z promptu.
-- D — NIEWYKONALNY w całości: brak silnika komponentów i więzów montażowych.
 
 Cel całej aplikacji pozostaje nieukończony. Regresje podzbiorów nie są
 dowodem ukończenia powyższych testów ani całego zakresu.
