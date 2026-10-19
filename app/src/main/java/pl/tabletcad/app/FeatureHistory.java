@@ -21,7 +21,7 @@ public final class FeatureHistory {
 
     /** True when the operation is not evaluated (suppressed, after the marker or patterning an inactive source). */
     public static boolean inactive(CadProject p,int index) {
-        if(p.historyMarker>=0&&index>=p.historyMarker)return true;
+        if(p.historyMarker>=0&&index>=p.historyMarker&&index<p.historyMarkerCount)return true;
         if(p.suppressedFeatures.contains(index))return true;
         if(index<p.committedFeatures.size()&&FeaturePattern.is(p.committedFeatures.get(index)))
             for(int s:FeaturePattern.sources(p.committedFeatures.get(index)))if(s!=index&&s>=0&&s<index&&inactive(p,s))return true;
@@ -94,6 +94,25 @@ public final class FeatureHistory {
     public static void removed(CadProject p,int removed) {
         Set<Integer> next=new LinkedHashSet<>();for(int s:p.suppressedFeatures)if(s!=removed)next.add(s>removed?s-1:s);
         p.suppressedFeatures.clear();p.suppressedFeatures.addAll(next);
-        if(p.historyMarker>removed)p.historyMarker--;
+        if(p.historyMarker>=0){if(removed<p.historyMarker)p.historyMarker--;if(removed<p.historyMarkerCount)p.historyMarkerCount--;if(p.historyMarker>=p.historyMarkerCount){p.historyMarker=-1;p.historyMarkerCount=-1;}}
+    }
+    /** Places the rollback marker after {@code count} operations (count ≥ size: end of history). */
+    public static void setMarker(CadProject p,int count) {
+        if(count<0)throw new IllegalArgumentException("Niepoprawne położenie znacznika");
+        if(count>=p.committedFeatures.size()){p.historyMarker=-1;p.historyMarkerCount=-1;}else{p.historyMarker=count;p.historyMarkerCount=p.committedFeatures.size();}
+    }
+    /**
+     * Operations appended while the marker is set are evaluated right after the operations before the marker
+     * (the ones in between are placeholders), so moving them to the marker does not change the geometry; this
+     * makes the inserted position permanent and advances the marker behind them.
+     */
+    public static void settle(CadProject p) {
+        if(p.historyMarker<0)return;
+        if(p.historyMarkerCount>p.committedFeatures.size())throw new IllegalArgumentException("Historia jest krótsza niż znacznik");
+        while(p.historyMarkerCount<p.committedFeatures.size()) {
+            for(int k=p.historyMarkerCount-1;k>=p.historyMarker;k--)swap(p,k);
+            p.historyMarker++;p.historyMarkerCount++;
+        }
+        if(p.historyMarker>=p.historyMarkerCount){p.historyMarker=-1;p.historyMarkerCount=-1;}
     }
 }

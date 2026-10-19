@@ -26,9 +26,20 @@ public final class HistoryKernelProbe {
         FeatureHistory.setSuppressed(p,1,false);FeatureHistory.setSuppressed(p,0,true);
         check(FeatureHistory.inactive(p,2),"a pattern of a suppressed source is inactive");close("suppressing the source removes its copies",volume(p),plate-h2,1e-6);
         FeatureHistory.setSuppressed(p,0,false);close("restored",volume(p),full,1e-6);
-        p.historyMarker=1;close("rollback marker after operation 1",volume(p),plate-h1,1e-6);
-        p.historyMarker=0;close("rollback marker at the start",volume(p),plate,1e-6);
-        check(!new JSONObject(p.toJson().toString()).has("historyMarker"),"rollback marker is a view state, not saved");p.historyMarker=-1;
+        FeatureHistory.setMarker(p,1);close("rollback marker after operation 1",volume(p),plate-h1,1e-6);
+        FeatureHistory.setMarker(p,0);close("rollback marker at the start",volume(p),plate,1e-6);
+        CadProject kept=CadProject.fromJson(new JSONObject(p.toJson().toString()));check(kept.historyMarker==0&&kept.historyMarkerCount==3,"rollback marker is saved with the document");
+        // Insertion at the marker: a new cut appended while the marker is after operation 1 is evaluated there and moved there.
+        FeatureHistory.setMarker(p,1);
+        double hn=Math.PI*4*20;p.committedFeatures.add(ExtrusionPlan.feature(top(),new SketchPrimitive("n","Okrąg",50,50,52,50),"cut",20,0,false,false));p.committedProfileIds.add("n");p.featureBodyTargets.add(1);p.featureBodyOutputs.add(1);
+        close("appended cut is evaluated right after the marker",volume(p),plate-h1-hn,1e-6);
+        FeatureHistory.settle(p);check(p.historyMarker==2&&p.historyMarkerCount==4&&p.committedProfileIds.get(1).equals("n"),"settle moves the new operation to the marker and advances it");
+        check(FeaturePattern.sources(p.committedFeatures.get(3))[0]==0,"pattern source keeps pointing at the first cut after the insertion");
+        close("geometry unchanged by settling",volume(p),plate-h1-hn,1e-6);
+        FeatureHistory.setMarker(p,Integer.MAX_VALUE);close("marker at the end: all operations incl. the inserted one",volume(p),plate-2*h1-h2-hn,1e-6);
+        FeatureRemoval.apply(p,FeatureRemoval.plan(p,1));close("removing the inserted cut restores the original model",volume(p),full,1e-6);
+        CadProject mk=CadProject.fromJson(new JSONObject(p.toJson().toString()));FeatureHistory.setMarker(mk,2);FeatureRemoval.apply(mk,FeatureRemoval.plan(mk,0));
+        check(mk.historyMarker==-1||mk.historyMarker<mk.historyMarkerCount,"marker stays consistent after removing an operation before it");
         // Reordering: the two cuts can swap; the pattern stays after its source.
         CadProject r=CadProject.fromJson(new JSONObject(p.toJson().toString()));FeatureHistory.swap(r,0);
         check(FeaturePattern.sources(r.committedFeatures.get(2))[0]==1,"pattern source is renumbered after the swap");close("swapped cuts give the same solid",volume(r),full,1e-6);

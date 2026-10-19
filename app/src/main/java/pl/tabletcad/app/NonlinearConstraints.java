@@ -37,12 +37,17 @@ public final class NonlinearConstraints {
     /** Rigid transform of a "rigid" relation: "@T:cx,cy,degrees,dx,dy" (rotate about c, then translate) or "@M:ax,ay,bx,by" (mirror). */
     static double[] transformOf(String axis) {
         if(axis==null||!(axis.startsWith("@T:")||axis.startsWith("@M:")))throw new IllegalArgumentException("Niepoprawne przekształcenie powiązanej kopii");
-        String[] parts=axis.substring(3).split(",");double[] v=new double[parts.length];
+        String[] parts=axis.split(";",2)[0].substring(3).split(",");double[] v=new double[parts.length];
         try{for(int i=0;i<v.length;i++){v[i]=Double.parseDouble(parts[i]);if(!Double.isFinite(v[i]))throw new NumberFormatException();}}catch(NumberFormatException e){throw new IllegalArgumentException("Niepoprawne przekształcenie powiązanej kopii");}
-        if(axis.startsWith("@T:")&&v.length!=5||axis.startsWith("@M:")&&(v.length!=4||Math.hypot(v[2]-v[0],v[3]-v[1])<1e-9))throw new IllegalArgumentException("Niepoprawne przekształcenie powiązanej kopii");
+        if(axis.split(";",2)[0].startsWith("@T:")&&v.length!=5||axis.startsWith("@M:")&&(v.length!=4||Math.hypot(v[2]-v[0],v[3]-v[1])<1e-9))throw new IllegalArgumentException("Niepoprawne przekształcenie powiązanej kopii");
         return v;
     }
     public static String translation(double dx,double dy){return "@T:0,0,0,"+dx+","+dy;}
+    /** Pattern metadata appended to a transform: ";g=<group>;p=<kind,params>" (group shared by all copies of one pattern). */
+    public static String withGroup(String transform,String group,String parameters){return transform+";g="+group+";p="+parameters;}
+    public static String meta(String axis,String key) {
+        if(axis==null)return null;for(String part:axis.split(";"))if(part.startsWith(key+"="))return part.substring(key.length()+1);return null;
+    }
     public static String rotation(double cx,double cy,double degrees){return "@T:"+cx+","+cy+","+degrees+",0,0";}
     public static String mirror(double ax,double ay,double bx,double by){return "@M:"+ax+","+ay+","+bx+","+by;}
     static double[] mapped(String axis,double x,double y) {
@@ -93,6 +98,7 @@ public final class NonlinearConstraints {
                 for(int i=0;i<4;i+=2)out.add(((q[i]-p[0])*(p[3]-p[1])-(q[i+1]-p[1])*(p[2]-p[0]))/d);break;
             }
             case "symmetric":
+                if(a.circle()&&b.circle()){double[] mirrorAxis=axis(l,blocks,all),r=reflected(p[0],p[1],mirrorAxis);out.add(r[0]-q[0]);out.add(r[1]-q[1]);out.add(length(p)-length(q));break;}
                 line(a);line(b);double[] axis=axis(l,blocks,all);
                 for(int i=0;i<2;i++){double[] r=reflected(p[2*i],p[2*i+1],axis);int j=l.bi==1?1-i:i;out.add(r[0]-q[2*j]);out.add(r[1]-q[2*j+1]);}break;
             default:throw new IllegalArgumentException("Nieznany więz");
@@ -178,6 +184,7 @@ public final class NonlinearConstraints {
             }
             case "concentric":if(a.circle()&&b.circle()){double dx=p[0]-q[0],dy=p[1]-q[1];for(int i=0;i<4;i+=2){q[i]+=dx;q[i+1]+=dy;}put(b,all,q);}break;
             case "symmetric": {
+                if(a.circle()&&b.circle()){double[] mirrorAxis=axis(l,blocks,all),r=reflected(p[0],p[1],mirrorAxis);double radius=length(p);q[0]=r[0];q[1]=r[1];q[2]=r[0]+radius;q[3]=r[1];put(b,all,q);break;}
                 line(a);line(b);double[] axis=axis(l,blocks,all);for(int i=0;i<2;i++){double[] r=reflected(p[2*i],p[2*i+1],axis);int j=l.bi==1?1-i:i;q[2*j]=r[0];q[2*j+1]=r[1];}put(b,all,q);break;
             }
             case "pointOn": {

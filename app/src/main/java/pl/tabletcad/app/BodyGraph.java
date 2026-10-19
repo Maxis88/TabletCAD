@@ -60,7 +60,7 @@ public final class BodyGraph {
             int size=recordLength(raw,offset);if(size<16||size>raw.length-offset)throw new IllegalArgumentException("Niepoprawna długość operacji");
             double[] record=Arrays.copyOfRange(raw,offset,offset+size);offset+=size;
             // Suppressed operations, operations past the rollback marker and patterns of inactive sources keep their index as placeholders.
-            if((index<p.committedFeatures.size()&&FeatureHistory.inactive(p,index))||(index>=p.committedFeatures.size()&&p.historyMarker>=0)){records.add(FeatureHistory.placeholder());length+=16;continue;}
+            if(index<p.committedFeatures.size()&&FeatureHistory.inactive(p,index)){records.add(FeatureHistory.placeholder());length+=16;continue;}
             // Loft/sweep geometry is refreshed from the referenced sketch elements before every evaluation.
             if((SweepLoft.loft(record)||SweepLoft.sweep(record))&&index<p.committedFeatures.size())record=SweepLoft.refresh(p,record,index<p.committedProfileIds.size()?p.committedProfileIds.get(index):null);
             // Patterns are expanded here, from the current source operations, into one routed record.

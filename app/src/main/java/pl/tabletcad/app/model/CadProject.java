@@ -44,8 +44,9 @@ public final class CadProject {
     public final List<Datum> datums=new ArrayList<>();
     /** History indices of suppressed operations (kept in history, not evaluated). */
     public final java.util.Set<Integer> suppressedFeatures=new java.util.TreeSet<>();
-    /** Rollback marker: only operations before this index are evaluated; -1 = end of history. Not saved. */
-    public int historyMarker=-1;
+    /** Rollback marker: operations historyMarker … historyMarkerCount−1 are not evaluated; -1 = end of history.
+     *  Operations appended while the marker is set are moved to the marker on commit (FeatureHistory.settle). */
+    public int historyMarker=-1,historyMarkerCount=-1;
 
     public final String id;
     public String name;
@@ -145,6 +146,7 @@ public final class CadProject {
         if(!parameters.isEmpty())root.put("parameters",pl.tabletcad.app.UserParameters.toJson(this));
         if(!parameterBindings.isEmpty())root.put("parameterBindings",new JSONObject(parameterBindings));
         if(!suppressedFeatures.isEmpty())root.put("suppressed",new JSONArray(suppressedFeatures));
+        if(historyMarker>=0)root.put("historyMarker",historyMarker).put("historyMarkerCount",historyMarkerCount);
         if(!datums.isEmpty()){JSONArray construction=new JSONArray();for(Datum d:datums)construction.put(d.toJson());root.put("construction",construction);}
         root.put("sketchPlane", sketchPlane);
         root.put("sketchId", sketchId);
@@ -334,6 +336,8 @@ public final class CadProject {
         if(densities!=null){java.util.Iterator<String> keys=densities.keys();while(keys.hasNext()){String key=keys.next();double value=densities.getDouble(key);int body;
             try{body=Integer.parseInt(key);}catch(NumberFormatException e){throw new JSONException("Niepoprawny identyfikator bryły gęstości");}
             if(!(value>0)||!Double.isFinite(value))throw new JSONException("Gęstość bryły musi być dodatnia");project.bodyDensities.put(body,value);}}
+        int marker=root.optInt("historyMarker",-1),markerCount=root.optInt("historyMarkerCount",-1);
+        if(marker>=0){if(marker>=markerCount||markerCount>project.committedFeatures.size())throw new JSONException("Niepoprawny znacznik historii");project.historyMarker=marker;project.historyMarkerCount=markerCount;}
         JSONArray suppressed=root.optJSONArray("suppressed");
         if(suppressed!=null)for(int i=0;i<suppressed.length();i++){int index=suppressed.getInt(i);if(index<0||index>=project.committedFeatures.size())throw new JSONException("Wygaszona operacja poza historią");project.suppressedFeatures.add(index);}
         pl.tabletcad.app.SketchTransactions.validateLoaded(project);

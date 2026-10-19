@@ -543,6 +543,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                         return true;
                     }
                     if(mode.equals("Konstrukcja")){datumPickTap(e.getX(),e.getY());return true;}
+                    if((mode.equals("Wybierz")||mode.equals("Szkic")&&!sketchPlaneChosen)&&datumTap(e.getX(),e.getY()))return true;
                     if(mode.equals("Wybierz")&&editVisibleSketchAt(e.getX(),e.getY()))return true;
                     int face = findFaceAt(e.getX(), e.getY());
                     if(mode.equals("Gwint")) {threadTap(face);return true;}
@@ -2314,35 +2315,60 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
 
     /** Linear/rectangular or circular pattern of the selected sketch element (independent copies). */
-    private void showSketchPattern(boolean circular) {
-        SketchPrimitive source=null;
-        for(SketchPrimitive entity:project.sketch)if(entity.id.equals(selectedSketchId))source=entity;
+    private void showSketchPattern(boolean circular){showSketchPattern(circular,null,null,null);}
+    /** Linked copies of one pattern: link group id → source id; null when the entity is in no pattern. */
+    private SketchConstraints.Link patternLink(String entity) {
+        for(SketchConstraints.Link l:project.coincidences)if(l.kind.equals("rigid")&&NonlinearConstraints.meta(l.axis,"g")!=null&&(l.a.equals(entity)||l.b.equals(entity)))return l;
+        return null;
+    }
+    /** "Edytuj szyk": reopens the pattern of the selected source or copy with its parameters and regenerates the copies. */
+    private void editSketchPattern() {
+        SketchConstraints.Link link=selectedSketchId==null?null:patternLink(selectedSketchId);
+        if(link==null){operationMessage="Zaznacz element powiązanego szyku albo lustra (Edytuj), a następnie wybierz Edytuj szyk";invalidate();return;}
+        String[] p=NonlinearConstraints.meta(link.axis,"p").split(",");String group=NonlinearConstraints.meta(link.axis,"g");
+        SketchPrimitive source=null;for(SketchPrimitive e:project.sketch)if(e.id.equals(link.a))source=e;if(source==null)return;
+        if(p[0].equals("M")){operationMessage="Lustro nie ma parametrów do edycji – usuń kopię i utwórz lustro ponownie";invalidate();return;}
+        double[] values=new double[4];for(int i=0;i<4;i++)values[i]=Double.parseDouble(p[i+1]);
+        selectedSketchId=source.id;showSketchPattern(p[0].equals("C"),source,group,values);
+    }
+    private void showSketchPattern(boolean circular,SketchPrimitive edited,String group,double[] previous) {
+        SketchPrimitive source=edited;
+        if(source==null)for(SketchPrimitive entity:project.sketch)if(entity.id.equals(selectedSketchId))source=entity;
         if(source==null){operationMessage="Zaznacz element szkicu (Edytuj), a następnie wybierz szyk";return;}
         final SketchPrimitive selected=source;
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         final EditText first,second,third,fourth;
+        double[] v=previous!=null?previous:circular?new double[]{6,360,0,0}:new double[]{3,20,1,20};
         if(circular) {
-            first=coordinateInput("Liczba elementów (z oryginałem)",6);second=coordinateInput("Kąt całkowity [°]",360);
-            third=coordinateInput("Środek X [mm]",0);fourth=coordinateInput("Środek Y [mm]",0);
+            first=coordinateInput("Liczba elementów (z oryginałem)",v[0]);second=coordinateInput("Kąt całkowity [°]",v[1]);
+            third=coordinateInput("Środek X [mm]",v[2]);fourth=coordinateInput("Środek Y [mm]",v[3]);
         }else {
-            first=coordinateInput("Liczba w kierunku X",3);second=coordinateInput("Odstęp X [mm]",20);
-            third=coordinateInput("Liczba w kierunku Y",1);fourth=coordinateInput("Odstęp Y [mm]",20);
+            first=coordinateInput("Liczba w kierunku X",v[0]);second=coordinateInput("Odstęp X [mm]",v[1]);
+            third=coordinateInput("Liczba w kierunku Y",v[2]);fourth=coordinateInput("Odstęp Y [mm]",v[3]);
         }
         form.addView(first);form.addView(second);form.addView(third);form.addView(fourth);
         android.widget.TextView status=new android.widget.TextView(getContext());
         status.setText(circular?"Kąt 360° dzieli okrąg równo. Środek w układzie szkicu.":"Liczby obejmują oryginał. Ujemny odstęp zmienia kierunek.");form.addView(status);
-        new PropertyBuilder().setTitle((circular?"Szyk kołowy · ":"Szyk liniowy · ")+selected.type).setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
+        new PropertyBuilder().setTitle((group!=null?"Edytuj szyk · ":circular?"Szyk kołowy · ":"Szyk liniowy · ")+selected.type).setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
             try {
                 List<SketchPrimitive> copies;
                 double a=parseCoordinate(first),b=parseCoordinate(second),c=parseCoordinate(third),e=parseCoordinate(fourth);
                 if(a!=Math.rint(a)||(!circular&&c!=Math.rint(c)))throw new IllegalArgumentException("Liczba elementów musi być całkowita");
                 copies=circular?SketchPattern.circular(selected,(int)a,c,e,b):SketchPattern.grid(selected,(int)a,(int)c,b,e);
-                checkpoint();project.sketch.addAll(copies);mode="Edytuj szkic";
-                final double pcx=c,pcy=e;
+                checkpoint();
+                if(group!=null) {
+                    // Regenerate: the old copies of this pattern (and their links) are replaced.
+                    java.util.Set<String> old=new java.util.HashSet<>();for(SketchConstraints.Link l:project.coincidences)if(l.kind.equals("rigid")&&group.equals(NonlinearConstraints.meta(l.axis,"g")))old.add(l.b);
+                    for(String id:old)if(project.committedProfileIds.contains(id)||id.equals(project.featureProfileId)||id.equals(project.featureBaseProfileId))throw new IllegalArgumentException("Kopia szyku jest profilem operacji – nie można jej zastąpić");
+                    project.sketch.removeIf(p->old.contains(p.id));project.pruneCoincidences();
+                }
+                project.sketch.addAll(copies);mode="Edytuj szkic";
+                final double pcx=c,pcy=e;final String patternGroup=group!=null?group:UUID.randomUUID().toString();
+                final String parameters=(circular?"C,":"L,")+a+","+b+","+c+","+e;
                 int linked=linkCopies(selected,copies,copy->{double[] p0=firstPoint(selected),q0=firstPoint(copy);
-                    if(!circular)return NonlinearConstraints.translation(q0[0]-p0[0],q0[1]-p0[1]);
+                    if(!circular)return NonlinearConstraints.withGroup(NonlinearConstraints.translation(q0[0]-p0[0],q0[1]-p0[1]),patternGroup,parameters);
                     double[] p=p0,q=q0;if(Math.hypot(p[0]-pcx,p[1]-pcy)<1e-9){p=secondPoint(selected);q=secondPoint(copy);}
-                    return NonlinearConstraints.rotation(pcx,pcy,Math.toDegrees(Math.atan2(q[1]-pcy,q[0]-pcx)-Math.atan2(p[1]-pcy,p[0]-pcx)));});
+                    return NonlinearConstraints.withGroup(NonlinearConstraints.rotation(pcx,pcy,Math.toDegrees(Math.atan2(q[1]-pcy,q[0]-pcx)-Math.atan2(p[1]-pcy,p[0]-pcx))),patternGroup,parameters);});
                 projectRepository.save(project);
                 operationMessage="Utworzono szyk: "+(copies.size()+1)+" elementów"+(linked==copies.size()?"; kopie powiązane ze źródłem ⧉.":linked>0?"; powiązano "+linked+" kopii.":"; kopie niezależne (tego typu geometrii nie można powiązać).")+" Zakończ zatwierdza szkic.";
             }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
@@ -2417,8 +2443,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         List<double[]> axes=new ArrayList<>();List<String> labels=new ArrayList<>();
         axes.add(new double[]{0,0,1,0});labels.add("Oś X szkicu");
         axes.add(new double[]{0,0,0,1});labels.add("Oś Y szkicu");
+        final List<String> axisIds=new ArrayList<>(java.util.Arrays.asList("@X","@Y"));
         for(SketchPrimitive p:project.sketch)if((p.type.equals("Pomocnicza")||p.type.equals("Linia"))&&!p.id.equals(source.id)) {
-            axes.add(new double[]{p.x1,p.y1,p.x2,p.y2});labels.add("Oś z linii "+(axes.size()-2));
+            axes.add(new double[]{p.x1,p.y1,p.x2,p.y2});labels.add("Oś z linii "+(axes.size()-2));axisIds.add(p.id);
         }
         new PropertyBuilder().setTitle("Kopia lustrzana · "+source.type)
             .setItems(labels.toArray(new String[0]),(d,w)-> {
@@ -2426,9 +2453,14 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                     double[] axis=axes.get(w);
                     SketchPrimitive copy=SketchMirror.copy(source,UUID.randomUUID().toString(),axis[0],axis[1],axis[2],axis[3]);
                     checkpoint();project.sketch.add(copy);selectedSketchId=copy.id;mode="Edytuj szkic";
-                    int linked=linkCopies(source,java.util.Collections.singletonList(copy),c->NonlinearConstraints.mirror(axis[0],axis[1],axis[2],axis[3]));
+                    // Lines and circles: symmetry relation to the axis entity (follows a moved axis line); other geometry: fixed mirror transform.
+                    int linked=0;
+                    if(source.type.equals("Linia")||source.type.equals("Okrąg")) {
+                        for(int order=0;order<2&&linked==0;order++)try{SketchConstraints.Link rel=new SketchConstraints.Link("symmetric",source.id,0,copy.id,order,0,0,axisIds.get(w));NonlinearConstraints.validate(project.sketch,rel);project.coincidences.add(rel);linked=1;}catch(IllegalArgumentException ignored){linked=0;}
+                    }
+                    if(linked==0)linked=linkCopies(source,java.util.Collections.singletonList(copy),c->NonlinearConstraints.withGroup(NonlinearConstraints.mirror(axis[0],axis[1],axis[2],axis[3]),UUID.randomUUID().toString(),"M,0,0,0,0"));
                     projectRepository.save(project);
-                    operationMessage=linked>0?"Utworzono powiązaną kopię lustrzaną ⧉ – zmiana źródła zmienia kopię (oś stała). Zakończ zatwierdza szkic.":"Utworzono niezależną kopię lustrzaną (tego typu geometrii nie można powiązać). Zakończ zatwierdza szkic.";
+                    operationMessage=linked>0?(source.type.equals("Linia")||source.type.equals("Okrąg")?"Utworzono kopię lustrzaną z więzem symetrii ↔ – podąża za źródłem i za osią. Zakończ zatwierdza szkic.":"Utworzono powiązaną kopię lustrzaną ⧉ – zmiana źródła zmienia kopię (oś stała). Zakończ zatwierdza szkic."):"Utworzono niezależną kopię lustrzaną (tego typu geometrii nie można powiązać). Zakończ zatwierdza szkic.";
                 }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
                 invalidate();
             }).setNegativeButton("Anuluj",null).show();
@@ -4433,7 +4465,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     }
     private void commitProjectAsync(CadProject next,String baseline,String success) {
         if(modelOperationPending){operationMessage="Trwa już obliczanie operacji";invalidate();return;}
-        BodyGraph.reconcile(next);CadProject current=project;final double[] base,features;
+        BodyGraph.reconcile(next);
+        try{FeatureHistory.settle(next);}catch(IllegalArgumentException error){operationMessage="Nie można wstawić operacji w miejscu znacznika: "+error.getMessage();invalidate();return;}
+        CadProject current=project;final double[] base,features;
         try {project=next;base=evaluationBase()==null?null:evaluationBase().clone();features=kernelFeatures();}finally {project=current;}
         final String source=next.importedStep?new File(projectRepository.importedStepFile().getParentFile(),next.importedStepSource).getAbsolutePath():null;
         if(modelCommitWorker==null)modelCommitWorker=new GeometryPreviewWorker(task->post(task));modelOperationPending=true;operationMessage="Obliczanie geometrii…";invalidate();
@@ -4468,7 +4502,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         labels.add(suppressed?"Przywróć operację (włącz)":"Wygaś operację (pomiń w przeliczeniu)");actions.add(()->changeHistory(next->FeatureHistory.setSuppressed(next,index,!suppressed),suppressed?"Przywrócono: "+item.title:"Wygaszono: "+item.title+" (pozostaje w historii)"));
         if(index>0)labels.add("Przesuń wcześniej ◀");if(index>0)actions.add(()->changeHistory(next->FeatureHistory.swap(next,index-1),"Przesunięto wcześniej: "+item.title));
         if(index+1<project.committedFeatures.size()){labels.add("Przesuń później ▶");actions.add(()->changeHistory(next->FeatureHistory.swap(next,index),"Przesunięto później: "+item.title));}
-        labels.add("Pokaż model do tej operacji");actions.add(()->setHistoryMarker(index+1));
+        labels.add("Przesuń znacznik historii za tę operację");actions.add(()->setHistoryMarker(index+1));
         if(project.historyMarker>=0){labels.add("Wróć na koniec historii");actions.add(()->returnToHistoryEnd(""));}
         labels.add("Przelicz model");actions.add(()->{if(updateNativeModel())operationMessage="Przeliczono model od początku historii";invalidate();});
         labels.add("Usuń operację…");actions.add(()->confirmFeatureRemoval(item));
@@ -4484,15 +4518,17 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             commitProjectAsync(next,baseline,success);
         }catch(org.json.JSONException|IllegalArgumentException error){operationMessage="Nie zmieniono historii: "+error.getMessage();invalidate();}
     }
-    /** Shows the model as it was after operation {@code count - 1}; view only, not saved. */
+    /** Rollback marker after operation {@code count}: later operations are not evaluated and new ones are inserted there. */
     private void setHistoryMarker(int count) {
         if(SketchTransactions.active(project)){operationMessage="Najpierw zakończ lub anuluj aktywną edycję szkicu";invalidate();return;}
-        int previous=project.historyMarker;project.historyMarker=count>=project.committedFeatures.size()?-1:Math.max(0,count);
-        if(!updateNativeModel()){project.historyMarker=previous;updateNativeModel();invalidate();return;}
-        operationMessage=project.historyMarker<0?"Pokazano cały model":"Model po operacji nr "+count+" (podgląd). Wybór narzędzia modelowania wraca na koniec historii.";invalidate();
+        if(commitModelChange(()->FeatureHistory.setMarker(project,count)))
+            operationMessage=project.historyMarker<0?"Znacznik historii na końcu":"Znacznik po operacji nr "+count+". Nowe operacje zostaną wstawione w tym miejscu; dalsze są pominięte do czasu przesunięcia znacznika na koniec.";
+        invalidate();
     }
     private void returnToHistoryEnd(String prefix) {
-        if(project.historyMarker<0)return;project.historyMarker=-1;updateNativeModel();operationMessage=prefix+"Pokazano cały model";invalidate();
+        if(project.historyMarker<0)return;
+        if(commitModelChange(()->FeatureHistory.setMarker(project,Integer.MAX_VALUE)))operationMessage=prefix+"Znacznik historii na końcu – przeliczono cały model";
+        invalidate();
     }
     private void confirmFeatureRemoval(CadTimeline.Item item) {
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
@@ -4902,8 +4938,11 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         android.widget.Spinner axis=new android.widget.Spinner(getContext());axis.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,kind==1?new String[]{"Płaszczyzna YZ (normalna X)","Płaszczyzna XZ (normalna Y)","Płaszczyzna XY (normalna Z)"}:new String[]{kind==2?"Kierunek X":"Oś X","Kierunek Y".replace("Kierunek",kind==2?"Kierunek":"Oś"),"Kierunek Z".replace("Kierunek",kind==2?"Kierunek":"Oś")}));form.addView(axis);
         List<Datum> references=datumsOf(kind==1?Datum.PLANE:Datum.AXIS);
         {android.widget.ArrayAdapter<String> items=new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,new ArrayList<>());for(int i=0;i<axis.getAdapter().getCount();i++)items.add(String.valueOf(axis.getAdapter().getItem(i)));
-            for(Datum d:references)items.add("Konstrukcja: "+d.name+(kind==2?" (kierunek)":""));axis.setAdapter(items);}
-        int a0=original==null?(kind==3?2:0):Math.abs(original[6])>1-1e-12?0:Math.abs(original[7])>1-1e-12?1:Math.abs(original[8])>1-1e-12?2:0;axis.setSelection(a0);
+            for(Datum d:references)items.add("Konstrukcja: "+d.name+(kind==2?" (kierunek)":""));
+            if(original!=null)items.add("Bieżące odniesienie (zapisane)");axis.setAdapter(items);}
+        int a0=original==null?(kind==3?2:0):Math.abs(original[6])>1-1e-12?0:Math.abs(original[7])>1-1e-12?1:Math.abs(original[8])>1-1e-12?2:-1;
+        if(original!=null&&a0<0){for(int i=0;i<references.size()&&a0<0;i++){Datum d=references.get(i);if(Math.abs(Math.abs(d.direction[0]*original[6]+d.direction[1]*original[7]+d.direction[2]*original[8])-1)<1e-12)a0=3+i;}if(a0<0)a0=3+references.size();}
+        axis.setSelection(Math.max(0,a0));
         double[] o=original!=null?original:new double[16];
         EditText px=labeledCoordinate(form,kind==1?"Punkt płaszczyzny X [mm]":"Punkt osi X [mm]",o[3]),py=labeledCoordinate(form,kind==1?"Punkt płaszczyzny Y [mm]":"Punkt osi Y [mm]",o[4]),pz=labeledCoordinate(form,kind==1?"Punkt płaszczyzny Z [mm]":"Punkt osi Z [mm]",o[5]);
         EditText count=kind==1?null:labeledCoordinate(form,"Liczba wystąpień (z oryginałem)",original!=null?original[9]:3);
@@ -4912,7 +4951,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         new PropertyBuilder().setTitle(editIndex>=0?"Edytuj: "+title:title).setView(form).setNegativeButton("Anuluj",null).setPositiveButton(editIndex>=0?"Zastosuj":"Utwórz",(d,w)->{
             try {
                 int pick=axis.getSelectedItemPosition();double[] dir=new double[3],point={parseCoordinate(px),parseCoordinate(py),parseCoordinate(pz)};int n=0;double v=0;
-                if(pick<3)dir[pick]=1;else {Datum ref=references.get(pick-3);dir=ref.direction.clone();point=ref.origin.clone();}
+                if(pick<3)dir[pick]=1;else if(pick-3<references.size()){Datum ref=references.get(pick-3);dir=ref.direction.clone();point=ref.origin.clone();}
+                else {dir=new double[]{original[6],original[7],original[8]};}
                 if(kind!=1){double c=parseCoordinate(count);if(c!=Math.floor(c))throw new IllegalArgumentException("Liczba wystąpień musi być całkowita");n=(int)c;v=parseCoordinate(value);}
                 double[] record=SweepLoft.bodyPatternRecord(kind,point,dir,n,v);
                 int target=ids.get(body.getSelectedItemPosition());
@@ -5059,7 +5099,36 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         String[] names=new String[planes.size()];for(int i=0;i<names.length;i++)names[i]=planes.get(i).name+" · "+planes.get(i).describe();
         new PropertyBuilder().setTitle("Szkic na płaszczyźnie konstrukcyjnej").setItems(names,(d,w)->sketchOnDatum(planes.get(w))).setNegativeButton("Anuluj",null).show();
     }
+    /** Screen geometry of the drawn construction elements, for touch selection: id → xy pairs (plane 4, axis 2, point 1). */
+    private final java.util.Map<String,float[]> datumScreen=new java.util.LinkedHashMap<>();
+    private Datum datumAt(float x,float y,boolean faceUnderneath) {
+        Datum best=null;double bestDistance=dp(16);
+        for(java.util.Map.Entry<String,float[]> e:datumScreen.entrySet()) {
+            Datum d=datum(e.getKey());if(d==null||d.hidden)continue;float[] q=e.getValue();double distance;
+            if(q.length==2)distance=Math.hypot(x-q[0],y-q[1]);
+            else if(q.length==4)distance=sketchScreenSegmentDistance(x,y,q[0],q[1],q[2],q[3]);
+            else {
+                distance=Double.POSITIVE_INFINITY;for(int i=0;i<8;i+=2){int j=(i+2)%8;distance=Math.min(distance,sketchScreenSegmentDistance(x,y,q[i],q[i+1],q[j],q[j+1]));}
+                if(!faceUnderneath&&distance>bestDistance&&inside(q,x,y))distance=bestDistance-.5;
+            }
+            if(distance<bestDistance){bestDistance=distance;best=d;}
+        }
+        return best;
+    }
+    private static boolean inside(float[] q,float x,float y) {
+        boolean in=false;for(int i=0,j=q.length-2;i<q.length;j=i,i+=2)if((q[i+1]>y)!=(q[j+1]>y)&&x<(q[j]-q[i])*(y-q[i+1])/(q[j+1]-q[i+1])+q[i])in=!in;return in;
+    }
+    /** Tap on a construction element: select it, or start a sketch on a plane while choosing the sketch plane. */
+    private boolean datumTap(float x,float y) {
+        if(project.datums.isEmpty())return false;Datum d=datumAt(x,y,findFaceAt(x,y)>=0);if(d==null)return false;
+        if(mode.equals("Szkic")&&!sketchPlaneChosen){if(!d.plane()){operationMessage="Szkic wymaga płaszczyzny – dotknij płaszczyzny konstrukcyjnej albo ściany";invalidate();return true;}sketchOnDatum(d);return true;}
+        long now=android.os.SystemClock.uptimeMillis();boolean repeat=selectedTreeKey.equals("datum:"+d.id)&&now-treeLastTap<android.view.ViewConfiguration.getDoubleTapTimeout();treeLastTap=now;
+        selectedTreeKey="datum:"+d.id;selectedFace=-1;highlightBody=0;highlightFeature=Integer.MIN_VALUE;highlightSketch=false;
+        if(repeat){showDatumEditor(commandOf(d),d,null);return true;}
+        operationMessage="Zaznaczono: "+d.name+" · "+d.describe()+". Dotknij ponownie, aby edytować"+(d.plane()?"; Szkic → dotknij płaszczyzny, aby na niej rysować.":".");invalidate();return true;
+    }
     private void drawDatums(Canvas canvas) {
+        datumScreen.clear();
         if(project.datums.isEmpty())return;
         double size=Math.max(20,.6*Math.max(modelWidth,Math.max(modelHeight,modelDepth)));double[] c={meshCenterX,meshCenterY,meshCenterZ};
         paint.setStrokeWidth(dp(1.5f));
@@ -5072,16 +5141,17 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
                 for(int i=0;i<4;i++){double[] q=projectWorldPoint(centre[0]+(f[3]*corners[i][0]+f[6]*corners[i][1])*size,centre[1]+(f[4]*corners[i][0]+f[7]*corners[i][1])*size,centre[2]+(f[5]*corners[i][0]+f[8]*corners[i][1])*size);
                     if(q[2]<=0)visible=false;if(i==0)path.moveTo((float)q[0],(float)q[1]);else path.lineTo((float)q[0],(float)q[1]);}
                 if(!visible)continue;path.close();
+                {float[] q=new float[8];for(int i=0;i<4;i++){double[] r=projectWorldPoint(centre[0]+(f[3]*corners[i][0]+f[6]*corners[i][1])*size,centre[1]+(f[4]*corners[i][0]+f[7]*corners[i][1])*size,centre[2]+(f[5]*corners[i][0]+f[8]*corners[i][1])*size);q[2*i]=(float)r[0];q[2*i+1]=(float)r[1];}datumScreen.put(d.id,q);}
                 paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(selected?70:40,Color.red(color),Color.green(color),Color.blue(color)));canvas.drawPath(path,paint);
                 paint.setStyle(Paint.Style.STROKE);paint.setColor(color);canvas.drawPath(path,paint);
                 double[] label=projectWorldPoint(centre[0]+(f[3]-f[6])*size,centre[1]+(f[4]-f[7])*size,centre[2]+(f[5]-f[8])*size);paint.setStyle(Paint.Style.FILL);
                 text(canvas,d.name,(float)label[0]+dp(4),(float)label[1]-dp(4),10,color,true);
             } else if(d.axis()) {
                 double[] a=projectWorldPoint(d.origin[0]-d.direction[0]*size,d.origin[1]-d.direction[1]*size,d.origin[2]-d.direction[2]*size),b=projectWorldPoint(d.origin[0]+d.direction[0]*size,d.origin[1]+d.direction[1]*size,d.origin[2]+d.direction[2]*size);
-                if(a[2]<=0||b[2]<=0)continue;paint.setStyle(Paint.Style.STROKE);paint.setColor(color);paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(10),dp(4),dp(2),dp(4)},0));
+                if(a[2]<=0||b[2]<=0)continue;datumScreen.put(d.id,new float[]{(float)a[0],(float)a[1],(float)b[0],(float)b[1]});paint.setStyle(Paint.Style.STROKE);paint.setColor(color);paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(10),dp(4),dp(2),dp(4)},0));
                 canvas.drawLine((float)a[0],(float)a[1],(float)b[0],(float)b[1],paint);paint.setPathEffect(null);paint.setStyle(Paint.Style.FILL);text(canvas,d.name,(float)b[0]+dp(4),(float)b[1],10,color,true);
             } else {
-                double[] p=projectWorldPoint(d.origin[0],d.origin[1],d.origin[2]);if(p[2]<=0)continue;paint.setStyle(Paint.Style.STROKE);paint.setColor(color);
+                double[] p=projectWorldPoint(d.origin[0],d.origin[1],d.origin[2]);if(p[2]<=0)continue;datumScreen.put(d.id,new float[]{(float)p[0],(float)p[1]});paint.setStyle(Paint.Style.STROKE);paint.setColor(color);
                 canvas.drawCircle((float)p[0],(float)p[1],dp(5),paint);canvas.drawLine((float)p[0]-dp(9),(float)p[1],(float)p[0]+dp(9),(float)p[1],paint);canvas.drawLine((float)p[0],(float)p[1]-dp(9),(float)p[0],(float)p[1]+dp(9),paint);
                 paint.setStyle(Paint.Style.FILL);text(canvas,d.name,(float)p[0]+dp(8),(float)p[1]-dp(8),10,color,true);
             }
@@ -5650,6 +5720,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             project = CadProject.fromJson(new org.json.JSONObject(snapshot));
             change.run();
             BodyGraph.reconcile(project);
+            FeatureHistory.settle(project);
             modelWidth = project.width; modelHeight = project.height; modelDepth = project.depth;
             mode = "Wybierz";
             if (!updateNativeModel()) throw new IllegalArgumentException(operationMessage);
@@ -5985,9 +6056,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
             || tool.equals("Szkic") && mode.equals("Szkic") && !sketchPlaneChosen;
     }
 
-    private static final java.util.Set<String> VIEW_TOOLS=new java.util.HashSet<>(java.util.Arrays.asList("Wybierz","Dopasuj","Izometryczny","Przód","Góra","Prawy bok","Rzut prostokątny","Cieniowanie","Krawędzie","Przezroczystość","Przekrój","Wyczyść widok","Zmierz","Zmierz kąt","Pole ściany","Właściwości bryły","Odległość brył"));
     private void activateTopTool(String tool) {
-        if(project.historyMarker>=0&&!VIEW_TOOLS.contains(tool))returnToHistoryEnd("Znacznik historii wrócił na koniec – nowe operacje są dodawane na końcu historii. ");
         if(tool.equals("Gwint")){beginThreadTool();return;}
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
         if(tool.equals("Powłoka")){beginShellTool(-1);return;}
@@ -6026,6 +6095,7 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(tool.equals("Rzutuj")){if(!hadSketchPlane)operationMessage="Najpierw wybierz płaszczyznę szkicu";else {mode="Edytuj szkic";showEdgeProjection();}invalidate();return;}
         if(tool.equals("Przedłuż")){mode="Edytuj szkic";extendSelectedLine();invalidate();return;}
         if(tool.equals("Szyk liniowy")||tool.equals("Szyk kołowy")){mode="Edytuj szkic";showSketchPattern(tool.equals("Szyk kołowy"));invalidate();return;}
+        if(tool.equals("Edytuj szyk")){mode="Edytuj szkic";editSketchPattern();invalidate();return;}
         if(tool.equals("Wymiar")) {
             if(!hadSketchPlane)operationMessage="Najpierw wybierz płaszczyznę szkicu";
             else {mode="Edytuj szkic";dimensionMode=true;operationMessage="Dotknij elementu, aby nadać mu wymiar sterujący";}

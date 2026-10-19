@@ -47,6 +47,16 @@ public final class LinkedCopiesHostTest {
         boolean refused=false;try{NonlinearConstraints.validate(g,new SketchConstraints.Link("rigid","h",0,copies.get(0).id,0,0,0,NonlinearConstraints.translation(5,0)));}catch(IllegalArgumentException e){refused=true;}
         check(refused,"a relation that the geometry does not satisfy is refused");
         refused=false;try{NonlinearConstraints.validate(g,new SketchConstraints.Link("rigid","h",0,copies.get(0).id,0,0,0,"@T:1,2"));}catch(IllegalArgumentException e){refused=true;}check(refused,"malformed transform refused");
+        // Pattern metadata: transform with group and parameters still parses; meta values are readable.
+        String tagged=NonlinearConstraints.withGroup(NonlinearConstraints.translation(20,0),"grp","L,4.0,20.0,1.0,20.0");
+        check("grp".equals(NonlinearConstraints.meta(tagged,"g"))&&NonlinearConstraints.meta(tagged,"p").startsWith("L,4.0"),"pattern group and parameters are stored with the link");
+        NonlinearConstraints.validate(g,new SketchConstraints.Link("rigid","h",0,copies.get(0).id,0,0,0,tagged));check(true,"tagged transform validates like the plain one");
+        // Symmetry of circles about a sketch line follows a moved axis.
+        SketchPrimitive axisLine=new SketchPrimitive("ax","Linia",50,0,50,10),c1=new SketchPrimitive("c1","Okrąg",40,5,43,5),c2=new SketchPrimitive("c2","Okrąg",60,5,63,5);
+        SketchConstraints.Link sym=new SketchConstraints.Link("symmetric","c1",0,"c2",0,0,0,"ax");List<SketchPrimitive> sg=Arrays.asList(axisLine,c1,c2);NonlinearConstraints.validate(sg,sym);check(true,"mirrored circle satisfies symmetry about the axis line");
+        List<SketchPrimitive> sm=SketchConstraints.edit(sg,Collections.singletonList(sym),"ax",new SketchPrimitive("ax","Linia",55,0,55,10));
+        near(by(sm,"c1").x1+by(sm,"c2").x1,110,"after moving the axis line the circles stay symmetric about X = 55");near(by(sm,"c2").y1,by(sm,"c1").y1,"at the same height");near(Math.hypot(by(sm,"c2").x2-by(sm,"c2").x1,by(sm,"c2").y2-by(sm,"c2").y1),Math.hypot(by(sm,"c1").x2-by(sm,"c1").x1,by(sm,"c1").y2-by(sm,"c1").y1),"radii stay equal");
+        List<SketchPrimitive> sr=SketchConstraints.edit(sg,Collections.singletonList(sym),"c1",new SketchPrimitive("c1","Okrąg",40,5,45,5));near(Math.hypot(by(sr,"c2").x2-by(sr,"c2").x1,by(sr,"c2").y2-by(sr,"c2").y1),5,"source radius change reaches the mirrored circle");
         System.out.println("PASS LinkedCopiesHostTest: "+checks+" checks");
     }
 }
