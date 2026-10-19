@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.81.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.82.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -15,6 +15,7 @@ lub zapisu zachowuje poprzedni stan i gałąź redo. Bieżący audyt: docs/AUDIT
 
 ## Działające podzbiory
 
+0.82.0: audyt dotyku – menu drzewa, dosuwanie brył, klawiatura numeryczna. Audyt: docs/AUDIT-0.82.md.
 0.81.0: podgląd na żywo, suwaki, odsunięcie ściany (rekord -24), płaszczyzna od ściany. Audyt: docs/AUDIT-0.81.md.
 0.80.0: komponenty, wystąpienia (rekord -23), dosuwanie ścian, kolizje, lista części.
 Wersje 0.74–0.80 przetestowane na tablecie HONOR YLE-W09 (instrumentacja PASS,
