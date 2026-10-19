@@ -1,6 +1,6 @@
 # TabletCAD — mapa zakresu i braków
 
-Stan kodu: 0.84.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
+Stan kodu: 0.85.0, Android minSdk 34. Dokument jest mapą dalszej pracy,
 nie deklaracją ukończenia pełnego promptu. Szczegółowe sprawdzone scenariusze
 znajdują się w README oraz tools/*Probe.java.
 
@@ -206,7 +206,7 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
 - Cieniowany widok 3D, zaznaczanie ścian/krawędzi, podgląd operacji,
   ukrywanie zasłoniętych fragmentów i izolowanie zakrytego szkicu.
 
-## Najważniejsze pozostałe luki (stan 0.84)
+## Najważniejsze pozostałe luki (stan 0.85)
 
 1. Szkice: pełny solver nieliniowy działa dla relacji z menu Więzy; brak jeszcze
    szyku po ścieżce i wymiarów kątowych między dowolnymi elementami różnych szkiców.
@@ -215,7 +215,7 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
    ogólnego nazewnictwa krawędzi po dowolnych operacjach Boolean; utrata odniesienia
    jest zgłaszana, nigdy zgadywana.
 3. Złożenia: komponenty, powiązane wystąpienia, dosuwanie (styk, wyrównanie,
-   współosiowość), kolizje i lista części są od 0.80/0.82. Od 0.84 dosunięcie płaskich
+   współosiowość), kolizje i lista części są od 0.80/0.82. Od 0.85 dosunięcie płaskich
    ścian i współosiowość walców zwykłych brył są trwałymi wiązaniami przeliczanymi
    po zmianie geometrii; dosunięcie wystąpień złożenia zapisuje położenie.
 4. Dokumentacja: arkusz z rzutami i przekrojem; brak swobodnego wymiarowania arkusza,
@@ -231,7 +231,7 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
   zapis/odczyt i druga zmiana; położenia otworów i objętości sprawdzane analitycznie.
   Pełna sekwencja dotykowa tego scenariusza nie jest osobnym testem UI.
 - D — CZĘŚCIOWY: komponenty, wystąpienia, dosuwanie i kolizje są (0.80–0.82); trwałe
-  wiązania (płaszczyzny i współosiowość) zwykłych brył od 0.84.
+  wiązania (płaszczyzny i współosiowość) zwykłych brył od 0.85.
 
 
 - Scenariusz obowiązkowy 16.3 (kroki 1–21) — PASS na HONOR YLE-W09
