@@ -937,8 +937,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     private void runToolWithFeedback(String command,boolean quiet) {
         String message=operationMessage;String before=mode;android.widget.ScrollView editor=propertyEditor;
         activateTopTool(command);
-        if(!quiet&&propertyEditor==editor&&mode.equals(before)&&!operationMessage.isEmpty()&&!operationMessage.equals(message))
-            android.widget.Toast.makeText(getContext(),operationMessage,android.widget.Toast.LENGTH_LONG).show();
+        // The viewport message bubble already shows the reason; keep it visible a little longer when nothing opened.
+        if(!quiet&&propertyEditor==editor&&mode.equals(before)&&!operationMessage.isEmpty()&&!operationMessage.equals(message))performHapticFeedback(android.view.HapticFeedbackConstants.REJECT);
     }
     private void dismissToolPopup() {if(toolbarPopup!=null){toolbarPopup.dismiss();toolbarPopup=null;}}
 
@@ -1787,8 +1787,9 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
         if(event.getPointerCount()>1||action==MotionEvent.ACTION_CANCEL||Math.hypot(event.getX()-dimensionTouchX,event.getY()-dimensionTouchY)>dp(12)){dimensionTouch=null;lastDimensionHit=null;return false;}
         if(action==MotionEvent.ACTION_UP) {
             DimensionHit hit=dimensionTouch;dimensionTouch=null;long now=android.os.SystemClock.uptimeMillis();selectedSketchId=hit.entityId;
-            if(lastDimensionHit!=null&&lastDimensionHit.key().equals(hit.key())&&now-lastDimensionTime<android.view.ViewConfiguration.getDoubleTapTimeout()) {lastDimensionHit=null;showDimensionValueEditor(hit);}
-            else {lastDimensionHit=hit;lastDimensionTime=now;invalidate();}
+            // One tap on a dimension value opens its editor (a repeated tap of the same value is ignored while it is open).
+            if(lastDimensionHit!=null&&lastDimensionHit.key().equals(hit.key())&&now-lastDimensionTime<android.view.ViewConfiguration.getDoubleTapTimeout()&&propertyEditor!=null)return true;
+            lastDimensionHit=hit;lastDimensionTime=now;showDimensionValueEditor(hit);invalidate();
         }
         return true;
     }
@@ -4898,7 +4899,8 @@ if (mode.equals("Szkic") && !sketchPlaneChosen && e.getX() > getWidth() - dp(234
     private boolean prepareSolidTool(String name) {
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return false;}
         if(inSketch()){finishSketchWork();if(inSketch())return false;}
-        if(project.importedMeshSource!=null||!project.hasSolid()){operationMessage=name+" wymaga bryły B-Rep";invalidate();return false;}
+        if(project.importedMeshSource!=null){operationMessage=name+" wymaga bryły B-Rep – zaimportowana siatka STL/OBJ nie ma dokładnych ścian i krawędzi";invalidate();return false;}
+        if(!project.hasSolid()){operationMessage=name+": najpierw utwórz bryłę – Szkice → Szkic, narysuj profil i Wyciągnij";invalidate();return false;}
         if(modelOperationPending){operationMessage="Trwa już obliczanie operacji";invalidate();return false;}
         closePropertyEditor();preserveExtrudedBase();commitActiveFeature();BodyGraph.begin(project);return true;
     }
