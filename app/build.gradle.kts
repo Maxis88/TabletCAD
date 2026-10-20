@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 102
-        versionName = "0.91.0-sheet-circles"
+        versionCode = 103
+        versionName = "0.92.0-stylus"
     }
 
     externalNativeBuild {

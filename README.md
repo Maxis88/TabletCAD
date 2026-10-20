@@ -1,11 +1,14 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.91.0-sheet-circles**, versionCode **102**.
+Wersja źródeł: **0.92.0-stylus**, versionCode **103**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
+
+Wersja 0.92 — obsługa rysika: odrzucanie dłoni, precyzyjne wskazywanie, podgląd przyciągania nad ekranem,
+przycisk rysika przesuwa widok, palec nawiguje. [Audyt 0.92](docs/AUDIT-0.92.md) — testy na tablecie do wykonania.
 
 Wersja 0.91 — średnice i promienie na arkuszu, wymiary od środków otworów, szybsze zatwierdzanie
 po podglądzie. [Audyt 0.91](docs/AUDIT-0.91.md) — testy na tablecie do wykonania.

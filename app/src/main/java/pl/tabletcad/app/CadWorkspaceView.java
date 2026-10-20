@@ -624,6 +624,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     if(mode.equals("Rysunek")){sheetTap(e.getX(),e.getY());return true;}
                     if(mode.equals("Profile wyciągnięcia")){if(extrusionFacePick!=null)pickExtrusionFace(e.getX(),e.getY());else toggleExtrusionProfile(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchOrbit)return true;
+                    if(mode.equals("Szkic")&&sketchPlaneChosen&&fingerNavigates()){operationMessage="Rysik rysuje, palec przesuwa widok. Palec też może rysować: panel szkicu → Palec rysuje";invalidate();return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&(sketchTool.equals("Okrąg 3 pkt")||sketchTool.equals("Szczelina")||sketchTool.equals("Elipsa"))){threePointTap(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Łuk")){arcTap(e.getX(),e.getY());return true;}
                     if(filletSelectionChanged!=null) {
@@ -746,10 +747,72 @@ if (isInsideViewport(e.getX(), e.getY())) {
         panX=focusX-cx-ratio*(focusX-cx-panX);panY=focusY-cy-ratio*(focusY-cy-panY);zoom=next;
     }
 
+    private final StylusFilter stylus=new StylusFilter();private int activeTool=StylusFilter.FINGER;private boolean rejectGesture,stylusPanning;
+    private float stylusLastX,stylusLastY;
+    /** With a stylus in use, fingers navigate in drawing tools unless the user lets them draw too. */
+    private boolean fingerDraws,stylusAnnounced;
+    private boolean fingerNavigates(){return stylus.stylusSeen()&&!fingerDraws&&activeTool!=StylusFilter.STYLUS&&activeTool!=StylusFilter.ERASER;}
+    /** Pick/snap radius factor of the current gesture (stylus tip is more precise than a finger). */
+    private float pickScale=1f;
     @Override public boolean onTouchEvent(MotionEvent event) {
-        try{return touchEvent(event);}
+        int action=event.getActionMasked();long now=event.getEventTime();
+        if(action==MotionEvent.ACTION_DOWN) {
+            activeTool=event.getToolType(0);pickScale=StylusFilter.pickScale(activeTool);
+            double millimetres=event.getTouchMajor()/Math.max(1,getResources().getDisplayMetrics().xdpi/25.4);
+            rejectGesture=!stylus.down(activeTool,millimetres,now);stylusPanning=false;
+            if(stylus.stylusSeen()&&!stylusAnnounced){stylusAnnounced=true;operationMessage="Wykryto rysik: rysik rysuje i wybiera precyzyjnie, palec przesuwa widok, dłoń jest ignorowana. Przycisk rysika + przeciągnięcie = przesuwanie widoku.";}
+            if(rejectGesture)return true;// palm or finger while the stylus is writing
+        }
+        if(rejectGesture){if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){stylus.up(activeTool,now);rejectGesture=false;}return true;}
+        // Stylus side button: drag pans the view in any mode (never edits geometry).
+        if(activeTool==StylusFilter.STYLUS&&(event.getButtonState()&MotionEvent.BUTTON_STYLUS_PRIMARY)!=0&&event.getPointerCount()==1) {
+            if(!stylusPanning||action==MotionEvent.ACTION_DOWN){stylusPanning=true;stylusLastX=event.getX();stylusLastY=event.getY();
+                if(action!=MotionEvent.ACTION_DOWN)touchEvent(cancelOf(event));return true;}
+            if(action==MotionEvent.ACTION_MOVE){panX+=event.getX()-stylusLastX;panY+=event.getY()-stylusLastY;stylusLastX=event.getX();stylusLastY=event.getY();invalidate();}
+            if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){stylus.up(activeTool,now);stylusPanning=false;}
+            return true;
+        }
+        if(stylusPanning){if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){stylus.up(activeTool,now);stylusPanning=false;}return true;}
+        MotionEvent delivered=event;boolean recycle=false;
+        if(stylus.stylusDown()&&event.getPointerCount()>1){delivered=stylusOnly(event);recycle=delivered!=event;}
+        boolean penLifted=recycle&&action==MotionEvent.ACTION_POINTER_UP&&delivered.getActionMasked()==MotionEvent.ACTION_UP;
+        try{return touchEvent(delivered);}
         catch(RuntimeException error){recoverFromError("Dotyk",error);return true;}
+        finally{
+            if(recycle)delivered.recycle();
+            if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)stylus.up(activeTool,now);
+            // The stylus left while a finger still rests on the screen: the rest of this gesture is the palm.
+            if(penLifted){stylus.up(StylusFilter.STYLUS,now);rejectGesture=true;}
+        }
     }
+    /** The stylus pointer alone: fingers resting on the screen during a stroke are dropped. */
+    private MotionEvent stylusOnly(MotionEvent event) {
+        int pen=-1;for(int i=0;i<event.getPointerCount();i++){int t=event.getToolType(i);if(t==StylusFilter.STYLUS||t==StylusFilter.ERASER)pen=i;}
+        if(pen<0)return event;
+        int action=event.getActionMasked();
+        if(action==MotionEvent.ACTION_POINTER_DOWN||action==MotionEvent.ACTION_POINTER_UP)action=event.getActionIndex()==pen?(action==MotionEvent.ACTION_POINTER_UP?MotionEvent.ACTION_UP:MotionEvent.ACTION_MOVE):MotionEvent.ACTION_MOVE;
+        MotionEvent single=MotionEvent.obtain(event.getDownTime(),event.getEventTime(),action,event.getX(pen),event.getY(pen),event.getMetaState());
+        single.setSource(event.getSource());return single;
+    }
+    private static MotionEvent cancelOf(MotionEvent event) {
+        MotionEvent cancel=MotionEvent.obtain(event);cancel.setAction(MotionEvent.ACTION_CANCEL);return cancel;
+    }
+    /** Stylus hover: the snap marker shows where the tip would land before it touches. */
+    @Override public boolean onHoverEvent(MotionEvent event) {
+        try {
+            int action=event.getActionMasked();
+            if(!inSketch()||!sketchPlaneChosen||rebuilding||propertyEditor!=null&&!mode.equals("Szkic"))return super.onHoverEvent(event);
+            if(action==MotionEvent.ACTION_HOVER_EXIT){hoverPoint=null;snapMarker=null;invalidate();return true;}
+            if(action==MotionEvent.ACTION_HOVER_MOVE||action==MotionEvent.ACTION_HOVER_ENTER) {
+                if(!isInsideViewport(event.getX(),event.getY())){hoverPoint=null;return true;}
+                pickScale=StylusFilter.pickScale(event.getToolType(0));
+                double[] point=snappedSketchPoint(event.getX(),event.getY(),null,null,null);
+                hoverPoint=projectSketchPoint(point[0],point[1]);invalidate();return true;
+            }
+        }catch(RuntimeException error){hoverPoint=null;}
+        return super.onHoverEvent(event);
+    }
+    private PointF hoverPoint;
     private boolean touchEvent(MotionEvent event) {
         if(rebuilding)return true;
         if(handleDimensionTouch(event))return true;
@@ -767,7 +830,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchOrbit) {
             scaleGestures.onTouchEvent(event);gestures.onTouchEvent(event);return true;
         }
-        if(mode.equals("Szkic")&&(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn"))&&sketchPlaneChosen) {
+        if(mode.equals("Szkic")&&(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn"))&&sketchPlaneChosen&&!fingerNavigates()) {
             if(event.getActionMasked()==MotionEvent.ACTION_DOWN&&isInsideViewport(event.getX(),event.getY())&&event.getY()>=dp(152)) {
                 polylineTouch=true;polylinePreview=polylinePoint(event.getX(),event.getY());
                 scaleGestures.onTouchEvent(event);gestures.onTouchEvent(event);invalidate();return true;
@@ -910,7 +973,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             try{threePointPreview=SketchShapes.threePoint("preview",sketchTool,project.threePointDraft.get(0),project.threePointDraft.get(1),snappedSketchPoint(event.getX(),event.getY(),null,null,null));}
             catch(IllegalArgumentException error){threePointPreview=null;}invalidate();
         }
-        if (mode.equals("Szkic") && !SketchShapes.threePointTool(sketchTool) && !(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn")) && sketchPlaneChosen
+        if (mode.equals("Szkic") && !SketchShapes.threePointTool(sketchTool) && !(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn")) && sketchPlaneChosen && !fingerNavigates()
                 && (isInsideViewport(event.getX(), event.getY()) || sketching)) {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 if(event.getY()<dp(152)) return true;
@@ -991,7 +1054,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         } else {
             if (showSolid || !inSketch()) drawNativeSolid(canvas, workCenterX, workCenterY);
             if (!inSketch() || !sketchPlaneChosen) drawDatums(canvas);
-            if(inSketch()){if(sketchVisible)drawSketch(canvas,left,right);}
+            if(inSketch()){if(sketchVisible)drawSketch(canvas,left,right);drawHover(canvas);}
             else drawVisibleTreeSketches(canvas);
             if (mode.equals("Zmierz")) drawDimensions(canvas, left, top, right, bottom);
         }
@@ -1395,7 +1458,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     /** Default tool contexts use the same native controls as parameter forms. */
     private void scheduleContextPanel() {
-        String key=propertyEditor!=null||!propertiesVisible()?"":mode+"|"+sketchTool+"|"+sketchPlaneChosen+"|"+project.sketchId+"|"+project.sketch.size()+"|"+project.polylineDraft.size()+"|"+project.threePointDraft.size()+"|"+arcDraft.size()+"|"+coincidenceMode+"|"+sheetDimensionMode+"|"+project.drawingDimensions.size()+"|"+selectedSketchId+"|"+projectionMode+"|"+multiSelect+"|"+sketchMulti.size()+"|"+constraintKind+"|"+trimMode+"|"+dimensionMode+"|"+projectionMode+"|"+displayMode+"|"+(sectionPlane!=null);
+        String key=propertyEditor!=null||!propertiesVisible()?"":mode+"|"+sketchTool+"|"+sketchPlaneChosen+"|"+project.sketchId+"|"+project.sketch.size()+"|"+project.polylineDraft.size()+"|"+project.threePointDraft.size()+"|"+arcDraft.size()+"|"+coincidenceMode+"|"+stylus.stylusSeen()+fingerDraws+"|"+sheetDimensionMode+"|"+project.drawingDimensions.size()+"|"+selectedSketchId+"|"+projectionMode+"|"+multiSelect+"|"+sketchMulti.size()+"|"+constraintKind+"|"+trimMode+"|"+dimensionMode+"|"+projectionMode+"|"+displayMode+"|"+(sectionPlane!=null);
         if(key.equals(contextPanelKey)||contextPanelPosted)return;
         contextPanelPosted=true;post(()->{contextPanelPosted=false;if(!isAttachedToWindow()||!(getParent() instanceof android.widget.FrameLayout))return;
             removeContextPanel();if(propertyEditor!=null||!propertiesVisible())return;
@@ -1426,6 +1489,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     } else if(!arcDraft.isEmpty())contextAction(contents,"Opcje łuku…",false,()->showArcDraftActions(null));
                     else if(!project.threePointDraft.isEmpty())contextAction(contents,"Opcje konstrukcji…",false,()->showThreePointActions(null));
                     contextText(contents,"Elementy: "+project.sketch.size(),false);
+                    if(stylus.stylusSeen())contextAction(contents,fingerDraws?"Palec rysuje: włączone":"Palec rysuje: wyłączone (rysik)",false,()->{fingerDraws=!fingerDraws;operationMessage=fingerDraws?"Palec i rysik rysują":"Rysuje tylko rysik; palec przesuwa widok";});
                     SketchPrimitive picked=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(selectedSketchId))picked=p;
                     if(multiSelect||!sketchMulti.isEmpty()) {
                         contextText(contents,"Zaznaczonych: "+sketchMulti.size(),true);
@@ -2830,7 +2894,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private double[] snappedSketchPoint(float x,float y,String excluded,Double startX,Double startY) {
         double[] raw=screenToSketch(x,y);
         PointF a=projectSketchPoint(raw[0],raw[1]),b=projectSketchPoint(raw[0]+1,raw[1]);
-        double tolerance=dp(12)/Math.max(0.1,Math.hypot(a.x-b.x,a.y-b.y));
+        double tolerance=dp(12)*pickScale/Math.max(0.1,Math.hypot(a.x-b.x,a.y-b.y));
         double[] snapped=SketchSnapper.snap(raw[0],raw[1],snapGeometry(),excluded,tolerance,startX,startY);
         snapMarker=Math.hypot(raw[0]-snapped[0],raw[1]-snapped[1])>1e-7
             ? projectSketchPoint(snapped[0],snapped[1]):null;
@@ -2870,7 +2934,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private SketchPrimitive findSketchAt(float sx, float sy) {
-        float tolerance = dp(16);
+        float tolerance = dp(16)*pickScale;
         SketchPrimitive best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
         for (SketchPrimitive entity : project.sketch) {
@@ -7044,6 +7108,13 @@ if (isInsideViewport(e.getX(), e.getY())) {
             catch(RuntimeException error){post(()->recoverFromError(label,error));}
             finally{post(()->{rebuilding=false;invalidate();});}
         },"TabletCAD-busy").start();
+    }
+    private void drawHover(Canvas canvas) {
+        if(hoverPoint==null||sketching||draggedSketch!=null)return;
+        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1.2f));paint.setColor(Color.argb(200,13,148,136));
+        float r=dp(5);canvas.drawLine(hoverPoint.x-r*2,hoverPoint.y,hoverPoint.x-r,hoverPoint.y,paint);canvas.drawLine(hoverPoint.x+r,hoverPoint.y,hoverPoint.x+r*2,hoverPoint.y,paint);
+        canvas.drawLine(hoverPoint.x,hoverPoint.y-r*2,hoverPoint.x,hoverPoint.y-r,paint);canvas.drawLine(hoverPoint.x,hoverPoint.y+r,hoverPoint.x,hoverPoint.y+r*2,paint);
+        paint.setStyle(Paint.Style.FILL);
     }
     private void drawRebuildOverlay(Canvas canvas,float left,float top,float right,float bottom) {
         if(!rebuilding)return;
