@@ -348,29 +348,36 @@ TopoDS_Shape profileFeature(const std::string& type, double x1, double y1,
     return BRepPrimAPI_MakePrism(face, normal * depth).Shape();
 }
 
+double g_boolMs=0,g_simplifyMs=0,g_checkMs=0;
 TopoDS_Shape applyProfileFeature(const TopoDS_Shape& base, const TopoDS_Shape& tool, bool cut) {
     if (base.IsNull()) { kernelReason("Brak bryły, na której można wykonać operację"); return {}; }
     if (tool.IsNull()) { kernelReason("Profil nie tworzy poprawnej bryły narzędzia (sprawdź, czy kontur jest zamknięty i nie przecina się)"); return {}; }
-    TopoDS_Shape result;
+    TopoDS_Shape result;auto clock=[]{return std::chrono::steady_clock::now();};auto since=[](auto t){return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t).count();};
+    auto t0=clock();
     if (cut) {
-        BRepAlgoAPI_Cut operation(base, tool);
-        operation.Build();
+        BRepAlgoAPI_Cut operation;NCollection_List<TopoDS_Shape> a,b;a.Append(base);b.Append(tool);operation.SetArguments(a);operation.SetTools(b);operation.SetUseOBB(true);operation.SetRunParallel(true);
+        operation.Build();g_boolMs+=since(t0);
         if (!operation.IsDone()) { kernelReason("OCCT nie wykonał odejmowania brył"); return {}; }
-        operation.SimplifyResult(true,true);
+        auto t1=clock();operation.SimplifyResult(true,true);g_simplifyMs+=since(t1);
         result = operation.Shape();
     } else {
-        BRepAlgoAPI_Fuse operation(base, tool);
-        operation.Build();
+        BRepAlgoAPI_Fuse operation;NCollection_List<TopoDS_Shape> a,b;a.Append(base);b.Append(tool);operation.SetArguments(a);operation.SetTools(b);operation.SetUseOBB(true);operation.SetRunParallel(true);
+        operation.Build();g_boolMs+=since(t0);
         if (!operation.IsDone()) { kernelReason("OCCT nie wykonał łączenia brył"); return {}; }
-        operation.SimplifyResult(true,true);
+        auto t1=clock();operation.SimplifyResult(true,true);g_simplifyMs+=since(t1);
         result = operation.Shape();
     }
-    if (result.IsNull() || !BRepCheck_Analyzer(result).IsValid()) { kernelReason("Wynik operacji Boolean ma niepoprawną topologię"); return {}; }
-    GProp_GProps before, after;
-    BRepGProp::VolumeProperties(base, before);
-    BRepGProp::VolumeProperties(result, after);
-    const double oldVolume = std::abs(before.Mass());
+    auto t2=clock();
+    if (result.IsNull() || !BRepCheck_Analyzer(result,true,true).IsValid()) { kernelReason("Wynik operacji Boolean ma niepoprawną topologię"); return {}; }
+    g_checkMs+=since(t2);
+    // The base is usually the previous result: its volume is remembered instead of integrated again.
+    thread_local TopoDS_Shape lastShape;thread_local double lastVolume=0;
+    double oldVolume;
+    if(!lastShape.IsNull()&&lastShape.IsEqual(base))oldVolume=lastVolume;
+    else {GProp_GProps before;BRepGProp::VolumeProperties(base, before);oldVolume=std::abs(before.Mass());}
+    GProp_GProps after;BRepGProp::VolumeProperties(result, after);
     const double newVolume = std::abs(after.Mass());
+    lastShape=result;lastVolume=newVolume;
     const double tolerance = std::max(1.0e-7, oldVolume * 1.0e-10);
     if (!std::isfinite(newVolume) || newVolume <= tolerance) { kernelReason("Operacja usunęłaby całą bryłę"); return {}; }
     if ((cut ? oldVolume - newVolume : newVolume - oldVolume) <= tolerance) {
@@ -940,7 +947,10 @@ struct EvalCache {
 };
 std::mutex g_evalMutex;
 EvalCache g_evalCache;
-void updateOrigins(const TopoDS_Shape& before,const TopoDS_Shape& after,int tag,FaceOrigins& origins) {
+double g_originsMs=0;
+void updateOriginsImpl(const TopoDS_Shape& before,const TopoDS_Shape& after,int tag,FaceOrigins& origins);
+void updateOrigins(const TopoDS_Shape& before,const TopoDS_Shape& after,int tag,FaceOrigins& origins){auto t=std::chrono::steady_clock::now();updateOriginsImpl(before,after,tag,origins);g_originsMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t).count();}
+void updateOriginsImpl(const TopoDS_Shape& before,const TopoDS_Shape& after,int tag,FaceOrigins& origins) {
     static_cast<void>(before);FaceOrigins next;
     for(TopExp_Explorer e(after,TopAbs_FACE);e.More();e.Next()) {
         const FaceOrigin* same=nullptr;for(const auto& known:origins)if(e.Current().IsSame(known.first)){same=&known;break;}
@@ -1622,7 +1632,7 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         BodyShapes bodies;FaceOrigins origins;
         auto perfT0=std::chrono::steady_clock::now();
         auto perf=[&](const char* what){if(std::getenv("TABLETCAD_PERF")){auto now=std::chrono::steady_clock::now();std::fprintf(stderr,"perf %s %.1f ms\n",what,std::chrono::duration<double,std::milli>(now-perfT0).count());perfT0=now;}};
-        shape=evaluateRecords(shape,values,rootBase,rootShape,javaSourceStep!=nullptr,&bodies,&origins,&cache);perf("records");
+        shape=evaluateRecords(shape,values,rootBase,rootShape,javaSourceStep!=nullptr,&bodies,&origins,&cache);perf("records");if(std::getenv("TABLETCAD_PERF")){std::fprintf(stderr,"perf   of which origins %.1f bool %.1f simplify %.1f check %.1f ms\n",g_originsMs,g_boolMs,g_simplifyMs,g_checkMs);}g_originsMs=g_boolMs=g_simplifyMs=g_checkMs=0;
         if(shape.IsNull()){kernelReason("Przebudowa modelu nie powiodła się");return env->NewDoubleArray(0);}
         if (!exportPath.empty()) {
             STEPControl_Writer writer;
