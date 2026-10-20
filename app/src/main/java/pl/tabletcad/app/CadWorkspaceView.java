@@ -58,6 +58,8 @@ public final class CadWorkspaceView extends View {
     }
     private static final int BG = Color.rgb(242, 245, 247);
     private static final int PANEL = Color.rgb(255, 255, 255);
+    /** Unselected on-model option chips: dark, so their white labels are readable over the white model view. */
+    private static final int CHIP_DARK = Color.argb(235, 38, 50, 56);
     private static final int INK = Color.rgb(28, 39, 49);
     private static final int MUTED = Color.rgb(101, 116, 130);
     private static final int ACCENT = Color.rgb(13, 148, 136);
@@ -4587,14 +4589,14 @@ if (isInsideViewport(e.getX(), e.getY())) {
             text(canvas,formatMm(depth),x+dp(58),y+dp(26),13,ACCENT,true,Paint.Align.CENTER);
             // Small options right at the arrow: flip and symmetric (the panel keeps the rest).
             extrusionFlipBounds.set(x,y+dp(44),x+dp(56),y+dp(74));extrusionSymBounds.set(x+dp(60),y+dp(44),x+dp(116),y+dp(74));
-            paint.setColor(extrusionReverse!=null&&extrusionReverse.isChecked()?ACCENT:PANEL);canvas.drawRoundRect(extrusionFlipBounds,dp(8),dp(8),paint);
+            paint.setColor(extrusionReverse!=null&&extrusionReverse.isChecked()?ACCENT:CHIP_DARK);canvas.drawRoundRect(extrusionFlipBounds,dp(8),dp(8),paint);
             text(canvas,"⇅ Odwróć",extrusionFlipBounds.centerX(),extrusionFlipBounds.centerY()+dp(4),10,Color.WHITE,false,Paint.Align.CENTER);
-            paint.setColor(extrusionSymmetric.isChecked()?ACCENT:PANEL);canvas.drawRoundRect(extrusionSymBounds,dp(8),dp(8),paint);
+            paint.setColor(extrusionSymmetric.isChecked()?ACCENT:CHIP_DARK);canvas.drawRoundRect(extrusionSymBounds,dp(8),dp(8),paint);
             text(canvas,"↕ Symetr.",extrusionSymBounds.centerX(),extrusionSymBounds.centerY()+dp(4),10,Color.WHITE,false,Paint.Align.CENTER);
             if(extrusionOperation!=null&&extrusionOperation.getCount()==EXTRUSION_OPS.length) {
                 float ox=Math.min(x,right-dp(8)-5*dp(48));int chosen=extrusionOperation.getSelectedItemPosition();
                 for(int k=0;k<EXTRUSION_OPS.length;k++){RectF ob=extrusionOpBounds[k];ob.set(ox+k*dp(48),y+dp(78),ox+k*dp(48)+dp(45),y+dp(106));
-                    paint.setColor(k==chosen?(k==3?Color.rgb(176,64,52):ACCENT):PANEL);canvas.drawRoundRect(ob,dp(8),dp(8),paint);
+                    paint.setColor(k==chosen?(k==3?Color.rgb(176,64,52):ACCENT):CHIP_DARK);canvas.drawRoundRect(ob,dp(8),dp(8),paint);
                     text(canvas,EXTRUSION_OPS[k],ob.centerX(),ob.centerY()+dp(4),9.5f,Color.WHITE,false,Paint.Align.CENTER);}
             }
         }catch(IllegalArgumentException ignored){ /* Invalid typed values keep the model unchanged. */ }
