@@ -14,7 +14,8 @@ public final class CurveTrimmer {
         else if(p.type.equals("Okrąg")) {
             double x=p.x1,y=p.y1,r=Math.hypot(p.x2-x,p.y2-y);
             result.add(SketchCurves.arc(x+r,y,x,y+r,x-r,y));result.add(SketchCurves.arc(x-r,y,x,y-r,x+r,y));
-        }else for(double[] e:SketchTrimmer.edges(p))result.add(line(e[0],e[1],e[2],e[3]));
+        }else if(p.isEllipse()||SketchSpline.is(p)){for(double[] e:SketchTrimmer.curvePolyline(p))result.add(line(e[0],e[1],e[2],e[3]));}
+        else for(double[] e:SketchTrimmer.edges(p))result.add(line(e[0],e[1],e[2],e[3]));
         return result;
     }
     private static double parameter(double[] segment,double x,double y) {

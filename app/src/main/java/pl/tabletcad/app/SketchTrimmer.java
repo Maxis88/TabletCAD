@@ -8,7 +8,7 @@ public final class SketchTrimmer {
     private SketchTrimmer() {}
     static List<double[]> edges(SketchPrimitive p) {
         List<double[]> result=new ArrayList<>();
-        if(p.curves!=null||SketchSpline.is(p))return result;
+        if(p.curves!=null||SketchSpline.is(p)||p.isEllipse()||p.isPoint())return result;
         if(p.vertices!=null) {
             for(int i=0;i<p.vertices.length;i+=2) {int j=(i+2)%p.vertices.length;
                 result.add(new double[]{p.vertices[i],p.vertices[i+1],p.vertices[j],p.vertices[j+1]});}
@@ -38,6 +38,24 @@ public final class SketchTrimmer {
         double t=(dx*by-dy*bx)/det,u=(dx*ay-dy*ax)/det;
         if(u>=-1e-8&&u<=1+1e-8) cut(cuts,t);
     }
+    /** Exact line–ellipse intersections (in the ellipse frame the ellipse is (u/a)²+(v/b)²=1). */
+    private static void ellipseIntersections(double[] e,SketchPrimitive el,List<Double> cuts) {
+        double a=el.major(),b=el.minor,ux=(el.x2-el.x1)/a,uy=(el.y2-el.y1)/a;
+        double px=e[0]-el.x1,py=e[1]-el.y1,dx=e[2]-e[0],dy=e[3]-e[1];
+        double pu=(px*ux+py*uy)/a,pv=(-px*uy+py*ux)/b,du=(dx*ux+dy*uy)/a,dv=(-dx*uy+dy*ux)/b;
+        double qa=du*du+dv*dv,qb=2*(pu*du+pv*dv),qc=pu*pu+pv*pv-1,disc=qb*qb-4*qa*qc;
+        if(qa<1e-18||disc<0)return;
+        cut(cuts,(-qb-Math.sqrt(disc))/(2*qa));cut(cuts,(-qb+Math.sqrt(disc))/(2*qa));
+    }
+    /** Fine polyline of a curve that is neither a line nor an arc (ellipse, spline) for cutting other elements. */
+    static List<double[]> curvePolyline(SketchPrimitive p) {
+        List<double[]> out=new ArrayList<>();double[] pts=null;
+        if(SketchSpline.is(p))pts=SketchSpline.sample(p.vertices,128);
+        else if(p.isEllipse()){int n=720;pts=new double[(n+1)*2];double a=p.major(),ux=(p.x2-p.x1)/a,uy=(p.y2-p.y1)/a;
+            for(int i=0;i<=n;i++){double t=2*Math.PI*i/n,c=a*Math.cos(t),d=p.minor*Math.sin(t);pts[2*i]=p.x1+c*ux-d*uy;pts[2*i+1]=p.y1+c*uy+d*ux;}}
+        if(pts!=null)for(int i=0;i+3<pts.length;i+=2)out.add(new double[]{pts[i],pts[i+1],pts[i+2],pts[i+3]});
+        return out;
+    }
     private static void circleIntersections(double[] e,SketchPrimitive circle,List<Double> cuts) {
         double dx=e[2]-e[0],dy=e[3]-e[1],x=e[0]-circle.x1,y=e[1]-circle.y1;
         double r=Math.hypot(circle.x2-circle.x1,circle.y2-circle.y1);
@@ -65,6 +83,8 @@ public final class SketchTrimmer {
             if(cutter.id.equals(target.id))continue;
             if(cutter.curves!=null)for(double[] p:SketchCurves.lineHits(edge,cutter.curves))cut(cuts,parameter(edge,p[0],p[1]));
             else if(cutter.type.equals("Okrąg")) circleIntersections(edge,cutter,cuts);
+            else if(cutter.isEllipse()) ellipseIntersections(edge,cutter,cuts);
+            else if(SketchSpline.is(cutter)) for(double[] e:curvePolyline(cutter)) intersections(edge,e,cuts);
             else for(double[] e:edges(cutter)) intersections(edge,e,cuts);
         }
         Collections.sort(cuts);List<Double> unique=new ArrayList<>();

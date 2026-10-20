@@ -57,7 +57,7 @@ javac -nowarn -encoding UTF-8 --release 17 -classpath "$ANDROID_JAR" -d "$OUT/cl
 CP="$OUT/probes:$OUT/classes:$JSON_JAR:$ANDROID_JAR"
 # Probes that only use the kernel and the document model run headless on the desktop JVM.
 PROBES="${PROBES:-KernelDiagnosticsProbe SplineKernelProbe SurfaceSplitKernelProbe EdgeRepairKernelProbe IgesKernelProbe SolidPatternKernelProbe SketchDesignKernelProbe CadToolsKernelProbe ConstructionKernelProbe HistoryKernelProbe AnalysisKernelProbe PrintKernelProbe AssemblyKernelProbe FaceOffsetKernelProbe MateKernelProbe AcceptanceAKernelProbe ThreadProbe BodyPropertiesProbe EdgeChamferProbe SketchEditingProbe}"
-HOST_TESTS="${HOST_TESTS:-SketchDesignHostTest SolidPatternHostTest UnitsHostTest CadToolsHostTest ConstructionHostTest LinkedCopiesHostTest ProjectLibraryFilesHostTest BodyMassHostTest LibraryWorkspaceHostTest ViewCubeHostTest SketchPositionHostTest KernelCacheHostTest FaceProjectionHostTest SketchAngleHostTest SheetDimensionHostTest StylusHostTest SketchPointHostTest ThreeMfHostTest CompactPlacementHostTest SketchSnapHostTest FacePickHostTest}"
+HOST_TESTS="${HOST_TESTS:-SketchDesignHostTest SolidPatternHostTest UnitsHostTest CadToolsHostTest ConstructionHostTest LinkedCopiesHostTest ProjectLibraryFilesHostTest BodyMassHostTest LibraryWorkspaceHostTest ViewCubeHostTest SketchPositionHostTest KernelCacheHostTest FaceProjectionHostTest SketchAngleHostTest SheetDimensionHostTest StylusHostTest SketchPointHostTest ThreeMfHostTest CompactPlacementHostTest SketchSnapHostTest FacePickHostTest TrimCurvesHostTest}"
 status=0
 for test in $HOST_TESTS $PROBES; do
   # A probe that does not compile must fail the run, never execute a stale class.
