@@ -201,6 +201,22 @@ public final class CadWorkspaceView extends View {
     private boolean dimensionMode;
     private boolean coincidenceMode;
     private String coincidenceFirst;
+    /** "Punkt": a reference point at the (snapped) tapped position; tap it later to type exact coordinates. */
+    private void pointTap(float x,float y) {
+        double[] p=snappedSketchPoint(x,y,null,null,null);
+        if(!Double.isFinite(p[0])||!Double.isFinite(p[1])||Math.abs(p[0])>5000||Math.abs(p[1])>5000){operationMessage="Punkt poza zakresem ±5000 mm";invalidate();return;}
+        checkpoint();preserveExtrudedBase();commitActiveFeature();
+        SketchPrimitive point=SketchPrimitive.point(UUID.randomUUID().toString(),p[0],p[1]);project.sketch.add(point);selectedSketchId=point.id;
+        projectRepository.save(project);snapMarker=null;
+        operationMessage="Punkt "+formatMm(p[0])+"; "+formatMm(p[1])+". Położenie i wymiary: dotknij go w trybie Edytuj.";invalidate();
+    }
+    private void drawSketchPoint(Canvas canvas,SketchPrimitive p) {
+        if(!sketchPointVisible(p.x1,p.y1))return;PointF s=projectSketchPoint(p.x1,p.y1);
+        boolean selected=p.id.equals(selectedSketchId)||sketchMulti.contains(p.id);
+        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(selected?2:1.5f));paint.setColor(ghostDrawing?Color.argb(150,13,148,136):selected?Color.rgb(245,145,20):Color.rgb(90,110,130));
+        float r=dp(5);canvas.drawLine(s.x-r,s.y,s.x+r,s.y,paint);canvas.drawLine(s.x,s.y-r,s.x,s.y+r,paint);
+        paint.setStyle(Paint.Style.FILL);canvas.drawCircle(s.x,s.y,dp(2),paint);
+    }
     /** Long press on an element while editing: its context menu (position, constraints, construction, delete…). */
     private final Runnable editMenu=()->{
         SketchPrimitive target=this.draggedSketch;if(target==null||!this.mode.equals("Edytuj szkic")||this.dragPreview!=null||this.groupDrag!=null)return;
@@ -635,6 +651,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     if(mode.equals("Profile wyciągnięcia")){if(extrusionFacePick!=null)pickExtrusionFace(e.getX(),e.getY());else toggleExtrusionProfile(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchOrbit)return true;
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&fingerNavigates()){operationMessage="Rysik rysuje, palec przesuwa widok. Palec też może rysować: panel szkicu → Palec rysuje";invalidate();return true;}
+                    if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Punkt")){pointTap(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&(sketchTool.equals("Okrąg 3 pkt")||sketchTool.equals("Szczelina")||sketchTool.equals("Elipsa"))){threePointTap(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Łuk")){arcTap(e.getX(),e.getY());return true;}
                     if(filletSelectionChanged!=null) {
@@ -997,7 +1014,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             try{threePointPreview=SketchShapes.threePoint("preview",sketchTool,project.threePointDraft.get(0),project.threePointDraft.get(1),snappedSketchPoint(event.getX(),event.getY(),null,null,null));}
             catch(IllegalArgumentException error){threePointPreview=null;}invalidate();
         }
-        if (mode.equals("Szkic") && !SketchShapes.threePointTool(sketchTool) && !(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn")) && sketchPlaneChosen && !fingerNavigates()
+        if (mode.equals("Szkic") && !SketchShapes.threePointTool(sketchTool) && !(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn")||sketchTool.equals("Punkt")) && sketchPlaneChosen && !fingerNavigates()
                 && (isInsideViewport(event.getX(), event.getY()) || sketching)) {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 if(event.getY()<dp(152)) return true;
@@ -2095,6 +2112,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private void drawSketchEntity(Canvas canvas, SketchPrimitive entity) {
+        if(entity.isPoint()){drawSketchPoint(canvas,entity);return;}
         boolean selected = entity.id.equals(selectedSketchId) || sketchMulti.contains(entity.id) || highlightSketch || extrusionSelections.contains(entity.id)&&mode.equals("Profile wyciągnięcia");
         PointF p1 = projectSketchPoint(entity.x1, entity.y1);
         PointF p2 = projectSketchPoint(entity.x2, entity.y2);
@@ -2937,6 +2955,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private void trimSketchAt(float x,float y) {
         SketchPrimitive target=findSketchAt(x,y);
         if(target==null) {operationMessage="Dotknij fragmentu linii, łuku lub okręgu do przycięcia";invalidate();return;}
+        if(target.isPoint()){operationMessage="Punktu nie przycina się — usuń go narzędziem Usuń";invalidate();return;}
         if(project.hasCoincidence(target.id)){operationMessage="Przed przycinaniem usuń połączenia punktów elementu w menu Geometria";invalidate();return;}
         if(isProfileUsed(target.id)&&!SketchTransactions.active(project)) {
             operationMessage="Profil steruje bryłą. Przycinanie otworzyłoby obwód — najpierw usuń zależną cechę albo edytuj uchwyty.";
@@ -3023,6 +3042,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private void showSketchEntityEditor(SketchPrimitive entity) {
+        if(entity.isPoint()){showSketchPosition(entity.id,0,null,0);return;}
         if(entity.isEllipse()){showEllipseEditor(entity);return;}
         if(entity.curves!=null){showCurveEditor(entity);return;}
         if(entity.vertices!=null) {
@@ -3525,6 +3545,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private void showSketchDimensionEditor(SketchPrimitive entity) {
+        if(entity.isPoint()){showSketchPosition(entity.id,0,null,0);return;}
         if(entity.curves!=null){showCurveEditor(entity);return;}
         if(entity.vertices!=null){showSketchEntityEditor(entity);return;}
         boolean rectangle=entity.type.equals("Prostokąt"),circle=entity.type.equals("Okrąg");
@@ -4017,7 +4038,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         final String source=project.importedStep?importedSourceFile().getAbsolutePath():null;
         return () -> {
             double[] plane=sectionPlane;
-            double[] result=plane==null?NativeCadEngine.evaluateFeatures(width,height,depth,radius,savedBase,savedFeatures,null,source):new CadModelResult(NativeCadEngine.sectionModel(width,height,depth,radius,savedBase,savedFeatures,source,plane)).mesh;
+            double[] result=plane==null?NativeCadEngine.previewMesh(width,height,depth,radius,savedBase,savedFeatures,source):new CadModelResult(NativeCadEngine.sectionModel(width,height,depth,radius,savedBase,savedFeatures,source,plane)).mesh;
             // Read on the evaluating thread: kernel diagnostics are thread-local.
             previewFailureReason=result.length==0?NativeCadEngine.lastFailure().reason:null;
             return result;
@@ -5621,7 +5642,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     CadProject evaluated=CadProject.fromJson(next.toJson());
                     if(automatic&&hasBody)recognized[0]=AutoExtrusion.resolve(evaluated,start,body,source);
                     double[] plane=sectionPlane;
-                    double[] mesh=plane==null?NativeCadEngine.evaluateFeatures(evaluated.width,evaluated.height,evaluated.depth,evaluated.importedStep?0:evaluated.filletRadius,evaluated.featureBase,AutoExtrusion.packed(evaluated),null,source):new CadModelResult(NativeCadEngine.sectionModel(evaluated.width,evaluated.height,evaluated.depth,evaluated.importedStep?0:evaluated.filletRadius,evaluated.featureBase,AutoExtrusion.packed(evaluated),source,plane)).mesh;
+                    double[] mesh=plane==null?NativeCadEngine.previewMesh(evaluated.width,evaluated.height,evaluated.depth,evaluated.importedStep?0:evaluated.filletRadius,evaluated.featureBase,AutoExtrusion.packed(evaluated),source):new CadModelResult(NativeCadEngine.sectionModel(evaluated.width,evaluated.height,evaluated.depth,evaluated.importedStep?0:evaluated.filletRadius,evaluated.featureBase,AutoExtrusion.packed(evaluated),source,plane)).mesh;
                     evaluatedResult[0]=evaluated;
                     if(mesh.length==0)throw NativeCadEngine.lastFailure();return mesh;
                 },mesh->{boolean ready=mesh.length>0&&spec.get().equals(currentSpec);
@@ -7428,6 +7449,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         Writer writer = new OutputStreamWriter(output, StandardCharsets.US_ASCII);
         writer.write("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1015\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
         for (SketchPrimitive primitive : project.sketch) {
+            if(primitive.isPoint()){writer.write("0\nPOINT\n8\nSKETCH\n10\n"+primitive.x1+"\n20\n"+primitive.y1+"\n30\n0\n");continue;}
             if(SketchSpline.is(primitive))SketchSpline.writeDxf(writer,primitive.vertices);
             else if(primitive.curves!=null)SketchCurves.writeDxf(writer,primitive.curves);
             else if(primitive.vertices!=null) {

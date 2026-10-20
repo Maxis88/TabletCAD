@@ -12,6 +12,7 @@ public final class SketchSnapper {
         if(p.type.equals("Prostokąt"))return new double[]{p.x1,p.y1,p.x2,p.y1,p.x2,p.y2,p.x1,p.y2,(p.x1+p.x2)/2,p.y1,p.x2,(p.y1+p.y2)/2,(p.x1+p.x2)/2,p.y2,p.x1,(p.y1+p.y2)/2};
         if(p.isEllipse()){double a=p.major(),ux=(p.x2-p.x1)/a,uy=(p.y2-p.y1)/a,b=p.minor;return new double[]{p.x1,p.y1,p.x1+ux*a,p.y1+uy*a,p.x1-ux*a,p.y1-uy*a,p.x1-uy*b,p.y1+ux*b,p.x1+uy*b,p.y1-ux*b};}
         if(p.type.equals("Okrąg")){double r=Math.hypot(p.x2-p.x1,p.y2-p.y1);return new double[]{p.x1,p.y1,p.x1+r,p.y1,p.x1-r,p.y1,p.x1,p.y1+r,p.x1,p.y1-r};}
+        if(p.isPoint())return new double[]{p.x1,p.y1};
         return new double[]{p.x1,p.y1,p.x2,p.y2,(p.x1+p.x2)/2,(p.y1+p.y2)/2};
     }
     /** Snap actual moving geometry, independent of where the finger grabbed it. */
@@ -73,7 +74,7 @@ public final class SketchSnapper {
                 lines.add(new double[]{p.x2,p.y1,p.x2,p.y2});
                 lines.add(new double[]{p.x2,p.y2,p.x1,p.y2});
                 lines.add(new double[]{p.x1,p.y2,p.x1,p.y1});
-            } else if(!p.type.equals("Okrąg")) lines.add(new double[]{p.x1,p.y1,p.x2,p.y2});
+            } else if(!p.type.equals("Okrąg")&&!p.isPoint()) lines.add(new double[]{p.x1,p.y1,p.x2,p.y2});
         }
         for(double[] l:lines) points.add(new double[]{(l[0]+l[2])/2,(l[1]+l[3])/2});
         // Bounded segment intersections; construction lines remain ordinary finite guides.

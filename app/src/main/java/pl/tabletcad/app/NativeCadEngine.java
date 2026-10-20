@@ -126,6 +126,15 @@ public final class NativeCadEngine {
     public static double[] evaluateModel(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep) {
         return LOADED?cached(width,height,depth,radius,base,features,sourceStep,8):new double[0];
     }
+    /**
+     * Preview mesh computed with the same query as the commit (mode 8, memoised): after a preview,
+     * "Zastosuj" finds the evaluated model instead of rebuilding it. Empty on failure.
+     */
+    public static double[] previewMesh(double width,double height,double depth,double radius,double[] base,double[] features,String sourceStep) {
+        double[] packed=evaluateModel(width,height,depth,radius,base,features,sourceStep);
+        if(packed.length==0)return packed;
+        try{return new CadModelResult(packed).mesh;}catch(IllegalArgumentException e){return new double[0];}
+    }
     /** Kernel failure with the index of the failing history record (-1 base body, -2 output stage). */
     public static final class KernelException extends IllegalArgumentException {
         public final int feature;

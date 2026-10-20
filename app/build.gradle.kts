@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 105
-        versionName = "0.94.0-sheet-associative"
+        versionCode = 106
+        versionName = "0.95.0-sketch-points"
     }
 
     externalNativeBuild {

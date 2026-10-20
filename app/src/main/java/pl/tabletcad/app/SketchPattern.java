@@ -33,6 +33,7 @@ public final class SketchPattern {
             double[] a=map.apply(s.x1,s.y1),b=map.apply(s.x2,s.y2);
             if(s.type.equals("Prostokąt"))result=new SketchPrimitive(id,"Prostokąt",Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[0],b[0]),Math.max(a[1],b[1]));
             else if(s.type.equals("Linia")||s.type.equals("Pomocnicza")||s.type.equals("Okrąg"))result=new SketchPrimitive(id,s.type.equals("Pomocnicza")?"Linia":s.type,a[0],a[1],b[0],b[1]);
+            else if(s.isPoint())result=SketchPrimitive.point(id,a[0],a[1]);
             else throw new IllegalArgumentException("Nieobsługiwany typ geometrii szyku: "+s.type);
         }
         return result.withConstruction(s.construction);

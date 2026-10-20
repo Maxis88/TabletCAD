@@ -16,6 +16,10 @@ public final class SketchPrimitive {
     /** Semi-minor axis of an ellipse ("Elipsa": x1/y1 centre, x2/y2 end of the semi-major axis); 0 otherwise. */
     public final double minor;
     public static final String ELLIPSE="Elipsa";
+    /** Sketch point: a reference position (always construction), e.g. a hole centre. */
+    public static final String POINT="Punkt";
+    public static SketchPrimitive point(String id,double x,double y){return new SketchPrimitive(id,POINT,x,y,x,y);}
+    public boolean isPoint(){return POINT.equals(type);}
 
     public SketchPrimitive(String id, String type, double x1, double y1, double x2, double y2) {
         this(id,type,x1,y1,x2,y2,null);
@@ -27,7 +31,8 @@ public final class SketchPrimitive {
         this.minor=0;
         this.id = id;
         this.type = type;
-        this.construction=type.equals("Pomocnicza");
+        this.construction=type.equals("Pomocnicza")||type.equals(POINT);
+        if(type.equals(POINT)&&(x1!=x2||y1!=y2))throw new IllegalArgumentException("Punkt ma jedno położenie");
         this.x1 = x1; this.y1 = y1; this.x2 = x2; this.y2 = y2;
         this.vertices = null;
         this.curves=null;
@@ -72,7 +77,7 @@ public final class SketchPrimitive {
         id=source.id;type=source.type.equals("Pomocnicza")?"Linia":source.type;
         x1=source.x1;y1=source.y1;x2=source.x2;y2=source.y2;
         vertices=source.vertices==null?null:source.vertices.clone();curves=source.curves==null?null:source.curves.clone();
-        driving=source.driving==null?null:source.driving.clone();construction=auxiliary;minor=source.minor;
+        driving=source.driving==null?null:source.driving.clone();construction=auxiliary||POINT.equals(source.type);minor=source.minor;
     }
     private SketchPrimitive(String id,double cx,double cy,double ax,double ay,double minor) {
         this.id=id;type=ELLIPSE;x1=cx;y1=cy;x2=ax;y2=ay;this.minor=minor;vertices=null;curves=null;driving=null;construction=false;
@@ -87,6 +92,7 @@ public final class SketchPrimitive {
     public boolean isEllipse(){return ELLIPSE.equals(type);}
     /** Same kind of two-point element at new points (an ellipse keeps its semi-minor axis). */
     public SketchPrimitive withPoints(double ax,double ay,double bx,double by,double[] lock) {
+        if(isPoint())return point(id,ax,ay);
         if(isEllipse())return ellipse(id,ax,ay,bx,by,minor).withConstruction(construction);
         return new SketchPrimitive(id,type,ax,ay,bx,by,lock);
     }

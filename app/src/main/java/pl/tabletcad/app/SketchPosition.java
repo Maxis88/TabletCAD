@@ -17,6 +17,7 @@ public final class SketchPosition {
     /** Named reference points of an element: constraint anchors, plus the centre of a rectangle or curved outline. */
     public static List<String> pointNames(SketchPrimitive p) {
         List<String> names=new ArrayList<>();
+        if(p.isPoint()){names.add("Punkt");return names;}
         if(p.type.equals("Okrąg")&&p.vertices==null&&p.curves==null){names.add("Środek okręgu");return names;}
         if(p.isEllipse()){names.add("Środek elipsy");names.add("Koniec osi wielkiej");return names;}
         if(p.type.equals("Prostokąt")&&p.vertices==null){names.add("Środek prostokąta");names.add("Narożnik (x1, y1)");names.add("Narożnik (x2, y1)");names.add("Narożnik (x2, y2)");names.add("Narożnik (x1, y2)");return names;}

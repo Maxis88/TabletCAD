@@ -206,7 +206,7 @@ public final class SemanticIcons {
         c.drawLine(x-s,y+s*.7f,x,y+s*1.2f,p);c.drawLine(x,y+s*1.2f,x+s,y+s*.7f,p);
     }
     private static boolean drawSolidCopy(Canvas canvas,String id,float x,float y,float scale,int color) {
-        if(!java.util.Arrays.asList("Lustro operacji","Szyk liniowy operacji","Szyk kołowy operacji","Powłoka","Otwór","Pochyl ściany","Odsuń ścianę","Przesuń bryłę","Obróć bryłę","Skaluj bryłę","Połącz bryły","Odejmij bryły","Część wspólna brył","Podziel bryłę","Przejście","Przeciągnij","Położenie","Szyk po ścieżce","Lustro bryły","Szyk liniowy bryły","Szyk kołowy bryły","Elipsa").contains(id))return false;
+        if(!java.util.Arrays.asList("Lustro operacji","Szyk liniowy operacji","Szyk kołowy operacji","Powłoka","Otwór","Pochyl ściany","Odsuń ścianę","Przesuń bryłę","Obróć bryłę","Skaluj bryłę","Połącz bryły","Odejmij bryły","Część wspólna brył","Podziel bryłę","Przejście","Przeciągnij","Położenie","Szyk po ścieżce","Punkt","Lustro bryły","Szyk liniowy bryły","Szyk kołowy bryły","Elipsa").contains(id))return false;
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.5f);p.setStyle(Paint.Style.STROKE);p.setStrokeJoin(Paint.Join.ROUND);p.setStrokeCap(Paint.Cap.ROUND);
         canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
         if(id.equals("Lustro operacji")) {
@@ -232,6 +232,11 @@ public final class SemanticIcons {
             block(canvas,p,0,2,9);
             p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));Path face=new Path();face.moveTo(-9,-8.3f);face.lineTo(0,-12.8f);face.lineTo(9,-8.3f);face.lineTo(0,-3.8f);face.close();canvas.drawPath(face,p);p.setPathEffect(null);
             canvas.drawLine(0,-5.2f,0,-14,p);canvas.drawLine(0,-14,-2.5f,-11,p);canvas.drawLine(0,-14,2.5f,-11,p);
+        } else if(id.equals("Punkt")) {
+            // Sketch point: a cross with a dot on a faint sketch line.
+            p.setStrokeWidth(1.1f);p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));canvas.drawLine(-13,9,13,9,p);p.setPathEffect(null);
+            p.setStrokeWidth(1.5f);canvas.drawLine(-7,0,7,0,p);canvas.drawLine(0,-7,0,7,p);
+            Paint dot=new Paint(p);dot.setStyle(Paint.Style.FILL);canvas.drawCircle(0,0,2.2f,dot);
         } else if(id.equals("Szyk po ścieżce")) {
             // Small squares repeated along a dashed curved path.
             p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));Path way=new Path();way.moveTo(-13,9);way.cubicTo(-6,-12,6,12,13,-9);canvas.drawPath(way,p);p.setPathEffect(null);

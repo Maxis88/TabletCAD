@@ -36,7 +36,7 @@ public final class SketchTransform {
         if(result.type.equals("Okrąg")){double radius=SketchDimensions.length(result);if(radius<.01)throw new IllegalArgumentException("Promień musi wynosić co najmniej 0,01 mm");bounds=new double[]{result.x1-radius,result.y1-radius,result.x1+radius,result.y1+radius};}
         for(double value:bounds)if(!Double.isFinite(value)||Math.abs(value)>5000)throw new IllegalArgumentException("Geometria poza zakresem ±5000 mm");
         if(result.vertices!=null&&!SketchSpline.is(result))SketchContours.validate(result.vertices);
-        if(result.curves==null&&result.vertices==null&&SketchDimensions.length(result)<.01)throw new IllegalArgumentException("Element jest zbyt mały");
+        if(result.curves==null&&result.vertices==null&&!result.isPoint()&&SketchDimensions.length(result)<.01)throw new IllegalArgumentException("Element jest zbyt mały");
         if(result.type.equals("Prostokąt")&&(Math.abs(result.x2-result.x1)<.01||Math.abs(result.y2-result.y1)<.01))throw new IllegalArgumentException("Boki prostokąta muszą wynosić co najmniej 0,01 mm");
         if(source.driving!=null) {
             if(!source.type.equals(result.type)&&!(source.type.equals("Pomocnicza")&&result.type.equals("Linia")))throw new IllegalArgumentException("Przed obrotem prostokąta do konturu odblokuj jego wymiary");

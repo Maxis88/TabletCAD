@@ -12,7 +12,7 @@ public final class NonlinearConstraints {
     public static String symbol(String kind){return kind.equals("parallel")?"∥":kind.equals("perpendicular")?"⊥":kind.equals("equal")?"=":kind.equals("concentric")?"◎":kind.equals("tangent")?"T":kind.equals("pointOn")?"P∈":kind.equals("collinear")?"⫽":kind.equals("rigid")?"⧉":kind.equals("symmetric")?"↔︎":kind.equals("angle")?"∠":kind;}
     static final class Block {
         final SketchPrimitive source;final int start,size;
-        Block(SketchPrimitive p,int offset){source=p;start=offset;size=p.curves!=null?0:p.vertices!=null?p.vertices.length:4;}
+        Block(SketchPrimitive p,int offset){source=p;start=offset;size=p.isPoint()?2:p.curves!=null?0:p.vertices!=null?p.vertices.length:4;}
         double[] data(double[] all){return Arrays.copyOfRange(all,start,start+size);}
         double[] point(double[] all,int index) {
             if(index<0||index>=SketchConstraints.anchorCount(source))throw new IllegalArgumentException("Niepoprawny punkt więzu");
@@ -292,6 +292,7 @@ public final class NonlinearConstraints {
             double[] p=b.data(all);for(double v:p)if(!Double.isFinite(v)||Math.abs(v)>5000)throw new IllegalArgumentException("Więzy wyprowadzają geometrię poza ±5000 mm");
             SketchPrimitive rebuilt;
             if(b.source.vertices!=null){if(SketchSpline.is(b.source))rebuilt=new SketchPrimitive(original.id,p,"Splajn");else {SketchContours.validate(p);rebuilt=new SketchPrimitive(original.id,p);}}
+            else if(b.source.isPoint())rebuilt=SketchPrimitive.point(original.id,p[0],p[1]);
             else {if(length(p)<.01)throw new IllegalArgumentException("Więz tworzy zerową geometrię");rebuilt=b.source.withPoints(p[0],p[1],p[2],p[3],b.source.driving);}
             result.add(rebuilt.withConstruction(b.source.construction));
         }

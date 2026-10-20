@@ -226,7 +226,8 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
 5. Formaty: brak IGES; 3MF tylko eksport; weryfikacja w zewnętrznych CAD do wykonania.
 6. Powierzchnie, blachy i rozwinięcia: poza obecnym zakresem.
 7. Wydajność: zatwierdzanie szkicu, podglądy i eksport działają w tle (0.87/0.90), wyniki jądra
-   są zapamiętywane (0.86); pomiary i część zatwierdzeń operacji 3D nadal w wątku UI.
+   są zapamiętywane (0.86); od 0.95 podgląd operacji liczy to samo zapytanie co zatwierdzenie,
+   więc „Zastosuj” po podglądzie nie przebudowuje modelu. Pomiary nadal w wątku UI.
 
 ## Testy akceptacyjne pełnego promptu
 

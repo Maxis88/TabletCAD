@@ -38,14 +38,14 @@ public final class SketchConstraints {
         try{validate(geometry,result);}catch(IllegalArgumentException error){throw new JSONException(error.getMessage());}
         return result;
     }
-    public static int anchorCount(SketchPrimitive p){return p.curves!=null?0:p.vertices!=null?p.vertices.length/2:p.type.equals("Okrąg")?1:p.type.equals("Prostokąt")?4:2;}
+    public static int anchorCount(SketchPrimitive p){return p.isPoint()?1:p.curves!=null?0:p.vertices!=null?p.vertices.length/2:p.type.equals("Okrąg")?1:p.type.equals("Prostokąt")?4:2;}
     private static int[] indices(SketchPrimitive p,int anchor) {
         if(anchor<0||anchor>=anchorCount(p))throw new IllegalArgumentException("Niepoprawny punkt więzu");
         if(p.vertices!=null)return new int[]{2*anchor,2*anchor+1};
         if(p.type.equals("Prostokąt"))return new int[][]{{0,1},{2,1},{2,3},{0,3}}[anchor];
         return new int[]{anchor*2,anchor*2+1};
     }
-    private static double[] coords(SketchPrimitive p){return p.curves!=null?new double[0]:p.vertices!=null?p.vertices.clone():new double[]{p.x1,p.y1,p.x2,p.y2};}
+    private static double[] coords(SketchPrimitive p){return p.isPoint()?new double[]{p.x1,p.y1}:p.curves!=null?new double[0]:p.vertices!=null?p.vertices.clone():new double[]{p.x1,p.y1,p.x2,p.y2};}
     public static double[] anchor(SketchPrimitive p,int index){int[] i=indices(p,index);double[] c=coords(p);return new double[]{c[i[0]],c[i[1]]};}
     private static SketchPrimitive entity(List<SketchPrimitive> geometry,String id) {
         for(SketchPrimitive p:geometry)if(p.id.equals(id))return p;
@@ -205,6 +205,7 @@ public final class SketchConstraints {
             SketchPrimitive solved;
             if(p.curves!=null)solved=p;
             else if(p.vertices!=null){if(SketchSpline.is(p))solved=new SketchPrimitive(p.id,c,"Splajn");else {SketchContours.validate(c);solved=new SketchPrimitive(p.id,c);}}
+            else if(p.isPoint())solved=SketchPrimitive.point(p.id,c[0],c[1]);
             else {
                 if(Math.hypot(c[2]-c[0],c[3]-c[1])<.01||p.type.equals("Prostokąt")&&(Math.abs(c[2]-c[0])<.01||Math.abs(c[3]-c[1])<.01))
                     throw new IllegalArgumentException("Połączenie tworzy element o zerowym rozmiarze");
