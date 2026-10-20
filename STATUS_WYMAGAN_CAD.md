@@ -206,11 +206,12 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
 - Cieniowany widok 3D, zaznaczanie ścian/krawędzi, podgląd operacji,
   ukrywanie zasłoniętych fragmentów i izolowanie zakrytego szkicu.
 
-## Najważniejsze pozostałe luki (stan 0.89)
+## Najważniejsze pozostałe luki (stan 1.0.0-rc1)
 
 1. Szkice: pełny solver nieliniowy działa dla relacji z menu Więzy; od 0.89 sterujący
-   kąt między liniami szkicu i szyk po ścieżce. Brak wymiarów kątowych między elementami
-   różnych szkiców i powiązanego (parametrycznego) szyku po ścieżce.
+   kąt między liniami szkicu i szyk po ścieżce, od 1.0.0-rc1 sterująca odległość punkt–linia
+   i punkt–punkt. Brak wymiarów między elementami różnych szkiców i powiązanego
+   (parametrycznego) szyku po ścieżce.
 2. Referencje topologiczne: ściany są identyfikowane przez operację źródłową, normalną
    i punkt (otwory, powłoka, pochylenie, odsunięcie ściany, wymiary otworów). Od 0.98
    zaokrąglenia i fazy pojedynczych krawędzi są przypinane ponownie do krawędzi między tymi

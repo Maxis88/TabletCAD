@@ -7,9 +7,9 @@ import pl.tabletcad.app.SketchConstraints.Link;
 /** Bounded connected-component nonlinear sketch solver. Never publishes an unconverged result. */
 public final class NonlinearConstraints {
     private NonlinearConstraints() {}
-    public static boolean relation(String kind){return Arrays.asList("parallel","perpendicular","equal","concentric","tangent","pointOn","symmetric","collinear","rigid","angle").contains(kind);}
+    public static boolean relation(String kind){return Arrays.asList("parallel","perpendicular","equal","concentric","tangent","pointOn","symmetric","collinear","rigid","angle","distance").contains(kind);}
     public static boolean present(List<Link> links){for(Link l:links)if(relation(l.kind))return true;return false;}
-    public static String symbol(String kind){return kind.equals("parallel")?"∥":kind.equals("perpendicular")?"⊥":kind.equals("equal")?"=":kind.equals("concentric")?"◎":kind.equals("tangent")?"T":kind.equals("pointOn")?"P∈":kind.equals("collinear")?"⫽":kind.equals("rigid")?"⧉":kind.equals("symmetric")?"↔︎":kind.equals("angle")?"∠":kind;}
+    public static String symbol(String kind){return kind.equals("parallel")?"∥":kind.equals("perpendicular")?"⊥":kind.equals("equal")?"=":kind.equals("concentric")?"◎":kind.equals("tangent")?"T":kind.equals("pointOn")?"P∈":kind.equals("collinear")?"⫽":kind.equals("rigid")?"⧉":kind.equals("symmetric")?"↔︎":kind.equals("angle")?"∠":kind.equals("distance")?"↦":kind;}
     static final class Block {
         final SketchPrimitive source;final int start,size;
         Block(SketchPrimitive p,int offset){source=p;start=offset;size=p.isPoint()?2:p.curves!=null?0:p.vertices!=null?p.vertices.length:4;}
@@ -74,6 +74,13 @@ public final class NonlinearConstraints {
                 line(a);line(b);double la=length(p),lb=length(q);if(la<.001||lb<.001)throw new IllegalArgumentException("Zerowa linia więzu");
                 double ax=p[2]-p[0],ay=p[3]-p[1],bx=q[2]-q[0],by=q[3]-q[1];
                 out.add(10*(l.kind.equals("parallel")?ax*by-ay*bx:ax*bx+ay*by)/(la*lb));break;
+            case "distance": {
+                // Driving distance from a point of a to b: to another point (l.y==1) or to the line b (signed, keeps the side).
+                double[] point=a.point(all,l.ai);
+                if(l.y==1){double[] other=b.point(all,l.bi);out.add(Math.hypot(point[0]-other[0],point[1]-other[1])-l.x);break;}
+                line(b);double d=length(q);if(d<.001)throw new IllegalArgumentException("Zerowa linia");
+                out.add(((point[0]-q[0])*(q[3]-q[1])-(point[1]-q[1])*(q[2]-q[0]))/d-l.x);break;
+            }
             case "angle": {
                 // Oriented angle from line a to line b equals l.x degrees (modulo 180°: a line has no direction).
                 line(a);line(b);double la2=length(p),lb2=length(q);if(la2<.001||lb2<.001)throw new IllegalArgumentException("Zerowa linia więzu");
@@ -168,6 +175,14 @@ public final class NonlinearConstraints {
         }
         return rank;
     }
+    /** Current distance of a distance relation: point–point, or signed point–line. */
+    public static double distance(List<SketchPrimitive> geometry,Link l) {
+        SketchPrimitive a=null,b=null;for(SketchPrimitive p:geometry){if(p.id.equals(l.a))a=p;if(p.id.equals(l.b))b=p;}
+        if(a==null||b==null)throw new IllegalArgumentException("Brak geometrii wymiaru");
+        double[] point=SketchConstraints.anchor(a,l.ai);
+        if(l.y==1){double[] other=SketchConstraints.anchor(b,l.bi);return Math.hypot(point[0]-other[0],point[1]-other[1]);}
+        double d=Math.hypot(b.x2-b.x1,b.y2-b.y1);return ((point[0]-b.x1)*(b.y2-b.y1)-(point[1]-b.y1)*(b.x2-b.x1))/d;
+    }
     /** Current oriented angle from line a to line b in degrees (−180, 180]. */
     public static double angle(SketchPrimitive a,SketchPrimitive b) {
         double ux=a.x2-a.x1,uy=a.y2-a.y1,vx=b.x2-b.x1,vy=b.y2-b.y1;return Math.toDegrees(Math.atan2(ux*vy-uy*vx,ux*vx+uy*vy));
@@ -255,7 +270,7 @@ public final class NonlinearConstraints {
         if(added!=null&&relation(added.kind))seed(added,blocks,all);
         for(Link l:links)if(l.kind.equals("fixed")&&blocks.containsKey(l.a)){Block b=block(blocks,l.a);int[] i=b.indices(l.ai);all[b.start+i[0]]=l.x;all[b.start+i[1]]=l.y;pinned[b.start+i[0]]=pinned[b.start+i[1]]=true;}
         if(edited!=null){Block b=block(blocks,edited);if(draggedAnchor<0){for(int i=0;i<b.size;i++)pinned[b.start+i]=true;}else {for(int i:b.indices(draggedAnchor))pinned[b.start+i]=true;}}
-        if(added!=null){String held=added.kind.equals("pointOn")?added.b:added.a;Block b=block(blocks,held);for(int i=0;i<b.size;i++)pinned[b.start+i]=true;}
+        if(added!=null){String held=added.kind.equals("pointOn")||added.kind.equals("distance")?added.b:added.a;Block b=block(blocks,held);for(int i=0;i<b.size;i++)pinned[b.start+i]=true;}
         if(added!=null&&!added.axis.isEmpty()&&!added.axis.startsWith("@")){Block b=block(blocks,added.axis);for(int i=0;i<b.size;i++)pinned[b.start+i]=true;}
         if(edited!=null)for(Link fixed:links)if(fixed.kind.equals("fixed")&&fixed.a.equals(edited)&&(draggedAnchor<0||draggedAnchor==fixed.ai)) {
             Block editedBlock=block(blocks,edited);double[] point=editedBlock.point(coordinates(blocks,size),fixed.ai);

@@ -1,11 +1,14 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.99.0-iges**, versionCode **110**.
+Wersja źródeł: **1.0.0-rc1**, versionCode **111**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
+
+Wersja 1.0.0-rc1 — sterujący wymiar odległości punkt–linia i punkt–punkt; kandydat do wydania 1.0 —
+lista kontrolna testów na tablecie w [docs/AUDIT-1.0.0-rc1.md](docs/AUDIT-1.0.0-rc1.md).
 
 Wersja 0.99 — import i eksport IGES (wymaga jednorazowego dobudowania modułu OCCT TKDEIGES przez
 `tools/prepare-occt.ps1`, uruchamianego automatycznie przez build). [Audyt 0.99](docs/AUDIT-0.99.md) — testy na tablecie do wykonania.

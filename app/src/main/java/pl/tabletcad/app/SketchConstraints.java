@@ -66,6 +66,8 @@ public final class SketchConstraints {
         }else if(position(l.kind)) {
             // Same anchor: coordinate measured from the sketch origin; otherwise b − a along the axis.
             if(Math.abs(l.x)>10000)throw new IllegalArgumentException("Wymiar położenia poza zakresem");
+        }else if(l.kind.equals("distance")) {
+            if(Math.abs(l.x)>10000||(l.y!=0&&l.y!=1)||l.y==1&&l.x<=0||l.a.equals(l.b))throw new IllegalArgumentException("Niepoprawny wymiar odległości");
         }else if(same)throw new IllegalArgumentException("Wybierz dwa różne punkty");
     }
     /** Driving position dimension along the sketch X (dimX) or Y (dimY) axis. */

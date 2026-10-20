@@ -58,6 +58,25 @@ public final class SketchAngleHostTest {
         double[] shift=pl.tabletcad.app.SketchPathPattern.snapToStart(new SketchPrimitive("d2","Okrąg",7,7,9,7),rail);
         check(Math.abs(shift[0]+7)<1e-9&&Math.abs(shift[1]+7)<1e-9,"element moved to the start of the path");
         try{pl.tabletcad.app.SketchPathPattern.copies(dot,dot,3,false);check(false,"self path refused");}catch(IllegalArgumentException e){check(true,"path must be another element");}
+        // Driving distances (1.0): a circle centre 15 mm from a line, two points 40 mm apart.
+        SketchPrimitive edge=new SketchPrimitive("edge","Linia",0,0,100,0),hole=new SketchPrimitive("hole","Okrąg",30,10,33,10);
+        List<SketchPrimitive> part=new ArrayList<>(Arrays.asList(edge,hole));
+        SketchConstraints.Link dist=new SketchConstraints.Link("distance","hole",0,"edge",0,15,0);
+        List<SketchPrimitive> placed=SketchConstraints.connect(part,new ArrayList<>(),dist);
+        SketchPrimitive h=get(placed,"hole");
+        check(Math.abs(Math.abs(h.y1)-15)<1e-6&&Math.abs(Math.hypot(h.x2-h.x1,h.y2-h.y1)-3)<1e-6&&Math.abs(get(placed,"edge").y2)<1e-9,"hole centre 15 mm from the line, radius kept, the line stays");
+        check(Math.abs(Math.abs(NonlinearConstraints.distance(placed,dist))-15)<1e-6,"measured distance 15");
+        List<SketchConstraints.Link> dl=new ArrayList<>(Collections.singletonList(dist));
+        List<SketchPrimitive> farther=SketchConstraints.edit(placed,Collections.singletonList(SketchConstraints.withValue(dist,22.5)),"edge",get(placed,"edge"));
+        check(Math.abs(Math.abs(get(farther,"hole").y1)-22.5)<1e-6&&Math.abs(get(farther,"edge").y1)<1e-9,"edited distance 22.5, the line stays");
+        SketchPrimitive other=new SketchPrimitive("o","Okrąg",80,30,82,30);
+        SketchConstraints.Link pp=new SketchConstraints.Link("distance","o",0,"hole",0,40,1);
+        List<SketchPrimitive> pair=SketchConstraints.connect(new ArrayList<>(Arrays.asList(hole,other)),new ArrayList<>(),pp);
+        double[] c1={get(pair,"hole").x1,get(pair,"hole").y1},c2={get(pair,"o").x1,get(pair,"o").y1};
+        check(Math.abs(Math.hypot(c1[0]-c2[0],c1[1]-c2[1])-40)<1e-6,"two centres 40 mm apart");
+        check(NonlinearConstraints.status(part,new ArrayList<>()).freedoms-NonlinearConstraints.status(placed,dl).freedoms==1,"a distance removes one degree of freedom");
+        check(SketchConstraints.fromJson(SketchConstraints.toJson(dl),placed).get(0).kind.equals("distance"),"distance round-trips through JSON");
+        try{SketchConstraints.connect(part,new ArrayList<>(),new SketchConstraints.Link("distance","hole",0,"edge",0,0,1));check(false,"zero point distance");}catch(IllegalArgumentException e){check(true,"a zero point–point distance is refused");}
         System.out.println("PASS SketchAngleHostTest: "+checks+" checks");
     }
 }

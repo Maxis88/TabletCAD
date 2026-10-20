@@ -1978,7 +1978,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             if(inSketch() && showSketchDimensions)drawSketchDrivingDimensions(canvas,shown);
         }
         if(!sketchGhost.isEmpty()){ghostDrawing=true;for(SketchPrimitive ghost:sketchGhost)drawSketchEntity(canvas,ghost);ghostDrawing=false;paint.setPathEffect(null);}
-        if(inSketch() && showSketchDimensions){drawPositionDimensions(canvas,displayedSketch);drawAngleDimensions(canvas,displayedSketch);}
+        if(inSketch() && showSketchDimensions){drawPositionDimensions(canvas,displayedSketch);drawAngleDimensions(canvas,displayedSketch);drawDistanceDimensions(canvas,displayedSketch);}
         paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1.5f));paint.setColor(Color.rgb(117,70,160));
         if(inSketch())for(SketchConstraints.Link link:project.coincidences)for(SketchPrimitive p:displayedSketch)if(p.id.equals(link.a)) {
             double[] a=SketchConstraints.anchor(p,link.ai);
@@ -2241,6 +2241,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     private void showDimensionValueEditor(DimensionHit hit) {
         if(hit.entityId.startsWith("link:")){showPositionDimensionEditor(Integer.parseInt(hit.entityId.substring(5)));return;}
+        if(hit.entityId.startsWith("dist:")){int index=Integer.parseInt(hit.entityId.substring(5));if(index>=0&&index<project.coincidences.size())showDistanceEditor(index,project.coincidences.get(index));return;}
         if(hit.entityId.startsWith("angle:")){int index=Integer.parseInt(hit.entityId.substring(6));if(index>=0&&index<project.coincidences.size()){SketchConstraints.Link l=project.coincidences.get(index);SketchPrimitive a=null,b=null;for(SketchPrimitive p:project.sketch){if(p.id.equals(l.a))a=p;if(p.id.equals(l.b))b=p;}if(a!=null&&b!=null)showAngleEditor(index,a,b);}return;}
         SketchPrimitive found=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(hit.entityId))found=p;
         if(found==null)return;final SketchPrimitive source=found;beginSketchWork();mode="Edytuj szkic";
@@ -2585,7 +2586,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         };
         java.util.function.Function<Double,List<SketchPrimitive>> solve=value->{
             List<SketchConstraints.Link> list=links.apply(value);
-            return existing!=null?SketchConstraints.resolve(project.sketch,list):SketchConstraints.connect(project.sketch,project.coincidences,list.get(list.size()-1));
+            // The first line stays; the second turns.
+            return existing!=null?SketchConstraints.edit(project.sketch,list,a.id,a):SketchConstraints.connect(project.sketch,project.coincidences,list.get(list.size()-1));
         };
         new PropertyBuilder().setTitle(existing!=null?"Kąt między liniami":"Nowy kąt między liniami").setView(form).setNegativeButton("Anuluj",(d,w)->{sketchGhost.clear();invalidate();})
             .setPositiveButton("Zastosuj",(d,w)->{sketchGhost.clear();
@@ -2593,6 +2595,50 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 catch(IllegalArgumentException error){operationMessage=error.getMessage();}
                 invalidate();}).show();
         watchFields(input,()->{sketchGhost.clear();try{showSolvedGhost(solve.apply(parseCoordinate(input)));}catch(IllegalArgumentException ignored){}invalidate();});
+    }
+    /** Driving distance (new: index −1 with a template link whose value is measured now; or a stored one). */
+    private void showDistanceEditor(int index,SketchConstraints.Link template) {
+        beginSketchWork();mode="Edytuj szkic";
+        double current;try{current=NonlinearConstraints.distance(project.sketch,template);}catch(IllegalArgumentException e){operationMessage=e.getMessage();invalidate();return;}
+        if(index>=0)current=template.x;
+        final boolean pointMode=template.y==1;final double sign=pointMode?1:(current<0?-1:1);
+        EditText input=coordinateInput("Odległość [mm]",Math.abs(current));
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView info=new android.widget.TextView(getContext());info.setText(pointMode?"Odległość między dwoma punktami (sterująca).":"Odległość punktu od linii, mierzona prostopadle (sterująca); punkt pozostaje po tej samej stronie linii.");form.addView(info);
+        labeledInput(form,input);
+        java.util.function.Function<Double,List<SketchConstraints.Link>> links=value->{
+            if(!(value>(pointMode?0:-1e-12))||value>10000)throw new IllegalArgumentException(pointMode?"Odległość musi być dodatnia":"Odległość: 0–10000 mm");
+            SketchConstraints.Link link=SketchConstraints.withValue(template,sign*value);
+            List<SketchConstraints.Link> list=new ArrayList<>(project.coincidences);if(index>=0)list.set(index,link);else list.add(link);return list;
+        };
+        java.util.function.Function<Double,List<SketchPrimitive>> solve=value->{
+            List<SketchConstraints.Link> list=links.apply(value);
+            // Editing keeps the reference (line or second point) in place; only the measured element follows.
+            if(index>=0){SketchPrimitive reference=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(template.b))reference=p;
+                return reference==null?SketchConstraints.resolve(project.sketch,list):SketchConstraints.edit(project.sketch,list,reference.id,reference);}
+            return SketchConstraints.connect(project.sketch,project.coincidences,list.get(list.size()-1));
+        };
+        new PropertyBuilder().setTitle(index>=0?"Odległość":"Nowy wymiar odległości").setView(form).setNegativeButton("Anuluj",(d,w)->{sketchGhost.clear();invalidate();})
+            .setPositiveButton("Zastosuj",(d,w)->{sketchGhost.clear();
+                try{double value=parseCoordinate(input);if(applySolvedSketch(solve.apply(value),links.apply(value)))operationMessage="Odległość "+formatMm(value)+" — wymiar sterujący widoczny na szkicu";}
+                catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+                invalidate();}).show();
+        watchFields(input,()->{sketchGhost.clear();try{showSolvedGhost(solve.apply(parseCoordinate(input)));}catch(IllegalArgumentException ignored){}invalidate();});
+    }
+    private void labeledInput(LinearLayout form,EditText input){form.addView(input);}
+    /** Driving distances drawn as a dimension from the point to the foot on the line or to the other point. */
+    private void drawDistanceDimensions(Canvas canvas,List<SketchPrimitive> geometry) {
+        for(int index=0;index<project.coincidences.size();index++) {
+            SketchConstraints.Link link=project.coincidences.get(index);if(!link.kind.equals("distance"))continue;
+            SketchPrimitive a=null,b=null;for(SketchPrimitive p:geometry){if(p.id.equals(link.a))a=p;if(p.id.equals(link.b))b=p;}
+            if(a==null||b==null)continue;
+            double[] from=SketchConstraints.anchor(a,link.ai),to;
+            if(link.y==1)to=SketchConstraints.anchor(b,link.bi);
+            else{double dx=b.x2-b.x1,dy=b.y2-b.y1,l2=dx*dx+dy*dy;if(l2<1e-12)continue;double t=((from[0]-b.x1)*dx+(from[1]-b.y1)*dy)/l2;to=new double[]{b.x1+t*dx,b.y1+t*dy};}
+            if(!sketchPointVisible(from[0],from[1])||!sketchPointVisible(to[0],to[1]))continue;
+            drawingDimension=new DimensionHit("dist:"+index,"distance",0,null);
+            drawSketchDimension(canvas,projectSketchPoint(from[0],from[1]),projectSketchPoint(to[0],to[1]),null,formatMm(Math.abs(link.x)));drawingDimension=null;
+        }
     }
     private static String formatAngle(double degrees){return (Math.abs(degrees-Math.rint(degrees))<1e-9?String.valueOf((long)Math.rint(degrees)):String.format(java.util.Locale.US,"%.2f",degrees).replace('.',','))+"°";}
     /** Driving angles: an arc between the two lines at their intersection with the value; tap to edit. */
@@ -3479,7 +3525,19 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     private void relationTap(float x,float y) {
         SketchPrimitive picked=findSketchAt(x,y);int anchor=0;
-        if(constraintKind.equals("pointOn")&&coincidenceFirst==null) {
+        if(constraintKind.equals("distance")&&coincidenceFirst!=null) {
+            // Second pick: a point of another element (point–point) or a line (perpendicular distance).
+            SketchPrimitive first=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(coincidenceFirst))first=p;
+            SketchPrimitive other=null;int otherAnchor=-1;double best=dp(18);
+            for(SketchPrimitive p:project.sketch){if(p.id.equals(coincidenceFirst))continue;for(int i=0;i<SketchConstraints.anchorCount(p);i++){double[] point=SketchConstraints.anchor(p,i);PointF screen=projectSketchPoint(point[0],point[1]);double distance=Math.hypot(screen.x-x,screen.y-y);if(distance<best){best=distance;other=p;otherAnchor=i;}}}
+            String firstId=coincidenceFirst;int firstAnchor=coincidenceAnchor;
+            if(first==null){coincidenceFirst=null;invalidate();return;}
+            if(other!=null){coincidenceFirst=null;showDistanceEditor(-1,new SketchConstraints.Link("distance",firstId,firstAnchor,other.id,otherAnchor,0,1));return;}
+            SketchPrimitive line=findSketchAt(x,y);
+            if(line!=null&&!line.id.equals(firstId)&&(line.type.equals("Linia")||line.type.equals("Pomocnicza"))){coincidenceFirst=null;showDistanceEditor(-1,new SketchConstraints.Link("distance",firstId,firstAnchor,line.id,0,0,0));return;}
+            operationMessage="Wskaż punkt innego elementu albo linię";invalidate();return;
+        }
+        if((constraintKind.equals("pointOn")||constraintKind.equals("distance"))&&coincidenceFirst==null) {
             double best=dp(18);picked=null;
             for(SketchPrimitive p:project.sketch)for(int i=0;i<SketchConstraints.anchorCount(p);i++){double[] point=SketchConstraints.anchor(p,i);PointF screen=projectSketchPoint(point[0],point[1]);double distance=Math.hypot(screen.x-x,screen.y-y);if(distance<best){best=distance;picked=p;anchor=i;}}
         }
@@ -3506,8 +3564,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     private void showConstraintMenu() {
         new PropertyBuilder().setTitle("Więzy szkicu")
-            .setItems(new String[]{"Połącz dwa punkty","Odcinek poziomy (H)","Odcinek pionowy (V)","Unieruchom punkt","Równoległość ∥","Prostopadłość ⊥","Równa długość / promień =","Styczność T","Współśrodkowość ◎","Symetria względem osi ↔︎","Punkt na obiekcie","Wymiar położenia X ↔︎","Wymiar położenia Y ↕︎","Współliniowość ⫽","Kąt między liniami ∠"},(d,which)-> {
-                constraintKind=new String[]{"coincident","horizontal","vertical","fixed","parallel","perpendicular","equal","tangent","concentric","symmetric","pointOn","dimX","dimY","collinear","angle"}[which];
+            .setItems(new String[]{"Połącz dwa punkty","Odcinek poziomy (H)","Odcinek pionowy (V)","Unieruchom punkt","Równoległość ∥","Prostopadłość ⊥","Równa długość / promień =","Styczność T","Współśrodkowość ◎","Symetria względem osi ↔︎","Punkt na obiekcie","Wymiar położenia X ↔︎","Wymiar położenia Y ↕︎","Współliniowość ⫽","Kąt między liniami ∠","Odległość punkt–linia / punkt–punkt ↦"},(d,which)-> {
+                constraintKind=new String[]{"coincident","horizontal","vertical","fixed","parallel","perpendicular","equal","tangent","concentric","symmetric","pointOn","dimX","dimY","collinear","angle","distance"}[which];
                 coincidenceMode=true;coincidenceFirst=null;
                 operationMessage=NonlinearConstraints.relation(constraintKind)?"Wskaż dwa elementy relacji "+NonlinearConstraints.symbol(constraintKind):which==0?"Wskaż dwa punkty różnych elementów":which==3?"Dotknij punktu, który ma pozostać na miejscu":"Dotknij odcinka lub boku konturu";
                 invalidate();
