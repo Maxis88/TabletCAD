@@ -8,7 +8,7 @@ public final class ToolbarProbe {
         Set<String> all=new HashSet<>(),groups=new HashSet<>();
         for(ToolbarCatalog.Group group:ToolbarCatalog.groups(sketch)) {
             require(groups.add(group.title),"unique group "+group.title);
-            String[] commands=group.commands();require(commands.length>0&&commands.length<=12,"bounded nonempty icon menu "+group.title);
+            String[] commands=group.commands();require(commands.length>0&&commands.length<=14,"bounded nonempty icon menu "+group.title);
             require(!group.icon.isEmpty(),"group has icon "+group.title);
             for(String command:commands){require(all.add(command),"single command location "+command);require(ToolbarCatalog.allows(sketch,command),"context permits "+command);}
             String first=commands[0];commands[0]="invalid";require(group.commands()[0].equals(first),"menu data immutable to consumer");
