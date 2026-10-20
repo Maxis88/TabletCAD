@@ -47,3 +47,9 @@
 - Dotknięcie ściany zaznacza tylko tę ścianę (bez podświetlania całej operacji).
 - Przycinanie linii i łuków na elipsach (dokładnie) i splajnach (TrimCurvesHostTest); przycinanie samej elipsy — jeszcze nie.
 - Nowe: podział bryły powierzchnią przez kilka krzywych z różnych szkiców (rekord -27, SurfaceSplitKernelProbe).
+
+## Wydajność (20.10)
+- Przyczyna ~1,5 s podglądu na tablecie: wyszukiwanie otworów klasyfikowało punkty względem całej bryły (z gwintem bardzo kosztowne). Teraz rozpoznanie po orientacji ściany walcowej — model z gwintem M10: 750 ms → <1 ms; krok podglądu 800 → 90 ms (PreviewSpeedProbe). Potwierdzone przez użytkownika na tablecie.
+- Czasy etapów zapisywane w logcat (TabletCAD-perf); na Honorze logcat jest szyfrowany.
+- Auto-wyciągnięcie: Połącz, gdy narzędzie tylko częściowo zachodzi na materiał (AutoExtrusionKernelProbe).
+- Wyciągnij przy zaznaczonej ścianie = odsunięcie ściany. Kontrast cieniowania (ShadeModel). Małe okienka bez opisów.

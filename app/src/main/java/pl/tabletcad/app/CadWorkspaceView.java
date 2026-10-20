@@ -1860,7 +1860,6 @@ if (isInsideViewport(e.getX(), e.getY())) {
             text(canvas,chip.label,tx,r.centerY()+dp(4.5f),12,Color.WHITE,false);
             stripRects.add(r);stripShown.add(chip);x=r.right+dp(6);
         }
-        String perfText=perfSummary();if(!perfText.isEmpty())stripHint=stripHint.isEmpty()?perfText:perfText+"   "+stripHint;
         if(!stripHint.isEmpty()){paint.setTextSize(dp(11.5f));String hint=stripHint;float room=w-dp(16)-(x+dp(12));
             while(hint.length()>4&&paint.measureText(hint)>room)hint=hint.substring(0,hint.length()-2);
             if(hint.length()<stripHint.length()&&hint.length()>4)hint=hint.substring(0,hint.length()-1)+"…";
