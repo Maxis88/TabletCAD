@@ -82,6 +82,18 @@ public final class EdgeRepairKernelProbe {
         cgA.committedFeatures.set(0,ExtrusionPlan.feature(HistoryKernelProbe.top(),new SketchPrimitive("boss","Prostokąt",40,25,70,45),"add",10,0,false,false));
         check(EdgeRepair.repair(cgB,cgA,EdgeRepairKernelProbe::model)==2,"both chamfer edges re-attached");
         close("same chamfered volume after moving the boss",volume(cgA),chamfered,1e-6);
+        // A pocket sketched on the top of the boss moves with the boss (frame origin on the boss top).
+        CadProject sk=HistoryKernelProbe.plate();
+        HistoryKernelProbe.add(sk,ExtrusionPlan.feature(HistoryKernelProbe.top(),new SketchPrimitive("boss","Prostokąt",30,20,60,40),"add",10,0,false,false),"boss",1);
+        CadProject onBoss=new CadProject();onBoss.sketchOriginZ=30;
+        HistoryKernelProbe.add(sk,ExtrusionPlan.feature(onBoss,new SketchPrimitive("p","Okrąg",35,25,37,25),"cut",5,0,false,false),"p",1);
+        double pocketed=volume(sk);check(!Double.isNaN(pocketed),"Ø4 pocket sketched on the boss top");
+        CadProject skB=CadProject.fromJson(sk.toJson()),skA=CadProject.fromJson(sk.toJson());
+        skA.committedFeatures.set(0,ExtrusionPlan.feature(HistoryKernelProbe.top(),new SketchPrimitive("boss","Prostokąt",40,25,70,45),"add",10,0,false,false));
+        check(EdgeRepair.repair(skB,skA,EdgeRepairKernelProbe::model)==1,"sketch on the boss face follows the moved boss");
+        double[] sf=skA.committedFeatures.get(1);
+        check(Math.abs(sf[7]-10)<1e-6&&Math.abs(sf[8]-5)<1e-6&&Math.abs(sf[9]-30)<1e-6,"frame shifted by (10,5,0)");
+        close("same pocketed volume after the move",volume(skA),pocketed,1e-6);
         System.out.println("PASS EdgeRepairKernelProbe: "+checks+" checks");
     }
 }
