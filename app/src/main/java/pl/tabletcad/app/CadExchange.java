@@ -118,6 +118,85 @@ public final class CadExchange {
         for(int i=0;i<triangles.size();i++)triangle(mesh,i*13,triangles.get(i),i+1);
         return mesh;
     }
+    /**
+     * 3MF (3D Manufacturing Format) mesh import: the model part of the ZIP package, objects with
+     * meshes or components, build items with optional affine transforms, model unit scaled to mm.
+     * Returns a mesh (stride 13); each object gets its own face number. DTDs are refused.
+     */
+    public static double[] read3mf(InputStream input) throws IOException {
+        byte[] model=null;
+        try(java.util.zip.ZipInputStream zip=new java.util.zip.ZipInputStream(input)) {
+            java.util.zip.ZipEntry entry;long total=0;
+            while((entry=zip.getNextEntry())!=null) {
+                String name=entry.getName().replace('\\','/');
+                if(!name.toLowerCase(java.util.Locale.ROOT).endsWith(".model")){continue;}
+                ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buffer=new byte[16384];int n;
+                while((n=zip.read(buffer))>0){total+=n;if(total>96L*1024*1024)throw new IOException("3MF: model przekracza 96 MB");out.write(buffer,0,n);}
+                if(name.toLowerCase(java.util.Locale.ROOT).endsWith("3dmodel.model")||model==null)model=out.toByteArray();
+            }
+        }catch(java.util.zip.ZipException e){throw new IOException("3MF: plik nie jest pakietem ZIP");}
+        if(model==null)throw new IOException("3MF: brak części modelu (3D/3dmodel.model)");
+        if(new String(model,0,Math.min(model.length,4096),StandardCharsets.UTF_8).contains("<!DOCTYPE"))throw new IOException("3MF: deklaracje DTD nie są obsługiwane");
+        org.w3c.dom.Document document;
+        try {
+            javax.xml.parsers.DocumentBuilderFactory factory=javax.xml.parsers.DocumentBuilderFactory.newInstance();factory.setNamespaceAware(true);
+            try{factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl",true);}catch(Exception ignored){}
+            factory.setExpandEntityReferences(false);
+            document=factory.newDocumentBuilder().parse(new ByteArrayInputStream(model));
+        }catch(javax.xml.parsers.ParserConfigurationException|org.xml.sax.SAXException e){throw new IOException("3MF: niepoprawny XML modelu ("+e.getMessage()+")");}
+        org.w3c.dom.Element root=document.getDocumentElement();
+        String unit=root.getAttribute("unit");
+        double scale=unit.isEmpty()||unit.equals("millimeter")?1:unit.equals("micron")?.001:unit.equals("centimeter")?10:unit.equals("meter")?1000:unit.equals("inch")?25.4:unit.equals("foot")?304.8:Double.NaN;
+        if(Double.isNaN(scale))throw new IOException("3MF: nieznana jednostka "+unit);
+        Map<String,org.w3c.dom.Element> objects=new HashMap<>();
+        org.w3c.dom.NodeList list=root.getElementsByTagNameNS("*","object");
+        for(int i=0;i<list.getLength();i++){org.w3c.dom.Element o=(org.w3c.dom.Element)list.item(i);objects.put(o.getAttribute("id"),o);}
+        List<double[]> triangles=new ArrayList<>();List<Integer> faces=new ArrayList<>();int[] face={0};
+        org.w3c.dom.NodeList items=root.getElementsByTagNameNS("*","item");
+        if(items.getLength()==0)throw new IOException("3MF: brak elementów do zbudowania (build/item)");
+        for(int i=0;i<items.getLength();i++) {
+            org.w3c.dom.Element item=(org.w3c.dom.Element)items.item(i);
+            emit3mf(objects,item.getAttribute("objectid"),matrix(item.getAttribute("transform")),scale,triangles,faces,face,0);
+        }
+        if(triangles.isEmpty())throw new IOException("3MF nie zawiera trójkątów");
+        double[] mesh=new double[triangles.size()*13];
+        for(int i=0;i<triangles.size();i++)triangle(mesh,i*13,triangles.get(i),faces.get(i));
+        return mesh;
+    }
+    private static double[] matrix(String text) throws IOException {
+        if(text==null||text.trim().isEmpty())return new double[]{1,0,0,0,1,0,0,0,1,0,0,0};
+        String[] parts=text.trim().split("\\s+");if(parts.length!=12)throw new IOException("3MF: przekształcenie wymaga 12 liczb");
+        double[] m=new double[12];for(int i=0;i<12;i++)m[i]=number(parts[i]);return m;
+    }
+    /** 3MF row-vector transform: p' = p·M (M given as m00 m01 m02 m10 m11 m12 m20 m21 m22 m30 m31 m32). */
+    private static double[] multiply(double[] a,double[] b) {
+        double[] r=new double[12];
+        for(int row=0;row<4;row++)for(int col=0;col<3;col++){double v=row==3?b[9+col]:0;for(int k=0;k<3;k++)v+=a[row*3+k]*b[k*3+col];r[row*3+col]=v;}
+        return r;
+    }
+    private static void emit3mf(Map<String,org.w3c.dom.Element> objects,String id,double[] m,double scale,List<double[]> triangles,List<Integer> faces,int[] face,int depth) throws IOException {
+        if(depth>8)throw new IOException("3MF: zbyt głęboko zagnieżdżone komponenty");
+        org.w3c.dom.Element object=objects.get(id);if(object==null)throw new IOException("3MF: brak obiektu "+id);
+        org.w3c.dom.NodeList components=object.getElementsByTagNameNS("*","component");
+        for(int i=0;i<components.getLength();i++){org.w3c.dom.Element c=(org.w3c.dom.Element)components.item(i);emit3mf(objects,c.getAttribute("objectid"),multiply(matrix(c.getAttribute("transform")),m),scale,triangles,faces,face,depth+1);}
+        org.w3c.dom.NodeList vertexNodes=object.getElementsByTagNameNS("*","vertex");if(vertexNodes.getLength()==0)return;
+        if(vertexNodes.getLength()>1000000)throw new IOException("3MF: limit 1000000 wierzchołków");
+        double[] v=new double[vertexNodes.getLength()*3];
+        for(int i=0;i<vertexNodes.getLength();i++){org.w3c.dom.Element e=(org.w3c.dom.Element)vertexNodes.item(i);
+            double x=number(e.getAttribute("x")),y=number(e.getAttribute("y")),z=number(e.getAttribute("z"));
+            v[i*3]=(x*m[0]+y*m[3]+z*m[6]+m[9])*scale;v[i*3+1]=(x*m[1]+y*m[4]+z*m[7]+m[10])*scale;v[i*3+2]=(x*m[2]+y*m[5]+z*m[8]+m[11])*scale;}
+        org.w3c.dom.NodeList tris=object.getElementsByTagNameNS("*","triangle");face[0]++;
+        for(int i=0;i<tris.getLength();i++) {
+            org.w3c.dom.Element t=(org.w3c.dom.Element)tris.item(i);int[] k=new int[3];String[] names={"v1","v2","v3"};
+            for(int j=0;j<3;j++){try{k[j]=Integer.parseInt(t.getAttribute(names[j]));}catch(NumberFormatException e){throw new IOException("3MF: niepoprawny indeks trójkąta");}
+                if(k[j]<0||k[j]*3>=v.length)throw new IOException("3MF: indeks trójkąta poza listą wierzchołków");}
+            double[] p={v[k[0]*3],v[k[0]*3+1],v[k[0]*3+2],v[k[1]*3],v[k[1]*3+1],v[k[1]*3+2],v[k[2]*3],v[k[2]*3+1],v[k[2]*3+2]};
+            double ax=p[3]-p[0],ay=p[4]-p[1],az=p[5]-p[2],bx=p[6]-p[0],by=p[7]-p[1],bz=p[8]-p[2];
+            double nx=ay*bz-az*by,ny=az*bx-ax*bz,nz=ax*by-ay*bx;if(!(Math.sqrt(nx*nx+ny*ny+nz*nz)>1e-15))continue;
+            if(triangles.size()>=250000)throw new IOException("3MF: limit 250000 trójkątów");
+            triangles.add(p);faces.add(face[0]);
+        }
+    }
     /** Binary STL of a mesh (stride 13: three vertices, normal, face). */
     public static void writeBinaryStl(double[] mesh,OutputStream output)throws IOException {
         int count=mesh.length/13;ByteBuffer buffer=ByteBuffer.allocate(84+50*count).order(ByteOrder.LITTLE_ENDIAN);

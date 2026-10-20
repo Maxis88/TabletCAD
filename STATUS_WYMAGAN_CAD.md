@@ -224,7 +224,8 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
    średnice/promienie i środki otworów (0.91), kąty i tolerancje (0.94); wymiary podążają za
    zmianą rozmiaru modelu (0.94), a niemożliwe do odnalezienia są oznaczane na czerwono.
    Brak tolerancji geometrycznych (GD&T), chropowatości i arkuszy w formatach innych niż A4.
-5. Formaty: brak IGES; 3MF tylko eksport; weryfikacja w zewnętrznych CAD do wykonania.
+5. Formaty: brak IGES (wymaga przebudowy OCCT z modułem IGES); 3MF eksport i od 0.97 import
+   siatek; weryfikacja w zewnętrznych CAD do wykonania.
 6. Powierzchnie, blachy i rozwinięcia: poza obecnym zakresem.
 7. Wydajność: zatwierdzanie szkicu, podglądy i eksport działają w tle (0.87/0.90), wyniki jądra
    są zapamiętywane (0.86); od 0.95 podgląd operacji liczy to samo zapytanie co zatwierdzenie,

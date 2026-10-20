@@ -41,9 +41,9 @@ public final class MainActivity extends Activity {
             @Override public void requestExport(String format) { requestExportFile(format); }
             @Override public void requestOpenStep() {
                 new android.app.AlertDialog.Builder(MainActivity.this).setTitle("Otwórz plik")
-                    .setItems(new String[]{"STEP — bryła", "STL — siatka ASCII / binarna", "DXF — szkic 2D", "OBJ — siatka"},
+                    .setItems(new String[]{"STEP — bryła", "STL — siatka ASCII / binarna", "DXF — szkic 2D", "OBJ — siatka", "3MF — siatka (druk 3D)"},
                         (dialog,which)-> {
-                            pendingImportFormat = which==0 ? "step" : which==1 ? "stl" : which==2 ? "dxf" : "obj";
+                            pendingImportFormat = which==0 ? "step" : which==1 ? "stl" : which==2 ? "dxf" : which==3 ? "obj" : "3mf";
                             requestStepFile();
                         }).setNegativeButton("Anuluj",null).show();
             }
@@ -168,7 +168,7 @@ public final class MainActivity extends Activity {
                         output.write(buffer,0,n);
                     }
                 }
-                if(pendingImportFormat.equals("obj"))workspace.importObj(staged);else workspace.importStl(staged);
+                if(pendingImportFormat.equals("obj"))workspace.importObj(staged);else if(pendingImportFormat.equals("3mf"))workspace.import3mf(staged);else workspace.importStl(staged);
             }
             Toast.makeText(this,"Otwarto "+pendingImportFormat.toUpperCase(),Toast.LENGTH_LONG).show();
         } catch(IOException error) {

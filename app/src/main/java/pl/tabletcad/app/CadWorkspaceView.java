@@ -7384,17 +7384,25 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     /** OBJ is converted to the retained binary STL source, so reopening uses the STL mesh path. */
+    public void import3mf(File staged) throws IOException {
+        double[] mesh;
+        try(FileInputStream input=new FileInputStream(staged)) { mesh=CadExchange.read3mf(input); }
+        importMesh(mesh,"3MF");
+    }
     public void importObj(File staged) throws IOException {
         double[] mesh;
         try(FileInputStream input=new FileInputStream(staged)) { mesh=CadExchange.readObj(input); }
-        if(!CadMesh.isValid(mesh,false))throw new IOException("Niepoprawna siatka OBJ");
+        importMesh(mesh,"OBJ");
+    }
+    private void importMesh(double[] mesh,String format) throws IOException {
+        if(!CadMesh.isValid(mesh,false))throw new IOException("Niepoprawna siatka "+format);
         String sourceName="mesh-"+UUID.randomUUID()+".stl";
         File retained=new File(projectRepository.importedStepFile().getParentFile(),sourceName);
         try(OutputStream output=new FileOutputStream(retained)){CadExchange.writeBinaryStl(mesh,output);}
         if(!commitModelChange(() -> {resetImportedModel();project.importedMeshSource=sourceName;})) {
             retained.delete();throw new IOException(operationMessage);
         }
-        finishModelImport("Gotowe: wczytano siatkę OBJ ("+mesh.length/13+" trójkątów)");
+        finishModelImport("Gotowe: wczytano siatkę "+format+" ("+mesh.length/13+" trójkątów)");
     }
 
     /** Export-quality tessellation of the B-Rep model (project deviations); an imported mesh is exported as is. */
@@ -7972,7 +7980,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private void showFileMenu() {
         closePropertyEditor();dismissToolPopup();
         new PropertyBuilder().setTitle("Plik")
-            .setItems(new String[]{"Importuj plik (STEP, STL, OBJ, DXF)…","Eksportuj…","Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt"},(d,which)-> {
+            .setItems(new String[]{"Importuj plik (STEP, STL, OBJ, 3MF, DXF)…","Eksportuj…","Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt"},(d,which)-> {
                 if(which==0){if(fileRequestListener!=null)fileRequestListener.requestOpenStep();}
                 else if(which==1)showExportPicker();else if(which==2)showNewProject();else if(which==3)showProjectLibrary();else if(which==4)showProjectCopy();else showProjectTrash();
             }).setNegativeButton("Zamknij",null).show();
