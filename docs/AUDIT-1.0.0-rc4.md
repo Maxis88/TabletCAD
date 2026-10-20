@@ -26,3 +26,14 @@
 ## Poprawki po rc4 (bez zmiany wersji)
 - Znacznik przyciągania pokazuje rodzaj punktu: Punkt, Środek, Przecięcie, Styczna, Prostopadła, Na krzywej, Poziomo/Pionowo, Zamknij.
 - Wysokość powierzchni podziału liczona z rzeczywistego zasięgu brył i położenia szkicu (bryły daleko od szkicu też są przecinane).
+
+## Testy na tablecie (20.10.2026, Honor YLE-W09, Android 16)
+- APK 1.0.0-rc4 (gałąź claude/cad-0.86, commit 68a393c) zbudowany przenośnym JDK 21, zainstalowany przez ADB.
+- Instrumentacja na urządzeniu: **53/53 PASS** (39 sond jądra i logiki, w tym EdgeRepair, Spline, SurfaceSplit; 14 sond UI z prawdziwymi zdarzeniami dotyku).
+- Logcat crash: pusty.
+- Błędy znalezione i naprawione podczas testów:
+  - „Wyciągnij”, narzędzia bryłowe i Gwint uruchomione z otwartego szkicu tylko zatwierdzały szkic (zatwierdzanie w tle od 0.87) — teraz narzędzie otwiera się po przebudowie.
+  - Napis Ø wewnątrz małego okręgu przejmował dotyk: przeciągnięcie, przytrzymanie (podczas rysowania) i zaznaczanie wielu elementów nie działały — naprawione.
+  - Przeciągnięcie zaznaczonego okręgu za środek przesuwało tylko jego, nie całe zaznaczenie — naprawione.
+  - Budowanie: brak jar.exe/javac.exe w C:\Program Files\Android — skrypty pakują APK bez jar.exe i używają third_party\jdk.
+- Nie sprawdzone automatycznie (do ręcznej oceny): wygoda paska opcji, położenie małych okienek przy klawiaturze, rysowanie rysikiem.
