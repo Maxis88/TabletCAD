@@ -84,7 +84,7 @@ public final class ViewCameraProbe {
         check(Math.abs((float)call(view,"viewTop",new Class<?>[0])-110*dp)<.5f,"top bar and options strip leave the work area from 110 dp");
         check(!String.valueOf(call(view,"appVersion",new Class<?>[0])).equals("?"),"installed version is readable for the top bar: v"+call(view,"appVersion",new Class<?>[0]));
         float expanded=(float)call(view,"leftWidth",new Class<?>[0]);
-        WorkspaceUiProbe.tap(view,expanded-20*dp,(64+30)*dp);check((boolean)field(view,"treeCollapsed")&&(float)call(view,"leftWidth",new Class<?>[0])<expanded,"tree chevron collapses the model panel");
+        WorkspaceUiProbe.tap(view,expanded-20*dp,(64+44+30)*dp);check((boolean)field(view,"treeCollapsed")&&(float)call(view,"leftWidth",new Class<?>[0])<expanded,"tree chevron collapses the model panel");
         check((boolean)call(view,"isInsideViewport",new Class<?>[]{float.class,float.class},100*dp,600f),"collapsed tree frees the area for model gestures");
         WorkspaceUiProbe.tap(view,20*dp,600f);check(!(boolean)field(view,"treeCollapsed"),"tap on the rail restores the model tree");
         System.out.println("ALL CAMERA VIEW TESTS PASSED");

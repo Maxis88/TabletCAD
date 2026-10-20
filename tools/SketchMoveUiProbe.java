@@ -30,12 +30,16 @@ public final class SketchMoveUiProbe {
     static void drag(float x1,float y1,float x2,float y2,long holdMs)throws Exception {
         long start=SystemClock.uptimeMillis();
         MotionEvent down=MotionEvent.obtain(start,start,MotionEvent.ACTION_DOWN,x1,y1,0);instrumentation.sendPointerSync(down);down.recycle();
+        if(probeView!=null)try{ui(()->{int[] o=new int[2];probeView.getLocationOnScreen(o);float lx=x1-o[0],ly=y1-o[1];
+            Object dragged=field(probeView,"draggedSketch");boolean inside=(boolean)call(probeView,"isInsideViewport",new Class<?>[]{float.class,float.class},lx,ly);
+            lastDown="down local=("+lx+","+ly+") inside="+inside+" dragged="+(dragged==null?"null":((SketchPrimitive)dragged).id)+" top="+call(probeView,"viewTop",new Class<?>[0])+" left="+call(probeView,"leftWidth",new Class<?>[0])+" right="+call(probeView,"viewportRight",new Class<?>[0])+" editor="+field(probeView,"propertyEditor")+" popup="+field(probeView,"toolbarPopup");});}catch(Exception e){lastDown="diag "+e;}
         if(holdMs>0)SystemClock.sleep(holdMs);
         for(int i=1;i<=10;i++){long t=SystemClock.uptimeMillis();MotionEvent m=MotionEvent.obtain(start,t,MotionEvent.ACTION_MOVE,x1+(x2-x1)*i/10,y1+(y2-y1)*i/10,0);instrumentation.sendPointerSync(m);m.recycle();SystemClock.sleep(16);}
         long t=SystemClock.uptimeMillis();MotionEvent up=MotionEvent.obtain(start,t,MotionEvent.ACTION_UP,x2,y2,0);instrumentation.sendPointerSync(up);up.recycle();
         instrumentation.waitForIdleSync();
     }
-    static String diag(CadWorkspaceView view)throws Exception{String[] r={""};ui(()->{r[0]="mode="+field(view,"mode")+" tool="+field(view,"sketchTool")+" msg="+field(view,"operationMessage")+" finger="+field(view,"fingerDraws")+" plane="+field(view,"sketchPlaneChosen")+" sel="+field(view,"selectedSketchId");});return r[0];}
+    static CadWorkspaceView probeView;static String lastDown="";
+    static String diag(CadWorkspaceView view)throws Exception{String[] r={""};ui(()->{r[0]=lastDown+" mode="+field(view,"mode")+" tool="+field(view,"sketchTool")+" msg="+field(view,"operationMessage")+" finger="+field(view,"fingerDraws")+" plane="+field(view,"sketchPlaneChosen")+" sel="+field(view,"selectedSketchId");});return r[0];}
     static SketchPrimitive circle(CadWorkspaceView view)throws Exception {
         SketchPrimitive[] out={null};ui(()->{for(SketchPrimitive p:((CadProject)field(view,"project")).sketch)if(p.id.equals("probe-circle"))out[0]=p;});return out[0];
     }
@@ -49,7 +53,7 @@ public final class SketchMoveUiProbe {
             AlertDialog chooser=(AlertDialog)field(old,"projectChooser");if(chooser!=null)chooser.dismiss();
             Context context=new ContextWrapper(activity){@Override public File getFilesDir(){return root;}};
             CadWorkspaceView view=new CadWorkspaceView(context,null);ref[0]=view;FrameLayout host=new FrameLayout(activity);host.addView(view,new FrameLayout.LayoutParams(-1,-1));activity.setContentView(host);
-        });instrumentation.waitForIdleSync();CadWorkspaceView view=ref[0];
+        });instrumentation.waitForIdleSync();CadWorkspaceView view=ref[0];probeView=view;
         ui(()->{call(view,"activateTopTool",new Class<?>[]{String.class},"Szkic");call(view,"chooseSketchPlane",new Class<?>[]{String.class},"XY");
             CadProject p=(CadProject)field(view,"project");p.sketch.add(new SketchPrimitive("probe-circle","Okrąg",0,0,8,0));
             call(view,"activateTopTool",new Class<?>[]{String.class},"Edytuj");});

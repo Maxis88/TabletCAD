@@ -59,7 +59,7 @@ public final class WorkspaceUiProbe {
         check(!visible(view)&&result(view,"viewportRight")==2200,"idle model uses full width without property sidebar");
         Method inside=CadWorkspaceView.class.getDeclaredMethod("isInsideViewport",float.class,float.class);inside.setAccessible(true);
         check((boolean)inside.invoke(view,2190f,500f),"freed right region accepts model gestures");
-        set(view,"mode","Edytuj szkic");check(visible(view)&&Math.abs(result(view,"viewportRight")-2200)<.01,"rc2: sketch options live in the strip, the work area keeps the full width");
+        set(view,"mode","Edytuj szkic");check(!visible(view)&&Math.abs(result(view,"viewportRight")-2200)<.01,"rc2: sketch options live in the strip, the work area keeps the full width");
         check(!(boolean)inside.invoke(view,2190f,500f),"sketch panel excluded from geometry hit-testing");set(view,"mode","Wybierz");
         CadProject project=(CadProject)field(view,"project");for(int i=0;i<30;i++) {
             project.committedFeatures.add(new double[]{0,0,0,0,5,5,i+1,0,0,32,1,0,0,0,1,0});project.committedProfileIds.add("");
