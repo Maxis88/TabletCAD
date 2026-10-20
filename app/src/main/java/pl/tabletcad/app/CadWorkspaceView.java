@@ -941,6 +941,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     dragWasSelected = draggedSketch.id.equals(selectedSketchId);
                     dragHandle = dragWasSelected
                         ? sketchHandleAt(draggedSketch, event.getX(), event.getY()) : 0;
+                    // In multi-selection a member is dragged as a whole (its centre handle would only move itself).
+                    if(multiSelect&&sketchMulti.size()>1&&sketchMulti.contains(draggedSketch.id))dragHandle=0;
                     double[] point = screenToSketch(event.getX(), event.getY());
                     dragStartU = point[0]; dragStartV = point[1];
                     selectedSketchId = draggedSketch.id;
