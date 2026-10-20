@@ -73,4 +73,23 @@ public final class SketchShapes {
         if(tool.equals("Okrąg 3 pkt"))return "Okrąg: dotknij "+(count==0?"pierwszego":count==1?"drugiego":"trzeciego")+" punktu obwodu";
         return count==0?"Łuk: dotknij początku":count==1?"Łuk: dotknij końca":"Łuk: wskaż punkt pośredni po właściwej stronie cięciwy";
     }
+    /** Centre of a regular polygon (equal radii and edges), or null for any other contour. */
+    public static double[] regularCentre(double[] v) {
+        if(v==null||v.length<6||v.length%2!=0)return null;int n=v.length/2;double cx=0,cy=0;
+        for(int i=0;i<n;i++){cx+=v[2*i];cy+=v[2*i+1];}cx/=n;cy/=n;
+        double r=Math.hypot(v[0]-cx,v[1]-cy),e=Math.hypot(v[2]-v[0],v[3]-v[1]);if(r<1e-9)return null;
+        for(int i=0;i<n;i++){int j=(i+1)%n;
+            if(Math.abs(Math.hypot(v[2*i]-cx,v[2*i+1]-cy)-r)>1e-6*Math.max(1,r)||Math.abs(Math.hypot(v[2*j]-v[2*i],v[2*j+1]-v[2*i+1])-e)>1e-6*Math.max(1,e))return null;}
+        return new double[]{cx,cy};
+    }
+    /** Dragging a vertex of a regular polygon scales and turns it about its centre (it stays regular). */
+    public static double[] dragRegularVertex(double[] v,int vertex,double x,double y) {
+        double[] c=regularCentre(v);if(c==null)return null;
+        double ox=v[2*vertex]-c[0],oy=v[2*vertex+1]-c[1],nx=x-c[0],ny=y-c[1];
+        double r0=Math.hypot(ox,oy),r1=Math.hypot(nx,ny);if(r1<.01)throw new IllegalArgumentException("Wielokąt jest zbyt mały");
+        double k=r1/r0,turn=Math.atan2(ny,nx)-Math.atan2(oy,ox),cs=Math.cos(turn)*k,sn=Math.sin(turn)*k;
+        double[] out=new double[v.length];
+        for(int i=0;i<v.length;i+=2){double dx=v[i]-c[0],dy=v[i+1]-c[1];out[i]=c[0]+dx*cs-dy*sn;out[i+1]=c[1]+dx*sn+dy*cs;point(out[i],out[i+1]);}
+        return out;
+    }
 }

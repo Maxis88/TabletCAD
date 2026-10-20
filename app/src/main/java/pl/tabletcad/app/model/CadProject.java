@@ -48,6 +48,8 @@ public final class CadProject {
     /** Named user parameters and the model values driven by them (see UserParameters). */
     public final List<pl.tabletcad.app.UserParameters.Parameter> parameters=new ArrayList<>();
     public final java.util.Map<String,String> parameterBindings=new java.util.LinkedHashMap<>();
+    /** Extra distance [mm] of sketch dimension lines from the measured element (key: element:kind:segment). */
+    public final java.util.Map<String,Double> dimensionOffsets=new java.util.LinkedHashMap<>();
     /** Construction planes, axes and points (see Datum). */
     public final List<Datum> datums=new ArrayList<>();
     /** Assembly components (groups of bodies, instances). */
@@ -161,6 +163,7 @@ public final class CadProject {
         if(!parameters.isEmpty())root.put("parameters",pl.tabletcad.app.UserParameters.toJson(this));
         if(!parameterBindings.isEmpty())root.put("parameterBindings",new JSONObject(parameterBindings));
         if(!suppressedFeatures.isEmpty())root.put("suppressed",new JSONArray(suppressedFeatures));
+        if(!dimensionOffsets.isEmpty()){JSONObject o=new JSONObject();for(java.util.Map.Entry<String,Double> e:dimensionOffsets.entrySet())o.put(e.getKey(),e.getValue());root.put("dimensionOffsets",o);}
         if(!holeReferences.isEmpty()){JSONObject holes=new JSONObject();for(java.util.Map.Entry<Integer,double[]> e:holeReferences.entrySet()){double[] r=e.getValue();try{pl.tabletcad.app.HoleAssociation.validate(r);}catch(IllegalArgumentException x){throw new JSONException(x.getMessage());}JSONArray a=new JSONArray();for(int i=0;i<(Double.isNaN(r[5])?5:10);i++)a.put(r[i]);holes.put(e.getKey().toString(),a);}root.put("holeReferences",holes);}
         if(historyMarker>=0)root.put("historyMarker",historyMarker).put("historyMarkerCount",historyMarkerCount);
         if(!components.isEmpty()){JSONArray list=new JSONArray();for(Component c:components)list.put(c.toJson());root.put("components",list);}
@@ -372,6 +375,8 @@ public final class CadProject {
             if(index<0||index>=project.committedFeatures.size()||!pl.tabletcad.app.HoleFeature.is(project.committedFeatures.get(index)))throw new JSONException("Odniesienie do nieistniejącego otworu");project.holeReferences.put(index,r);}}
         JSONArray componentList=root.optJSONArray("components");java.util.Set<Integer> grouped=new java.util.HashSet<>();java.util.Set<String> componentIds=new java.util.HashSet<>();
         if(componentList!=null)for(int i=0;i<componentList.length();i++){Component c=Component.fromJson(componentList.getJSONObject(i));if(!componentIds.add(c.id))throw new JSONException("Powtórzony komponent");for(int b:c.bodies)if(!grouped.add(b))throw new JSONException("Bryła należy do dwóch komponentów");project.components.add(c);}
+        JSONObject offsets=root.optJSONObject("dimensionOffsets");
+        if(offsets!=null)for(java.util.Iterator<String> it=offsets.keys();it.hasNext();){String k=it.next();double v=offsets.getDouble(k);if(!Double.isFinite(v)||Math.abs(v)>5000)throw new JSONException("Invalid dimension offset");project.dimensionOffsets.put(k,v);}
         JSONArray suppressed=root.optJSONArray("suppressed");
         if(suppressed!=null)for(int i=0;i<suppressed.length();i++){int index=suppressed.getInt(i);if(index<0||index>=project.committedFeatures.size())throw new JSONException("Wygaszona operacja poza historią");project.suppressedFeatures.add(index);}
         pl.tabletcad.app.SketchTransactions.validateLoaded(project);

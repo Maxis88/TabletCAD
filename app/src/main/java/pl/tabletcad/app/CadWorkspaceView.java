@@ -275,6 +275,8 @@ public final class CadWorkspaceView extends View {
     private boolean sketchOrbit;
     private static final class DimensionHit {
         final String entityId,kind;final int segment;final RectF bounds;
+        /** Linear dimensions can be dragged away from their element along (nx,ny) [screen]. */
+        boolean linear;float nx,ny;
         DimensionHit(String id,String kind,int segment,RectF bounds){this.entityId=id;this.kind=kind;this.segment=segment;this.bounds=bounds;}
         String key(){return entityId+":"+kind+":"+segment;}
     }
@@ -744,7 +746,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
                             if (isFacePlanar(face)) chooseSketchPlane("Ściana " + (face + 1));
                             else operationMessage = "Wybierz płaską ścianę — powierzchnia jest zakrzywiona";
                         } else if (mode.equals("Wybierz")) {
-                            Integer origin=faceFeatures.get(face);highlightFeature=origin==null?Integer.MIN_VALUE:origin;highlightBody=0;highlightSketch=false;
+                            // Only the touched face is highlighted (the whole operation is highlighted from the history or the tree).
+                            highlightFeature=Integer.MIN_VALUE;highlightBody=0;highlightSketch=false;
                             operationMessage="";
                         }
                         invalidate();
@@ -998,7 +1001,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
                             catch(IllegalArgumentException e){dragPreview=null;operationMessage=e.getMessage();}
                         }else if(draggedSketch.vertices!=null) {
                             double[] vertices=draggedSketch.vertices.clone();
-                            for(int i=0;i<vertices.length;i+=2) if(dragHandle==0||dragHandle==i/2+1) {
+                            double[] regular=null;
+                            if(dragHandle>0&&!SketchSpline.is(draggedSketch))try{int k=dragHandle-1;regular=SketchShapes.dragRegularVertex(vertices,k,vertices[2*k]+du,vertices[2*k+1]+dv);}catch(IllegalArgumentException e){operationMessage=e.getMessage();}
+                            if(regular!=null)vertices=regular;
+                            else for(int i=0;i<vertices.length;i+=2) if(dragHandle==0||dragHandle==i/2+1) {
                                 vertices[i]+=du;vertices[i+1]+=dv;
                             }
                             try {dragPreview=SketchSpline.is(draggedSketch)?new SketchPrimitive(draggedSketch.id,vertices,"Splajn"):new SketchPrimitive(draggedSketch.id,vertices);}
@@ -2343,7 +2349,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 drawSketchHandle(canvas,entity.x1,entity.y2);
             }
             String size = entity.curves!=null?(entity.closedGeometry()?"Kontur · "+entity.curves.length/7+" segmentów":"Łuk · R "+formatMm(SketchCurves.arc(entity.curves,0).r)):entity.vertices!=null ? "Kontur · "+entity.vertices.length/2+" wierzchołków" : entity.type.equals("Okrąg")
-                ? "R "+formatMm(Math.hypot(entity.x2-entity.x1,entity.y2-entity.y1))
+                ? "Ø "+formatMm(2*Math.hypot(entity.x2-entity.x1,entity.y2-entity.y1))
                 : entity.type.equals("Prostokąt")
                     ? Units.number(Math.abs(entity.x2-entity.x1),project.units,project.displayDecimals)+" × "+formatMm(Math.abs(entity.y2-entity.y1))
                     : formatMm(Math.hypot(entity.x2-entity.x1,entity.y2-entity.y1));
@@ -2393,7 +2399,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         text(canvas,label,x,y,10,Color.rgb(117,70,160),true,Paint.Align.CENTER);dimensionHits.add(new DimensionHit(entity.id,"angle",0,bounds));
     }
-    private boolean dimensionReplay;
+    private boolean dimensionReplay,dimensionMoving;private double dimensionStartOffset;
+    private float sketchPixelsPerMm(){PointF a=projectSketchPoint(0,0),b=projectSketchPoint(1,0);return (float)Math.max(1e-3,Math.hypot(b.x-a.x,b.y-a.y));}
     private final Runnable dimensionHold=()->{
         if(dimensionTouch==null||!mode.equals("Szkic"))return;
         dimensionTouch=null;lastDimensionHit=null;long now=android.os.SystemClock.uptimeMillis();
@@ -2416,7 +2423,17 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         if(dimensionTouch==null)return false;
         if(action!=MotionEvent.ACTION_DOWN&&action!=MotionEvent.ACTION_MOVE||Math.hypot(event.getX()-dimensionTouchX,event.getY()-dimensionTouchY)>dp(12))removeCallbacks(dimensionHold);
-        if(event.getPointerCount()>1||action==MotionEvent.ACTION_CANCEL){dimensionTouch=null;lastDimensionHit=null;return false;}
+        if(event.getPointerCount()>1||action==MotionEvent.ACTION_CANCEL){dimensionTouch=null;lastDimensionHit=null;if(dimensionMoving){dimensionMoving=false;projectRepository.save(project);}return false;}
+        if(dimensionTouch.linear&&(dimensionMoving||Math.hypot(event.getX()-dimensionTouchX,event.getY()-dimensionTouchY)>dp(12))) {
+            // Dragging a linear dimension moves its line away from (or towards) the measured element.
+            String key=dimensionTouch.key();
+            if(!dimensionMoving){dimensionMoving=true;dimensionStartOffset=project.dimensionOffsets.getOrDefault(key,0.0);removeCallbacks(dimensionHold);}
+            double along=((event.getX()-dimensionTouchX)*dimensionTouch.nx+(event.getY()-dimensionTouchY)*dimensionTouch.ny)/sketchPixelsPerMm();
+            double value=Math.max(-dp(18)/sketchPixelsPerMm(),dimensionStartOffset+along);
+            project.dimensionOffsets.put(key,Math.round(value*100)/100.0);
+            if(action==MotionEvent.ACTION_UP){dimensionTouch=null;dimensionMoving=false;projectRepository.save(project);}
+            invalidate();return true;
+        }
         if(Math.hypot(event.getX()-dimensionTouchX,event.getY()-dimensionTouchY)>dp(12)) {
             // Not a tap on the value: the finger is dragging what lies under the label (e.g. a small circle
             // whose Ø sits inside it). Replay the press for the normal handlers, then continue with this move.
@@ -2921,7 +2938,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         float dx=b.x-a.x,dy=b.y-a.y,length=(float)Math.hypot(dx,dy);if(length<dp(8))return;
         float nx=-dy/length,ny=dx/length;
         if(inside!=null&&nx*(inside.x-(a.x+b.x)/2)+ny*(inside.y-(a.y+b.y)/2)>0){nx=-nx;ny=-ny;}
-        float offset=dp(22),ax=a.x+nx*offset,ay=a.y+ny*offset,bx=b.x+nx*offset,by=b.y+ny*offset;
+        String offsetKey=drawingDimension==null?null:drawingDimension.key();
+        float offset=dp(22)+(float)(offsetKey==null?0:project.dimensionOffsets.getOrDefault(offsetKey,0.0)*sketchPixelsPerMm()),ax=a.x+nx*offset,ay=a.y+ny*offset,bx=b.x+nx*offset,by=b.y+ny*offset;
         paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(Color.rgb(117,70,160));
         canvas.drawLine(a.x,a.y,ax+nx*dp(4),ay+ny*dp(4),paint);canvas.drawLine(b.x,b.y,bx+nx*dp(4),by+ny*dp(4),paint);
         canvas.drawLine(ax,ay,bx,by,paint);
@@ -2933,7 +2951,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(drawingDimension!=null) {
             float width=paint.measureText(label);RectF bounds=new RectF(-width/2-dp(10),-dp(22),width/2+dp(10),dp(7));
             android.graphics.Matrix transform=new android.graphics.Matrix();transform.setRotate(angle);transform.postTranslate((ax+bx)/2,(ay+by)/2);transform.mapRect(bounds);
-            dimensionHits.add(new DimensionHit(drawingDimension.entityId,drawingDimension.kind,drawingDimension.segment,bounds));
+            DimensionHit hit=new DimensionHit(drawingDimension.entityId,drawingDimension.kind,drawingDimension.segment,bounds);hit.linear=!"diameter".equals(drawingDimension.kind);hit.nx=nx;hit.ny=ny;
+            dimensionHits.add(hit);
         }
     }
 
@@ -3036,6 +3055,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         } else if (type.equals("Okrąg")) {
             float radius = (float)Math.hypot(x2 - x1, y2 - y1);
             canvas.drawCircle(x1, y1, radius, paint);
+        } else if (!type.equals("Prostokąt")&&drawShapePreview(canvas,type,x1,y1,x2,y2)) {
+            // Polygon, square, centre rectangle…: the exact shape that will be created, live while dragging.
         } else {
             canvas.drawRect(Math.min(x1, x2), Math.min(y1, y2),
                 Math.max(x1, x2), Math.max(y1, y2), paint);
@@ -3048,6 +3069,23 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
     }
 
+    /** Outline of the shape a drag would create (same construction as on release); false when not available. */
+    private boolean drawShapePreview(Canvas canvas,String type,float x1,float y1,float x2,float y2) {
+        try {
+            double[] a=screenToSketch(x1,y1),b=screenToSketch(x2,y2);
+            if(Math.hypot(b[0]-a[0],b[1]-a[1])<.01)return true;
+            SketchPrimitive shape=SketchShapes.drag("preview",type,a[0],a[1],b[0],b[1],project.polygonSides);
+            double[] pts=shape.curves!=null?SketchCurves.samples(shape.curves,24):shape.vertices!=null?shape.vertices:null;
+            if(pts==null){
+                if(shape.type.equals("Prostokąt"))pts=new double[]{shape.x1,shape.y1,shape.x2,shape.y1,shape.x2,shape.y2,shape.x1,shape.y2};
+                else return false;
+            }
+            android.graphics.Path path=new android.graphics.Path();
+            for(int i=0;i+1<pts.length;i+=2){PointF p=projectSketchPoint(pts[i],pts[i+1]);if(i==0)path.moveTo(p.x,p.y);else path.lineTo(p.x,p.y);}
+            if(shape.closedGeometry())path.close();
+            canvas.drawPath(path,paint);return true;
+        }catch(IllegalArgumentException error){return false;}
+    }
     private void sketchEntitiesAdd(String type, float screenX1, float screenY1,
                                    float screenX2, float screenY2) {
         // Reapply analytic snapping when committing: the float screen preview must
@@ -4583,7 +4621,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
             android.graphics.Path head=new android.graphics.Path();head.moveTo(hx,hy);
             head.lineTo((float)(hx-ux*dp(17)-uy*dp(9)),(float)(hy-uy*dp(17)+ux*dp(9)));
             head.lineTo((float)(hx-ux*dp(17)+uy*dp(9)),(float)(hy-uy*dp(17)-ux*dp(9)));head.close();canvas.drawPath(head,paint);
-            float x=Math.max(left+dp(8),Math.min(right-dp(126),hx+dp(18))),y=Math.max(top+dp(8),Math.min(bottom-dp(128),hy-dp(48)));
+            // The value and option chips sit beside the arrow, never on its shaft or tip (the finger must reach the arrow).
+            float groupW=dp(240),groupH=dp(106);
+            float[] at=CompactPlacement.beside((float)a[0],(float)a[1],hx,hy,groupW,groupH,left+dp(8),top+dp(8),right-dp(8),bottom-dp(72),dp(34));
+            float x=at[0],y=at[1];
             extrusionValueBounds.set(x,y,x+dp(116),y+dp(40));
             paint.setColor(PANEL);canvas.drawRoundRect(extrusionValueBounds,dp(8),dp(8),paint);
             text(canvas,formatMm(depth),x+dp(58),y+dp(26),13,ACCENT,true,Paint.Align.CENTER);
@@ -4594,7 +4635,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             paint.setColor(extrusionSymmetric.isChecked()?ACCENT:CHIP_DARK);canvas.drawRoundRect(extrusionSymBounds,dp(8),dp(8),paint);
             text(canvas,"↕ Symetr.",extrusionSymBounds.centerX(),extrusionSymBounds.centerY()+dp(4),10,Color.WHITE,false,Paint.Align.CENTER);
             if(extrusionOperation!=null&&extrusionOperation.getCount()==EXTRUSION_OPS.length) {
-                float ox=Math.min(x,right-dp(8)-5*dp(48));int chosen=extrusionOperation.getSelectedItemPosition();
+                float ox=x;int chosen=extrusionOperation.getSelectedItemPosition();
                 for(int k=0;k<EXTRUSION_OPS.length;k++){RectF ob=extrusionOpBounds[k];ob.set(ox+k*dp(48),y+dp(78),ox+k*dp(48)+dp(45),y+dp(106));
                     paint.setColor(k==chosen?(k==3?Color.rgb(176,64,52):ACCENT):CHIP_DARK);canvas.drawRoundRect(ob,dp(8),dp(8),paint);
                     text(canvas,EXTRUSION_OPS[k],ob.centerX(),ob.centerY()+dp(4),9.5f,Color.WHITE,false,Paint.Align.CENTER);}
@@ -4936,7 +4977,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         double[] a=projectWorldPoint(measuredCurve[0],measuredCurve[1],measuredCurve[2]);
         double[] b=projectWorldPoint(measuredCurve[6],measuredCurve[7],measuredCurve[8]);
         String label=formatMm(measuredCurve[9]);
-        if(measuredCurve[14]==1) {b=a;a=projectWorldPoint(measuredCurve[11],measuredCurve[12],measuredCurve[13]);label="R "+formatMm(measuredCurve[10]);}
+        if(measuredCurve[14]==1) {b=a;a=projectWorldPoint(measuredCurve[11],measuredCurve[12],measuredCurve[13]);label="Ø "+formatMm(2*measuredCurve[10])+"  (R "+formatMm(measuredCurve[10])+")";}
         else if(measuredCurve[14]!=0)return;
         double dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);if(length<dp(3))return;
         float nx=(float)(-dy/length*dp(22)),ny=(float)(dx/length*dp(22));

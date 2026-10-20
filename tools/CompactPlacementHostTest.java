@@ -23,6 +23,22 @@ public final class CompactPlacementHostTest {
         float[] g=CompactPlacement.place(600,500,W,H,L,T,700,B,M,G);
         check(g[0]>=L+M&&g[0]+W<=700-M+1e-3||g[0]==L+M,"narrow area: clamped inside");
         check(ToolbarCatalog.allows(true,"Punkt")&&ToolbarCatalog.allows(false,"Wyciągnij"),"toolbar groups unchanged");
+        // Extrusion options never cover the arrow (base 1000,800 → tip 1000,500).
+        float[] o=CompactPlacement.beside(1000,800,1000,500,480,212,224,110,2000,1100,68);
+        boolean hits=false;for(int i=0;i<=20;i++){float y=800-300*i/20f;if(1000>=o[0]&&1000<=o[0]+480&&y>=o[1]&&y<=o[1]+212)hits=true;}
+        check(!hits&&!CompactPlacement.covers(o,480,212,1000,500),"options group beside the arrow, not on its shaft or tip");
+        float[] edge=CompactPlacement.beside(1900,800,1960,500,480,212,224,110,2000,1100,68);
+        check(edge[0]>=224&&edge[0]+480<=2000,"near the screen edge the group moves to the other side");
+        // Regular polygon: dragging a vertex scales and turns it; it stays regular.
+        double[] hex=pl.tabletcad.app.SketchShapes.drag("h","Wielokąt",0,0,10,0,6).vertices;
+        double[] moved=pl.tabletcad.app.SketchShapes.dragRegularVertex(hex,0,0,20);
+        check(moved!=null&&Math.abs(moved[0])<1e-9&&Math.abs(moved[1]-20)<1e-9,"dragged vertex lands where the finger is");
+        double[] cc=pl.tabletcad.app.SketchShapes.regularCentre(moved);
+        check(cc!=null&&Math.abs(cc[0])<1e-9&&Math.abs(cc[1])<1e-9,"still a regular hexagon about the same centre (radius 20, turned 90°)");
+        check(pl.tabletcad.app.SketchShapes.regularCentre(new double[]{0,0,10,0,10,5,0,7})==null,"an irregular contour keeps per-vertex editing");
+        // Dimension offsets are saved with the project.
+        pl.tabletcad.app.model.CadProject p=new pl.tabletcad.app.model.CadProject();p.dimensionOffsets.put("e:length:0",7.5);
+        check(pl.tabletcad.app.model.CadProject.fromJson(new org.json.JSONObject(p.toJson().toString())).dimensionOffsets.get("e:length:0")==7.5,"dimension moved away from the edge is saved");
         System.out.println("PASS CompactPlacementHostTest: "+checks+" checks");
     }
 }
