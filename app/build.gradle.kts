@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 103
-        versionName = "0.92.0-stylus"
+        versionCode = 104
+        versionName = "0.93.0-gestures"
     }
 
     externalNativeBuild {

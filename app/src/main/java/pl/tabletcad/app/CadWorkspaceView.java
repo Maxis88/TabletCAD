@@ -201,6 +201,12 @@ public final class CadWorkspaceView extends View {
     private boolean dimensionMode;
     private boolean coincidenceMode;
     private String coincidenceFirst;
+    /** Long press on an element while editing: its context menu (position, constraints, construction, delete…). */
+    private final Runnable editMenu=()->{
+        SketchPrimitive target=this.draggedSketch;if(target==null||!this.mode.equals("Edytuj szkic")||this.dragPreview!=null||this.groupDrag!=null)return;
+        this.draggedSketch=null;this.dragSolvedPreview=null;this.selectedSketchId=target.id;
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);showSketchGeometryTools();invalidate();
+    };
     /** Entity under the finger when drawing started; a long press grabs it instead of drawing. */
     private SketchPrimitive drawGrabTarget;
     private final Runnable drawGrab=()->{
@@ -622,6 +628,10 @@ public final class CadWorkspaceView extends View {
                 
 if (isInsideViewport(e.getX(), e.getY())) {
                     if(mode.equals("Rysunek")){sheetTap(e.getX(),e.getY());return true;}
+                    // Double tap in the model view: on empty space fits the view, on a body focuses it.
+                    boolean doubleTap=e.getEventTime()-lastTapTime<330&&Math.hypot(e.getX()-lastTapX,e.getY()-lastTapY)<dp(32);
+                    lastTapTime=doubleTap?0:e.getEventTime();lastTapX=e.getX();lastTapY=e.getY();
+                    if(doubleTap&&mode.equals("Wybierz")&&propertyEditor==null){focusAt(e.getX(),e.getY());return true;}
                     if(mode.equals("Profile wyciągnięcia")){if(extrusionFacePick!=null)pickExtrusionFace(e.getX(),e.getY());else toggleExtrusionProfile(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchOrbit)return true;
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&fingerNavigates()){operationMessage="Rysik rysuje, palec przesuwa widok. Palec też może rysować: panel szkicu → Palec rysuje";invalidate();return true;}
@@ -871,11 +881,13 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     dragPreview = null;
                     dragSolvedPreview=null;
                     dragConstraintRejected=false;groupDrag=null;
+                    removeCallbacks(editMenu);if(!multiSelect)postDelayed(editMenu,android.view.ViewConfiguration.getLongPressTimeout()+150);
                     invalidate();
                     return true;
                 }
             }
             if (draggedSketch != null) {
+                if(event.getActionMasked()!=MotionEvent.ACTION_MOVE||Math.hypot(event.getX()-touchDownX,event.getY()-touchDownY)>dp(8))removeCallbacks(editMenu);
                 if (event.getPointerCount() > 1 || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
                     draggedSketch = dragPreview = null;
                     dragSolvedPreview=null;
@@ -1014,6 +1026,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 return true;
             }
         }
+        if(!(inSketch()&&sketchPlaneChosen&&!sketchOrbit)&&!mode.equals("Rysunek"))twist(event);
         scaleGestures.onTouchEvent(event);
         gestures.onTouchEvent(event);
         return true;
@@ -6821,6 +6834,33 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     /** Zoom and pan so that the whole model (or sketch) fits the free viewport. */
+    private long lastTapTime;private float lastTapX,lastTapY;
+    private void focusAt(float x,float y) {
+        int face=project.hasSolid()?findFaceAt(x,y):-1;
+        if(face<0){fitView();operationMessage="Dopasowano widok do modelu";invalidate();return;}
+        int body=faceBodies.getOrDefault(face,1);
+        double[] lo={Double.POSITIVE_INFINITY,Double.POSITIVE_INFINITY,Double.POSITIVE_INFINITY},hi={-lo[0],-lo[0],-lo[0]};
+        for(int i=0;i+12<nativeMesh.length;i+=13){if(faceBodies.getOrDefault((int)Math.round(nativeMesh[i+12])-1,1)!=body)continue;
+            for(int k=0;k<9;k++){lo[k%3]=Math.min(lo[k%3],nativeMesh[i+k]);hi[k%3]=Math.max(hi[k%3],nativeMesh[i+k]);}}
+        if(!Double.isFinite(lo[0])){fitView();invalidate();return;}
+        double cx=modelCenterX,cy=modelCenterY,cz=modelCenterZ,r=modelRadius;
+        modelCenterX=(lo[0]+hi[0])/2;modelCenterY=(lo[1]+hi[1])/2;modelCenterZ=(lo[2]+hi[2])/2;
+        modelRadius=.5*Math.sqrt((hi[0]-lo[0])*(hi[0]-lo[0])+(hi[1]-lo[1])*(hi[1]-lo[1])+(hi[2]-lo[2])*(hi[2]-lo[2]));
+        try{fitView();}finally{modelCenterX=cx;modelCenterY=cy;modelCenterZ=cz;modelRadius=r;}
+        operationMessage="Widok na: "+BodyGraph.name(project,body)+" (dwukrotne dotknięcie pustego miejsca dopasowuje cały model)";invalidate();
+    }
+    private float twistAngle,twistAccum;private boolean twistActive;
+    /** Two-finger twist turns the model about the vertical axis once it clearly exceeds pinch/pan jitter. */
+    private void twist(MotionEvent event) {
+        int action=event.getActionMasked();
+        if(event.getPointerCount()<2){twistActive=false;return;}
+        float angle=(float)Math.toDegrees(Math.atan2(event.getY(1)-event.getY(0),event.getX(1)-event.getX(0)));
+        if(action==MotionEvent.ACTION_POINTER_DOWN){twistAngle=angle;twistAccum=0;twistActive=false;return;}
+        if(action!=MotionEvent.ACTION_MOVE)return;
+        float delta=angle-twistAngle;if(delta>180)delta-=360;if(delta<-180)delta+=360;twistAngle=angle;
+        twistAccum+=delta;if(!twistActive&&Math.abs(twistAccum)>12)twistActive=true;
+        if(twistActive){cameraYaw+=delta;invalidate();}
+    }
     private void fitView() {
         meshCenterX=modelCenterX;meshCenterY=modelCenterY;meshCenterZ=modelCenterZ;
         cameraDistance=Math.max(420.0,modelRadius*4.0);
