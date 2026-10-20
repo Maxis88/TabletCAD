@@ -100,6 +100,9 @@ public final class EdgeRepair {
      */
     static double[] followHole(CadProject before,CadProject after,int index,double[] f,Evaluator evaluator) {
         double[] centre={f[2],f[3],f[4]},normal={f[5],f[6],f[7]};int creator=(int)f[8];
+        double[][] t=creatorTransform(before,after,creator);
+        if(t!=null){double[] r=f.clone();double[] c=apply(t,centre,true),n=apply(t,normal,false);for(int k=0;k<3;k++){r[2+k]=c[k];r[5+k]=n[k];}
+            try{HoleFeature.validate(r);}catch(IllegalArgumentException e){return null;}return r;}
         Model then=evaluator.at(before,index);if(then==null)return null;
         Model now=evaluator.at(after,index);if(now==null)return null;
         double[] moved=followPoint(then,now,centre,normal,creator);if(moved==null)return null;
@@ -129,19 +132,61 @@ public final class EdgeRepair {
             double area=(b[2]-b[0])*(b[3]-b[1]);
             if(bestArea<0||area<bestArea){bestArea=area;creator=then.creators.getOrDefault(id,Integer.MIN_VALUE);normal=fn;}}
         if(normal==null||creator==Integer.MIN_VALUE)return null;
+        // The creating operation was re-placed (its sketch frame moved or turned, profile unchanged):
+        // its faces moved rigidly, so the dependent sketch frame is moved by the same exact transform.
+        double[][] t=creatorTransform(before,after,creator);
+        if(t!=null){double[] r=f.clone();double[] no=apply(t,o,true),nu=apply(t,u,false),nv=apply(t,v,false);
+            for(int k=0;k<3;k++){r[7+k]=no[k];r[10+k]=nu[k];r[13+k]=nv[k];}return Arrays.equals(r,f)?null:r;}
         Model now=evaluator.at(after,index);if(now==null)return null;
         double[] moved=followPoint(then,now,p,normal,creator);if(moved==null)return null;
         double[] r=f.clone();for(int k=0;k<3;k++)r[7+k]+=moved[k]-p[k];
         return r;
     }
+    /**
+     * Rigid transform (3×4, rows) taking the faces of operation {@code creator} from the old to the new
+     * document, when that operation is a profile extrusion whose profile and depth are unchanged and only
+     * its sketch frame (origin, U, V) differs; null otherwise (nothing is guessed).
+     */
+    static double[][] creatorTransform(CadProject before,CadProject after,int creator) {
+        if(creator<0||creator>=before.committedFeatures.size()||creator>=after.committedFeatures.size())return null;
+        double[] a=before.committedFeatures.get(creator),b=after.committedFeatures.get(creator);
+        if(a.length!=b.length||a.length<16||a[0]<0||b[0]<0||HoleFeature.is(a)||HoleThread.is(a)||EdgeFillet.is(a)||EdgeChamfer.is(a))return null;
+        boolean frameChanged=false;
+        for(int i=0;i<a.length;i++){boolean frame=i>=7&&i<=15;if(!frame&&a[i]!=b[i])return null;if(frame&&a[i]!=b[i])frameChanged=true;}
+        if(!frameChanged)return null;
+        double[][] fa=frame(a),fb=frame(b);if(fa==null||fb==null)return null;
+        // p = O + x U + y V + z N  →  p' = O' + x U' + y V' + z N'
+        double[][] t=new double[3][4];
+        for(int row=0;row<3;row++){
+            for(int col=0;col<3;col++)t[row][col]=fb[1][row]*fa[1][col]+fb[2][row]*fa[2][col]+fb[3][row]*fa[3][col];
+            t[row][3]=fb[0][row]-(t[row][0]*fa[0][0]+t[row][1]*fa[0][1]+t[row][2]*fa[0][2]);
+        }
+        return t;
+    }
+    private static double[][] frame(double[] f) {
+        double[] o={f[7],f[8],f[9]},u={f[10],f[11],f[12]},v={f[13],f[14],f[15]};
+        if(Math.abs(dot(u,u)-1)>1e-6||Math.abs(dot(v,v)-1)>1e-6||Math.abs(dot(u,v))>1e-6)return null;
+        return new double[][]{o,u,v,{u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]}};
+    }
+    static double[] apply(double[][] t,double[] p,boolean point) {
+        double[] r=new double[3];for(int i=0;i<3;i++)r[i]=t[i][0]*p[0]+t[i][1]*p[1]+t[i][2]*p[2]+(point?t[i][3]:0);return r;
+    }
+    /** An edge between two faces of one re-placed operation moves with that operation's exact transform. */
+    static double[] rigidEdge(CadProject before,CadProject after,Model then,Model now,double[] signature) {
+        List<double[]> faces=faces(then,signature);if(faces.size()!=2||faces.get(0)[0]!=faces.get(1)[0])return null;
+        double[][] t=creatorTransform(before,after,(int)faces.get(0)[0]);if(t==null)return null;
+        double[] moved=new double[9];
+        for(int k=0;k<9;k+=3){double[] q=apply(t,new double[]{signature[k],signature[k+1],signature[k+2]},true);System.arraycopy(q,0,moved,k,3);}
+        return exists(now.edges,moved)?moved:null;
+    }
     /** The source sketch of a moved profile keeps the same frame as its operation. */
     static void moveSketchFrames(CadProject p,double[] from,double[] to) {
         for(org.json.JSONObject snapshot:p.savedSketches){org.json.JSONArray fr=snapshot.optJSONArray("frame");if(fr==null||fr.length()!=9)continue;
             boolean same=true;for(int k=0;k<9;k++)same&=Math.abs(fr.optDouble(k)-from[7+k])<1e-9;
-            if(same)try{for(int k=0;k<3;k++)fr.put(k,to[7+k]);}catch(org.json.JSONException e){throw new IllegalArgumentException(e);}}
+            if(same)try{for(int k=0;k<9;k++)fr.put(k,to[7+k]);}catch(org.json.JSONException e){throw new IllegalArgumentException(e);}}
         double[] open={p.sketchOriginX,p.sketchOriginY,p.sketchOriginZ,p.sketchUx,p.sketchUy,p.sketchUz,p.sketchVx,p.sketchVy,p.sketchVz};
         boolean same=true;for(int k=0;k<9;k++)same&=Math.abs(open[k]-from[7+k])<1e-9;
-        if(same&&!p.sketch.isEmpty()){p.sketchOriginX=to[7];p.sketchOriginY=to[8];p.sketchOriginZ=to[9];}
+        if(same&&!p.sketch.isEmpty()){p.sketchOriginX=to[7];p.sketchOriginY=to[8];p.sketchOriginZ=to[9];p.sketchUx=to[10];p.sketchUy=to[11];p.sketchUz=to[12];p.sketchVx=to[13];p.sketchVy=to[14];p.sketchVz=to[15];}
     }
     /** New position of a point on a planar face (creator, normal) keeping its offset from the nearest face corner; null when unchanged or unknown. */
     static double[] followPoint(Model then,Model now,double[] point,double[] normal,int creator) {
@@ -219,6 +264,7 @@ public final class EdgeRepair {
                 if(then==null)then=evaluator.at(before,i);
                 if(then==null)return repaired;
                 double[] moved=relocate(then,now,signature);
+                if(moved==null)moved=rigidEdge(before,after,then,now,signature);
                 if(moved==null){updated.add(m);continue;}
                 double[] copy=m.clone();System.arraycopy(moved,0,copy,2,9);updated.add(copy);changed=true;repaired++;
             }

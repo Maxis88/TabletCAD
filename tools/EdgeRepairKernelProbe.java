@@ -94,6 +94,30 @@ public final class EdgeRepairKernelProbe {
         double[] sf=skA.committedFeatures.get(1);
         check(Math.abs(sf[7]-10)<1e-6&&Math.abs(sf[8]-5)<1e-6&&Math.abs(sf[9]-30)<1e-6,"frame shifted by (10,5,0)");
         close("same pocketed volume after the move",volume(skA),pocketed,1e-6);
+        // A boss re-placed with a turned sketch frame (90° about Z): the pocket on its top and a hole turn with it.
+        CadProject rt=HistoryKernelProbe.plate();
+        HistoryKernelProbe.add(rt,ExtrusionPlan.feature(HistoryKernelProbe.top(),new SketchPrimitive("boss","Prostokąt",30,20,60,40),"add",10,0,false,false),"boss",1);
+        CadProject onTop=new CadProject();onTop.sketchOriginZ=30;
+        HistoryKernelProbe.add(rt,ExtrusionPlan.feature(onTop,new SketchPrimitive("p","Okrąg",35,25,37,25),"cut",5,0,false,false),"p",1);
+        HistoryKernelProbe.add(rt,HoleFeature.create(new double[]{55,35,30},new double[]{0,0,1},0,3,false,4,0,0,0,0),"",1);
+        double turnedBefore=volume(rt);check(!Double.isNaN(turnedBefore),"boss with pocket and hole");
+        CadProject rtB=CadProject.fromJson(rt.toJson()),rtA=CadProject.fromJson(rt.toJson());
+        CadProject turned=HistoryKernelProbe.top();turned.sketchOriginX=100;turned.sketchUx=0;turned.sketchUy=1;turned.sketchVx=-1;turned.sketchVy=0;
+        rtA.committedFeatures.set(0,ExtrusionPlan.feature(turned,new SketchPrimitive("boss","Prostokąt",30,20,60,40),"add",10,0,false,false));
+        check(EdgeRepair.repair(rtB,rtA,EdgeRepairKernelProbe::model)==2,"pocket and hole re-attached to the turned boss");
+        double[] pf=rtA.committedFeatures.get(1),hf2=rtA.committedFeatures.get(2);
+        check(Math.abs(pf[10])<1e-12&&Math.abs(pf[11]-1)<1e-12&&Math.abs(pf[7]-100)<1e-9,"pocket sketch frame turned with the boss");
+        check(Math.abs(hf2[2]-65)<1e-9&&Math.abs(hf2[3]-55)<1e-9&&Math.abs(hf2[4]-30)<1e-9,"hole centre (55,35) → (65,55)");
+        close("same volume after turning the boss",volume(rtA),turnedBefore,1e-6);
+        // A fillet on a vertical edge of the boss follows the turned boss.
+        CadProject fe=HistoryKernelProbe.plate();
+        HistoryKernelProbe.add(fe,ExtrusionPlan.feature(HistoryKernelProbe.top(),new SketchPrimitive("boss","Prostokąt",30,20,60,40),"add",10,0,false,false),"boss",1);
+        double[] fes=NativeCadEngine.modelEdges(100,60,20,0,fe.featureBase,packed(fe),null);
+        HistoryKernelProbe.add(fe,EdgeFillet.create(fes,edgeAt(fes,60,40),3),"",1);double filleted=volume(fe);
+        CadProject feB=CadProject.fromJson(fe.toJson()),feA=CadProject.fromJson(fe.toJson());
+        feA.committedFeatures.set(0,ExtrusionPlan.feature(turned,new SketchPrimitive("boss","Prostokąt",30,20,60,40),"add",10,0,false,false));
+        check(EdgeRepair.repair(feB,feA,EdgeRepairKernelProbe::model)==1,"fillet edge re-attached on the turned boss");
+        close("same filleted volume after turning",volume(feA),filleted,1e-6);
         System.out.println("PASS EdgeRepairKernelProbe: "+checks+" checks");
     }
 }

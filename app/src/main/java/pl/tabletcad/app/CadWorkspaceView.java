@@ -8340,6 +8340,11 @@ if (isInsideViewport(e.getX(), e.getY())) {
             project.splineDraft=tool.equals("Splajn");
             sketchPlaneChosen = hadSketchPlane;
             if (sketchPlaneChosen) alignToCurrentSketchPlane();
+            else if (!project.hasSolid() && project.datums.isEmpty()) {
+                // An empty project has nothing else to draw on: start on the XY plane right away
+                // (another plane: XZ / YZ on the options strip) instead of turning the view on every stroke.
+                chooseSketchPlane("XY");sketchTool=tool;mode="Szkic";
+            } else operationMessage="Najpierw wybierz płaszczyznę na pasku (XY, XZ, YZ) albo dotknij płaskiej ściany";
             post(this::showDrawingOptions);
             if(tool.equals("Łuk"))operationMessage="Łuk: dotknij początku, końca, a następnie punktu pośredniego łuku.";
             if(tool.equals("Okrąg 3 pkt")||tool.equals("Szczelina")||tool.equals("Elipsa"))operationMessage=SketchShapes.instruction(tool,project.threePointDraft.size());
