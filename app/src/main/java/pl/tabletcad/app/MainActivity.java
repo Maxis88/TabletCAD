@@ -91,44 +91,48 @@ public final class MainActivity extends Activity {
         if (requestCode != CREATE_EXPORT_FILE || resultCode != RESULT_OK || data == null
                 || data.getData() == null || pendingExportFormat == null) return;
         Uri destination = data.getData();
-        try (OutputStream output = getContentResolver().openOutputStream(destination, "w")) {
-            if (output == null) throw new IOException("Nie można otworzyć pliku docelowego");
-            if(pendingExportFormat.equals("pdf")) {
-                workspace.writeTechnicalPdf(output);
-            } else if (pendingExportFormat.equals("stl")) {
-                workspace.writeBinaryStl(output);
-            } else if(pendingExportFormat.equals("stla")) {
-                workspace.writeAsciiStl(output);
-            } else if (pendingExportFormat.equals("obj")) {
-                workspace.writeObj(output);
-            } else if (pendingExportFormat.equals("csv")) {
-                workspace.writeBomCsv(output);
-            } else if (pendingExportFormat.equals("3mf")) {
-                workspace.write3mf(output);
-            } else if (pendingExportFormat.equals("dxf")) {
-                workspace.writeDxf(output);
-            } else {
-                File temporary = new File(getCacheDir(), "tabletcad-export.step");
-                if (!workspace.exportStep(temporary.getAbsolutePath())) {
-                    throw new IOException("Rdzeń OCCT nie zapisał pliku STEP");
+        final String format=pendingExportFormat;pendingExportFormat = null;
+        // Export runs off the UI thread (OCCT tessellation, STEP writing); the workspace shows progress and holds input.
+        workspace.runBusy("Eksport "+(format.equals("stla")?"STL ASCII":format.toUpperCase())+"…",()->{
+            String result;
+            try (OutputStream output = getContentResolver().openOutputStream(destination, "w")) {
+                if (output == null) throw new IOException("Nie można otworzyć pliku docelowego");
+                if(format.equals("pdf")) {
+                    workspace.writeTechnicalPdf(output);
+                } else if (format.equals("stl")) {
+                    workspace.writeBinaryStl(output);
+                } else if(format.equals("stla")) {
+                    workspace.writeAsciiStl(output);
+                } else if (format.equals("obj")) {
+                    workspace.writeObj(output);
+                } else if (format.equals("csv")) {
+                    workspace.writeBomCsv(output);
+                } else if (format.equals("3mf")) {
+                    workspace.write3mf(output);
+                } else if (format.equals("dxf")) {
+                    workspace.writeDxf(output);
+                } else {
+                    File temporary = new File(getCacheDir(), "tabletcad-export.step");
+                    if (!workspace.exportStep(temporary.getAbsolutePath())) {
+                        throw new IOException("Rdzeń OCCT nie zapisał pliku STEP");
+                    }
+                    try (FileInputStream input = new FileInputStream(temporary)) {
+                        byte[] buffer = new byte[64 * 1024];
+                        int read;
+                        while ((read = input.read(buffer)) >= 0) output.write(buffer, 0, read);
+                    } finally {
+                        // Cache is private and recoverable; a failed delete is cleaned by Android.
+                        temporary.delete();
+                    }
                 }
-                try (FileInputStream input = new FileInputStream(temporary)) {
-                    byte[] buffer = new byte[64 * 1024];
-                    int read;
-                    while ((read = input.read(buffer)) >= 0) output.write(buffer, 0, read);
-                } finally {
-                    // Cache is private and recoverable; a failed delete is cleaned by Android.
-                    temporary.delete();
-                }
+                output.flush();
+                result="Eksport " + (format.equals("stla") ? "STL ASCII" : format.toUpperCase()) + " zakończony";
+            } catch (IOException|RuntimeException error) {
+                result="Eksport nieudany: " + error.getMessage();
             }
-            output.flush();
-            Toast.makeText(this, "Eksport " + (pendingExportFormat.equals("stla")
-                ? "STL ASCII" : pendingExportFormat.toUpperCase()) + " zakończony", Toast.LENGTH_LONG).show();
-        } catch (IOException error) {
-            Toast.makeText(this, "Eksport nieudany: " + error.getMessage(), Toast.LENGTH_LONG).show();
-        } finally {
-            pendingExportFormat = null;
-        }
+            final String message=result;
+            runOnUiThread(()->Toast.makeText(this, message, Toast.LENGTH_LONG).show());
+        });
     }
 
     private void importStep(Uri source) {

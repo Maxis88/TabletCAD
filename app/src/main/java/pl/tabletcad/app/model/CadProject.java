@@ -30,6 +30,8 @@ public final class CadProject {
     public final java.util.Set<String> hiddenSketchParts=new java.util.LinkedHashSet<>();
     public String sketchName="Szkic";
     public String drawingNumber = "", drawingAuthor = "", drawingMaterial = "", drawingRevision = "A";
+    /** User dimensions on the technical sheet (see TechnicalSheet.dimension). */
+    public final java.util.List<double[]> drawingDimensions = new java.util.ArrayList<>();
     public double drawingSectionFraction = .5;
     /** Uniform density for all solids; 0 means unspecified. */
     public double materialDensityKgM3;
@@ -137,6 +139,7 @@ public final class CadProject {
         drawingData.put("number",drawingNumber).put("author",drawingAuthor)
             .put("material",drawingMaterial).put("revision",drawingRevision);
         root.put("drawingData",drawingData);
+        if(!drawingDimensions.isEmpty()){JSONArray dims=new JSONArray();for(double[] d:drawingDimensions){JSONArray row=new JSONArray();for(double v:d)row.put(v);dims.put(row);}root.put("drawingDimensions",dims);}
         root.put("id", id);
         root.put("name", name);
         root.put("splineDraft",splineDraft);
@@ -257,6 +260,11 @@ public final class CadProject {
             project.drawingMaterial=drawingData.optString("material","");
             project.drawingRevision=drawingData.optString("revision","A");
         }
+        JSONArray sheetDimensions=root.optJSONArray("drawingDimensions");
+        if(sheetDimensions!=null)for(int i=0;i<sheetDimensions.length()&&i<500;i++){JSONArray row=sheetDimensions.getJSONArray(i);double[] d=new double[row.length()];for(int j=0;j<d.length;j++)d[j]=row.getDouble(j);
+            boolean ok=d.length==7;for(double v:d)ok&=Double.isFinite(v);
+            if(!ok||d[0]<0||d[0]>3||d[0]!=Math.rint(d[0])||d[5]<0||d[5]>2||d[5]!=Math.rint(d[5])||Math.abs(d[6])>100)throw new JSONException("Niepoprawny wymiar arkusza");
+            project.drawingDimensions.add(d);}
         if(project.drawingSectionFraction<=0||project.drawingSectionFraction>=1)
             project.drawingSectionFraction=.5;
         project.sketchId = root.optString("sketchId", project.sketchId);

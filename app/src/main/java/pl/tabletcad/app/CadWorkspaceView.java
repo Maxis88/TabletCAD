@@ -621,6 +621,7 @@ public final class CadWorkspaceView extends View {
 
                 
 if (isInsideViewport(e.getX(), e.getY())) {
+                    if(mode.equals("Rysunek")){sheetTap(e.getX(),e.getY());return true;}
                     if(mode.equals("Profile wyciągnięcia")){if(extrusionFacePick!=null)pickExtrusionFace(e.getX(),e.getY());else toggleExtrusionProfile(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchOrbit)return true;
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&(sketchTool.equals("Okrąg 3 pkt")||sketchTool.equals("Szczelina")||sketchTool.equals("Elipsa"))){threePointTap(e.getX(),e.getY());return true;}
@@ -1394,7 +1395,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     /** Default tool contexts use the same native controls as parameter forms. */
     private void scheduleContextPanel() {
-        String key=propertyEditor!=null||!propertiesVisible()?"":mode+"|"+sketchTool+"|"+sketchPlaneChosen+"|"+project.sketchId+"|"+project.sketch.size()+"|"+project.polylineDraft.size()+"|"+project.threePointDraft.size()+"|"+arcDraft.size()+"|"+coincidenceMode+"|"+selectedSketchId+"|"+projectionMode+"|"+multiSelect+"|"+sketchMulti.size()+"|"+constraintKind+"|"+trimMode+"|"+dimensionMode+"|"+projectionMode+"|"+displayMode+"|"+(sectionPlane!=null);
+        String key=propertyEditor!=null||!propertiesVisible()?"":mode+"|"+sketchTool+"|"+sketchPlaneChosen+"|"+project.sketchId+"|"+project.sketch.size()+"|"+project.polylineDraft.size()+"|"+project.threePointDraft.size()+"|"+arcDraft.size()+"|"+coincidenceMode+"|"+sheetDimensionMode+"|"+project.drawingDimensions.size()+"|"+selectedSketchId+"|"+projectionMode+"|"+multiSelect+"|"+sketchMulti.size()+"|"+constraintKind+"|"+trimMode+"|"+dimensionMode+"|"+projectionMode+"|"+displayMode+"|"+(sectionPlane!=null);
         if(key.equals(contextPanelKey)||contextPanelPosted)return;
         contextPanelPosted=true;post(()->{contextPanelPosted=false;if(!isAttachedToWindow()||!(getParent() instanceof android.widget.FrameLayout))return;
             removeContextPanel();if(propertyEditor!=null||!propertiesVisible())return;
@@ -1463,9 +1464,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 contextAction(contents,"Rodzaj pomiaru…",false,()->showMeasurementPanel());
                 contextAction(footer,"Zakończ pomiar",true,()->{mode="Wybierz";invalidate();});
             } else if(mode.equals("Rysunek")) {
+                if(sheetDimensionMode)contextAction(contents,"Zakończ wymiarowanie",true,()->{sheetDimensionMode=false;sheetFirst=null;operationMessage="";});
+                else contextAction(contents,"Wymiaruj (dotknij dwóch punktów)",false,()->{sheetDimensionMode=true;sheetFirst=null;operationMessage="Dotknij dwóch narożników lub końców krawędzi w jednym rzucie";});
+                if(!project.drawingDimensions.isEmpty())contextText(contents,"Wymiary arkusza: "+project.drawingDimensions.size()+" — dotknij wartości, aby ją zmienić",false);
                 contextAction(contents,"Ustawienia arkusza…",false,()->showDrawingOptions());
                 contextAction(contents,"Dane rysunkowe…",false,()->showDrawingMetadataEditor());
-                contextAction(footer,"Powrót do modelu",true,()->{mode="Wybierz";invalidate();});
+                contextAction(footer,"Powrót do modelu",true,()->{mode="Wybierz";sheetDimensionMode=false;sheetFirst=null;invalidate();});
             }
             contextEditor=new android.widget.ScrollView(c);contextEditor.setFillViewport(true);contextEditor.addView(body);
             android.widget.FrameLayout.LayoutParams p=new android.widget.FrameLayout.LayoutParams((int)dp(PANEL_DP),Math.max(0,(int)(panelBottom()-viewTop())));
@@ -4584,10 +4588,52 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return Units.length(value,project.units,project.displayDecimals);
     }
 
+    /** Sheet dimensioning: tap two end points of the views; tap a value to change or delete it. */
+    private boolean sheetDimensionMode;private double[] sheetFirst;private final RectF sheetArea=new RectF();
     private void drawTechnicalViews(Canvas canvas, float left, float top, float right, float bottom) {
-        if(technicalSheet!=null) technicalSheet.draw(canvas,
-            new RectF(left+dp(10),top+dp(10),right-dp(10),bottom-dp(10)),project);
+        sheetArea.set(left+dp(10),top+dp(10),right-dp(10),bottom-dp(10));
+        if(technicalSheet!=null){technicalSheet.pending=null;technicalSheet.draw(canvas,sheetArea,project);
+            if(sheetDimensionMode&&sheetFirst!=null){float factor=Math.min(sheetArea.width()/297,sheetArea.height()/210);
+                paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(2));paint.setColor(ACCENT);
+                float[] at=sheetScreen(sheetFirst);if(at!=null)canvas.drawCircle(at[0],at[1],dp(7),paint);paint.setStyle(Paint.Style.FILL);}}
         else text(canvas,"Nie można utworzyć arkusza z bieżącego modelu",left+dp(20),top+dp(50),14,INK,true);
+    }
+
+    private float[] sheetScreen(double[] point) {
+        if(technicalSheet==null)return null;float[] paper=technicalSheet.paperOf((int)point[0],point[1],point[2]);if(paper==null)return null;
+        float factor=Math.min(sheetArea.width()/297,sheetArea.height()/210);
+        return new float[]{sheetArea.centerX()-297*factor/2+paper[0]*factor,sheetArea.centerY()-210*factor/2+paper[1]*factor};
+    }
+    private void sheetTap(float x,float y) {
+        if(technicalSheet==null)return;
+        float[] paper=TechnicalSheet.paper(sheetArea,x,y);float factor=Math.min(sheetArea.width()/297,sheetArea.height()/210);
+        int existing=technicalSheet.dimensionAt(project.drawingDimensions,paper[0],paper[1]);
+        if(existing>=0&&(!sheetDimensionMode||sheetFirst==null)){showSheetDimensionMenu(existing);return;}
+        if(!sheetDimensionMode){operationMessage="Wymiaruj w panelu dodaje wymiary; dotknięcie wartości wymiaru pozwala go zmienić";invalidate();return;}
+        double[] hit=technicalSheet.snap(paper[0],paper[1],dp(20)/factor);
+        if(hit==null){operationMessage="Dotknij narożnika lub końca krawędzi w rzucie";invalidate();return;}
+        if(sheetFirst==null){sheetFirst=hit;operationMessage="Wskaż drugi punkt w tym samym rzucie";invalidate();return;}
+        if((int)hit[0]!=(int)sheetFirst[0]){operationMessage="Oba punkty muszą leżeć w tym samym rzucie";sheetFirst=hit;invalidate();return;}
+        if(Math.hypot(hit[1]-sheetFirst[1],hit[2]-sheetFirst[2])<1e-6){operationMessage="Wskaż inny punkt";invalidate();return;}
+        double[] d=TechnicalSheet.dimension((int)hit[0],sheetFirst[1],sheetFirst[2],hit[1],hit[2],TechnicalSheet.autoKind(sheetFirst[1],sheetFirst[2],hit[1],hit[2]),8);
+        sheetFirst=null;
+        try{checkpoint();project.drawingDimensions.add(d);projectRepository.save(project);operationMessage="Wymiar "+formatMm(TechnicalSheet.value(d))+" dodany. Wskaż kolejną parę punktów.";}
+        catch(RuntimeException error){project.drawingDimensions.remove(d);operationMessage="Nie zapisano wymiaru: "+error.getMessage();}
+        invalidate();
+    }
+    private void showSheetDimensionMenu(int index) {
+        double[] d=project.drawingDimensions.get(index);
+        String[] items={"Poziomy","Pionowy","Równoległy do punktów","Odsuń dalej (+4 mm)","Przysuń bliżej (−4 mm)","Odwróć stronę","Usuń wymiar"};
+        new PropertyBuilder().setTitle("Wymiar arkusza · "+formatMm(TechnicalSheet.value(d))).setItems(items,(dialog,which)->{
+            double[] next=d.clone();
+            if(which<=2)next[5]=which==0?TechnicalSheet.HORIZONTAL:which==1?TechnicalSheet.VERTICAL:TechnicalSheet.ALIGNED;
+            else if(which==3)next[6]=Math.min(100,d[6]+4);else if(which==4)next[6]=Math.max(-100,d[6]-4);else if(which==5)next[6]=-d[6];
+            checkpoint();
+            if(which==6)project.drawingDimensions.remove(index);else project.drawingDimensions.set(index,next);
+            try{projectRepository.save(project);operationMessage=which==6?"Usunięto wymiar arkusza":"Zmieniono wymiar: "+formatMm(TechnicalSheet.value(next));}
+            catch(RuntimeException error){operationMessage="Nie zapisano: "+error.getMessage();}
+            invalidate();
+        }).setNegativeButton("Zamknij",null).show();
     }
 
     private void showBodyProperties() {
@@ -6959,6 +7005,17 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 },"TabletCAD-rebuild").start();
             });
         },"TabletCAD-prepare").start();
+    }
+    /** Runs a long read-only task (export) on a worker thread with the progress card; input waits. */
+    public void runBusy(String label,Runnable work) {
+        if(rebuilding){android.widget.Toast.makeText(getContext(),"Trwa inna operacja",android.widget.Toast.LENGTH_SHORT).show();return;}
+        if(synchronousCommits||!isAttachedToWindow()){work.run();return;}
+        rebuilding=true;rebuildLabel=label;rebuildStarted=System.currentTimeMillis();invalidate();
+        new Thread(()->{
+            try{work.run();}
+            catch(RuntimeException error){post(()->recoverFromError(label,error));}
+            finally{post(()->{rebuilding=false;invalidate();});}
+        },"TabletCAD-busy").start();
     }
     private void drawRebuildOverlay(Canvas canvas,float left,float top,float right,float bottom) {
         if(!rebuilding)return;

@@ -92,6 +92,8 @@ public final class TechnicalSheet {
                 canvas.restore();
             }
         }
+        if(project.drawingDimensions!=null)for(double[] d:project.drawingDimensions)userDimension(canvas,d,false);
+        if(pending!=null)userDimension(canvas,pending,true);
         line(canvas,10,180,287,180,.3f);
         line(canvas,170,180,170,200,.3f);line(canvas,235,180,235,200,.3f);
         line(canvas,170,190,287,190,.2f);
@@ -108,6 +110,100 @@ public final class TechnicalSheet {
         line(c,x0,y0,x0+2,y0-1,.2f);line(c,x0,y0,x0+2,y0+1,.2f);
         line(c,x1,y1,x1-2,y1-1,.2f);line(c,x1,y1,x1-2,y1+1,.2f);
         text(c,String.format(Locale.US,"%.2f",value),(x0+x1)/2-4,y0-1,2.5f);
+    }
+    /** Dimension being placed (preview), drawn in the accent colour. */
+    public double[] pending;
+    /** Kinds of user dimensions on the sheet. */
+    public static final int ALIGNED=0,HORIZONTAL=1,VERTICAL=2;
+    /** Record of a sheet dimension: view, x1, y1, x2, y2 (view coordinates in mm), kind, offset (paper mm). */
+    public static double[] dimension(int view,double x1,double y1,double x2,double y2,int kind,double offset) {
+        return new double[]{view,x1,y1,x2,y2,kind,offset};
+    }
+    public static void validate(double[] d) {
+        if(d==null||d.length!=7)throw new IllegalArgumentException("Niepoprawny wymiar arkusza");
+        for(double v:d)if(!Double.isFinite(v))throw new IllegalArgumentException("Niepoprawny wymiar arkusza");
+        if(d[0]<0||d[0]>3||d[0]!=Math.rint(d[0])||d[5]<0||d[5]>2||d[5]!=Math.rint(d[5])||Math.abs(d[6])>100)throw new IllegalArgumentException("Niepoprawny wymiar arkusza");
+    }
+    /** Automatic kind: nearly horizontal or vertical pairs get a horizontal/vertical dimension. */
+    public static int autoKind(double x1,double y1,double x2,double y2) {
+        double dx=Math.abs(x2-x1),dy=Math.abs(y2-y1);
+        if(dy<=1e-6*Math.max(1,dx)||dy<dx*.02)return HORIZONTAL;
+        if(dx<=1e-6*Math.max(1,dy)||dx<dy*.02)return VERTICAL;
+        return ALIGNED;
+    }
+    /** True length of a sheet dimension in model millimetres (orthographic views are true size). */
+    public static double value(double[] d) {
+        double dx=d[3]-d[1],dy=d[4]-d[2];int kind=(int)d[5];
+        return kind==HORIZONTAL?Math.abs(dx):kind==VERTICAL?Math.abs(dy):Math.hypot(dx,dy);
+    }
+    /** Paper coordinates (mm) of a screen point for the area the sheet is drawn into. */
+    public static float[] paper(RectF area,float x,float y){return paper(area.left,area.top,area.width(),area.height(),x,y);}
+    public static float[] paper(float left,float top,float width,float height,float x,float y) {
+        float factor=Math.min(width/297,height/210),cx=left+width/2,cy=top+height/2;
+        return new float[]{(x-(cx-297*factor/2))/factor,(y-(cy-210*factor/2))/factor};
+    }
+    /** Paper position (mm) of a point given in a view's coordinates. */
+    public float[] paperOf(int view,double x,double y){return hasView(view)?new float[]{px(view,x),py(view,y)}:null;}
+    public boolean hasView(int view){return view>=0&&view<4&&Double.isFinite(bounds[view][0]);}
+    /** Nearest segment end point within tolerance (paper mm): {view, x, y} in view coordinates, or null. */
+    public double[] snap(float paperX,float paperY,double tolerance) {
+        double best=tolerance;double[] hit=null;
+        for(int i=0;i+5<segments.length;i+=6) {
+            int view=(int)segments[i];
+            for(int j=2;j<=4;j+=2) {
+                double d=Math.hypot(px(view,segments[i+j])-paperX,py(view,segments[i+j+1])-paperY);
+                if(d<best){best=d;hit=new double[]{view,segments[i+j],segments[i+j+1]};}
+            }
+        }
+        return hit;
+    }
+    /** Whether a point is still an end point of a segment of the view (1 µm). */
+    public boolean onVertex(int view,double x,double y) {
+        for(int i=0;i+5<segments.length;i+=6)if((int)segments[i]==view)for(int j=2;j<=4;j+=2)if(Math.abs(segments[i+j]-x)<1e-3&&Math.abs(segments[i+j+1]-y)<1e-3)return true;
+        return false;
+    }
+    /** Index of the user dimension whose value label is under the paper point, or −1. */
+    public int dimensionAt(List<double[]> dims,float paperX,float paperY) {
+        if(dims==null)return -1;
+        for(int i=dims.size()-1;i>=0;i--){float[] label=labelPoint(dims.get(i));if(label!=null&&Math.abs(label[0]-paperX)<8&&Math.abs(label[1]-paperY)<4)return i;}
+        return -1;
+    }
+    private float[][] dimensionLine(double[] d) {
+        int view=(int)d[0];if(!hasView(view))return null;
+        float ax=px(view,d[1]),ay=py(view,d[2]),bx=px(view,d[3]),by=py(view,d[4]);int kind=(int)d[5];float off=(float)d[6];
+        float la,lb,lc,ld;// dimension line end points
+        if(kind==HORIZONTAL){float y=Math.min(ay,by)-off;return new float[][]{{ax,ay,bx,by},{ax,y,bx,y}};}
+        if(kind==VERTICAL){float x=Math.min(ax,bx)-off;return new float[][]{{ax,ay,bx,by},{x,ay,x,by}};}
+        float dx=bx-ax,dy=by-ay,l=(float)Math.hypot(dx,dy);if(l<1e-4)return null;float nx=dy/l,ny=-dx/l;
+        if(ny>0){nx=-nx;ny=-ny;}// offset upward on the sheet
+        la=ax+nx*off;lb=ay+ny*off;lc=bx+nx*off;ld=by+ny*off;
+        return new float[][]{{ax,ay,bx,by},{la,lb,lc,ld}};
+    }
+    private float[] labelPoint(double[] d){float[][] g=dimensionLine(d);if(g==null)return null;return new float[]{(g[1][0]+g[1][2])/2,(g[1][1]+g[1][3])/2-1.2f};}
+    private void userDimension(Canvas c,double[] d,boolean preview) {
+        float[][] g=dimensionLine(d);if(g==null)return;
+        // A point that no longer lies on a view vertex (the model changed) is shown in red: re-attach or delete it.
+        boolean stale=!preview&&(!onVertex((int)d[0],d[1],d[2])||!onVertex((int)d[0],d[3],d[4]));
+        int colour=preview?Color.rgb(13,148,136):stale?Color.rgb(196,64,52):Color.BLACK;
+        float[] p=g[0],q=g[1];
+        paint.setPathEffect(null);
+        // Extension lines from the geometry to just beyond the dimension line.
+        ext(c,p[0],p[1],q[0],q[1],colour);ext(c,p[2],p[3],q[2],q[3],colour);
+        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(.15f);paint.setColor(colour);c.drawLine(q[0],q[1],q[2],q[3],paint);
+        arrow(c,q[0],q[1],q[2],q[3],colour);arrow(c,q[2],q[3],q[0],q[1],colour);
+        String label=String.format(Locale.US,"%.2f",value(d));
+        float angle=(float)Math.toDegrees(Math.atan2(q[3]-q[1],q[2]-q[0]));if(angle>90||angle<-90)angle+=180;
+        c.save();c.translate((q[0]+q[2])/2,(q[1]+q[3])/2);c.rotate(angle);
+        paint.setStyle(Paint.Style.FILL);paint.setColor(colour);paint.setTextSize(2.5f);float w=paint.measureText(label);c.drawText(label,-w/2,-.8f,paint);c.restore();
+    }
+    private void ext(Canvas c,float x0,float y0,float x1,float y1,int colour) {
+        float dx=x1-x0,dy=y1-y0,l=(float)Math.hypot(dx,dy);if(l<.01)return;float ux=dx/l,uy=dy/l;
+        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(.13f);paint.setColor(colour);c.drawLine(x0+ux*1f,y0+uy*1f,x1+ux*1.5f,y1+uy*1.5f,paint);
+    }
+    private void arrow(Canvas c,float x,float y,float towardX,float towardY,int colour) {
+        float dx=towardX-x,dy=towardY-y,l=(float)Math.hypot(dx,dy);if(l<.01)return;float ux=dx/l,uy=dy/l;
+        Path head=new Path();head.moveTo(x,y);head.lineTo(x+ux*2-uy*.6f,y+uy*2+ux*.6f);head.lineTo(x+ux*2+uy*.6f,y+uy*2-ux*.6f);head.close();
+        paint.setStyle(Paint.Style.FILL);paint.setColor(colour);c.drawPath(head,paint);
     }
     private void hatch(Canvas c,int view) {
         double[] b=bounds[view];
