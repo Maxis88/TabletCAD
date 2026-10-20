@@ -14,11 +14,15 @@ public final class AutoExtrusion {
     public static String resolve(CadProject candidate,int firstFeature,int target,String source) {
         double[] packed=packed(candidate);boolean add=false,cut=false;
         boolean[] cuts=new boolean[candidate.committedFeatures.size()-firstFeature];
+        double[] inertia=NativeCadEngine.bodyInertia(candidate.width,candidate.height,candidate.depth,candidate.importedStep?0:candidate.filletRadius,candidate.featureBase,packed,source);
         for(int i=firstFeature;i<candidate.committedFeatures.size();i++) {
             int tool=candidate.featureBodyOutputs.get(i);
             double[] distance=NativeCadEngine.bodyDistance(candidate.width,candidate.height,candidate.depth,candidate.importedStep?0:candidate.filletRadius,candidate.featureBase,packed,source,target,tool);
             if(distance.length<8)throw new IllegalArgumentException("Nie można rozpoznać styku wyciągnięcia z bryłą: "+NativeCadEngine.lastFailure().reason);
-            boolean inside=distance[7]>1e-7;
+            // Cut only when the tool lies mostly in the material (pulled into the body). A tool that merely
+            // touches or partly overlaps other material (e.g. next to an existing boss) adds material.
+            double toolVolume=0;for(int k=0;k+15<inertia.length;k+=16)if((int)inertia[k]==tool)toolVolume=inertia[k+1];
+            boolean inside=toolVolume>0?distance[7]>0.5*toolVolume:distance[7]>1e-7;
             if(!inside&&distance[0]>1e-6)throw new IllegalArgumentException("Profil nie styka się z wybraną bryłą. Wybierz inną bryłę albo ręcznie wybierz Nowa bryła.");
             cuts[i-firstFeature]=inside;if(inside)cut=true;else add=true;
         }

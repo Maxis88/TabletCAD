@@ -5819,13 +5819,15 @@ if (isInsideViewport(e.getX(), e.getY())) {
         boolean any=false;for(SketchPrimitive p:project.sketch)if(p.closedProfile())any=true;
         if(!any){operationMessage="Narysuj zamknięte profile zwykłej geometrii";invalidate();return;}
         // A single closed profile is selected automatically; the view is tilted so the depth arrow can be dragged.
-        if(extrusionSelections.isEmpty()){SketchPrimitive only=null;int count=0;for(SketchPrimitive p:project.sketch)if(p.closedProfile()){only=p;count++;}if(count==1)extrusionSelections.add(only.id);}
+        extrusionAutoSelected=false;lastExtrusionProfile=extrusionSelections.isEmpty()?null:extrusionSelections.iterator().next();
+        if(extrusionSelections.isEmpty()){SketchPrimitive only=null;int count=0;for(SketchPrimitive p:project.sketch)if(p.closedProfile()){only=p;count++;}if(count==1){extrusionSelections.add(only.id);extrusionAutoSelected=true;lastExtrusionProfile=only.id;}}
         mode="Profile wyciągnięcia";alignToCurrentSketchPlane();cameraYaw-=30f;cameraPitch=cameraPitch>45f?cameraPitch-30f:cameraPitch+30f;showExtrusionSelection();invalidate();
     }
     private static boolean polygonContains(double[] points,double x,double y) {
         boolean inside=false;int n=points.length/2;
         for(int i=0,j=n-1;i<n;j=i++){double ax=points[2*i],ay=points[2*i+1],bx=points[2*j],by=points[2*j+1];if((ay>y)!=(by>y)&&x<(bx-ax)*(y-ay)/(by-ay)+ax)inside=!inside;}return inside;
     }
+    private boolean extrusionAutoSelected;private String lastExtrusionProfile;
     private void toggleExtrusionProfile(float x,float y) {
         double[] point=screenToSketch(x,y);SketchPrimitive chosen=null;double area=Double.POSITIVE_INFINITY;boolean overConstruction=false;
         for(SketchPrimitive p:project.sketch)if(p.closedGeometry()) {
@@ -5841,7 +5843,11 @@ if (isInsideViewport(e.getX(), e.getY())) {
             if(inside&&p.construction)overConstruction=true;
             if(inside&&!p.construction&&size<area){chosen=p;area=size;}
         }
-        if(chosen!=null){if(!extrusionSelections.add(chosen.id))extrusionSelections.remove(chosen.id);if(extrusionSelectionChanged!=null)extrusionSelectionChanged.run();}
+        if(chosen!=null){
+            // A profile picked automatically is replaced by the first one the user taps (no accidental double selection).
+            if(extrusionAutoSelected&&!extrusionSelections.contains(chosen.id))extrusionSelections.clear();extrusionAutoSelected=false;
+            if(!extrusionSelections.add(chosen.id))extrusionSelections.remove(chosen.id);else lastExtrusionProfile=chosen.id;
+            if(extrusionSelectionChanged!=null)extrusionSelectionChanged.run();}
         else if(!overConstruction&&findFaceAt(x,y)<0)clearViewportSelection();
         else operationMessage="Dotknij wnętrza zamkniętego obszaru szkicu";
         invalidate();
@@ -5974,7 +5980,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
         android.widget.ScrollView owner=propertyEditor;final android.widget.Button confirm=panelConfirm;
         Runnable preview=()->{
             if(propertyEditor!=owner)return;resolved[0]=null;confirm.setEnabled(false);selected.setText("Wybrane profile: "+extrusionSelections.size());target.setVisibility(operation.getSelectedItemPosition()!=1&&project.hasSolid()&&bodies.size()>1?View.VISIBLE:View.GONE);second.setVisibility(both.isChecked()?View.VISIBLE:View.GONE);secondLabel.setVisibility(both.isChecked()?View.VISIBLE:View.GONE);toFace.setVisibility(project.hasSolid()?View.VISIBLE:View.GONE);if(extrusionSelections.isEmpty()){invalidateGeometryPreview();featurePreview=null;extrusionDimension=null;extrusionHandle=null;invalidate();return;}
-            for(SketchPrimitive shape:project.sketch)if(extrusionSelections.contains(shape.id)){
+            // The arrow sits on the profile picked last (the one the user is working with).
+            String anchorId=lastExtrusionProfile!=null&&extrusionSelections.contains(lastExtrusionProfile)?lastExtrusionProfile:null;
+            for(SketchPrimitive shape:project.sketch)if(extrusionSelections.contains(shape.id)&&(anchorId==null||shape.id.equals(anchorId))){
                 double[] center=profileCenter(shape),origin=sketchToWorld(center[0],center[1]);double sign=operation.getSelectedItemPosition()==3?-1:1;
                 // Principal XZ base extrusions follow native +Y, whereas placed features follow U×V.
                 if(!project.hasSolid()&&project.sketchPlane.equals("XZ"))sign=-sign;
