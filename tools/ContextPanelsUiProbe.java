@@ -64,7 +64,7 @@ public final class ContextPanelsUiProbe {
             check(Math.abs(back[0]-12)+Math.abs(back[1]-6)<.001,"touch projection inverts transformed sketch placement");
             check((float)field(view,"zoom")==zoom[0]&&(float)field(view,"panX")==pan[0],"opening source sketch does not zoom out or pan");
         });instrumentation.waitForIdleSync();Thread.sleep(180);
-        ui(()->{View context=(View)field(view,"contextEditor");check(context!=null,"default sketch context uses native panel");check(WorkspaceUiProbe.button(context,"Zakończ szkic")!=null,"sketch finish is directly available");});
+        ui(()->{check(field(view,"contextEditor")==null&&!((String)field(view,"stripTitle")).isEmpty(),"rc2: sketch context is in the options strip, no right panel");});
         TabletFlowProbe.screenshot(activity,"084-01-source-follow");
         ui(()->call(view,"cancelSketchWork",new Class<?>[0]));instrumentation.waitForIdleSync();
         ui(()->{

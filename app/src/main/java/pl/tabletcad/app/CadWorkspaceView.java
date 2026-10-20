@@ -1444,7 +1444,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         new android.app.AlertDialog.Builder(getContext()).setTitle(title).setMessage(message).setNegativeButton("Anuluj",null).setPositiveButton("Usuń",(d,w)->{action.run();invalidate();}).show();
     }
     private void editTreeSketch(ModelTree.Row row) {
-        if(SketchTransactions.active(project)){finishSketchWork();if(SketchTransactions.active(project))return;}
+        if(SketchTransactions.active(project)){finishSketchWork(()->editTreeSketch(row));return;}
         editingSketchBody=row.body;
         editingSketchPlacement=row.entities.isEmpty()?SketchPlacement.identity():SketchPlacement.of(project,row.entities.iterator().next(),row.body);
         if(project.sketchId.equals(row.sketchId)){enterSketchEditor();return;}
@@ -6007,7 +6007,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     private void beginThreadTool() {
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
-        if(inSketch()){finishSketchWork();if(inSketch())return;}
+        if(inSketch()){finishSketchThenRetry();return;}
         if(project.importedMeshSource!=null||!project.hasSolid()){operationMessage="Gwint wymaga otworu w bryle B-Rep";invalidate();return;}
         closePropertyEditor();preserveExtrudedBase();commitActiveFeature();BodyGraph.begin(project);mode="Gwint";threadSelections.clear();
         for(HoleThread.Cylinder hole:holeCylinders)if(hole.face==selectedFace)threadSelections.add(hole.face);showThreadPanel();
@@ -6155,7 +6155,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     // ---- Parametric mirror / linear / circular patterns of history operations ----
     private boolean prepareSolidTool(String name) {
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return false;}
-        if(inSketch()){finishSketchWork();if(inSketch())return false;}
+        if(inSketch()){finishSketchThenRetry();return false;}
         if(project.importedMeshSource!=null){operationMessage=name+" wymaga bryły B-Rep – zaimportowana siatka STL/OBJ nie ma dokładnych ścian i krawędzi";invalidate();return false;}
         if(!project.hasSolid()){operationMessage=name+": najpierw utwórz bryłę – Szkice → Szkic, narysuj profil i Wyciągnij";invalidate();return false;}
         if(modelOperationPending){operationMessage="Trwa już obliczanie operacji";invalidate();return false;}
@@ -6520,7 +6520,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     /** Like prepareSolidTool, but an empty document is allowed: the operation may create the first body. */
     private boolean prepareProfileTool(String name) {
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return false;}
-        if(inSketch()){finishSketchWork();if(inSketch())return false;}
+        if(inSketch()){finishSketchThenRetry();return false;}
         if(project.importedMeshSource!=null){operationMessage=name+" wymaga modelu B-Rep";invalidate();return false;}
         if(!project.hasSolid()){operationMessage=name+": najpierw utwórz pierwszą bryłę (np. wyciągnięcie). Kolejne mogą powstać jako „Nowa bryła”.";invalidate();return false;}
         if(modelOperationPending){operationMessage="Trwa już obliczanie operacji";invalidate();return false;}
@@ -8011,7 +8011,18 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(previewControlsRefresh!=null)previewControlsRefresh.run();invalidate();return true;
     }
 
+    /** Command being started from the toolbar; a tool that first has to commit the open sketch restarts it afterwards. */
+    private String startingTool;
     private void activateTopTool(String tool) {
+        String outer=startingTool;startingTool=tool;
+        try{activateTopToolNow(tool);}finally{startingTool=outer;}
+    }
+    /** Commits the open sketch in the background and restarts the toolbar command (if any) once the model is rebuilt. */
+    private void finishSketchThenRetry() {
+        final String retry=startingTool;
+        finishSketchWork(retry==null?null:()->activateTopTool(retry));
+    }
+    private void activateTopToolNow(String tool) {
         if(viewCommand(tool))return;
         if(tool.equals("Gwint")){beginThreadTool();return;}
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
@@ -8213,8 +8224,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
         } else if (tool.equals("Wyciągnij")) {
             // Zatwierdz szkic automatycznie, bez ukrywania profilu przed operacja.
             if (inSketch() && SketchTransactions.active(project)) {
-                finishSketchWork();
-                if (inSketch()) return; // Blad walidacji lub nierozwiazane powiazania.
+                // The sketch is committed in the background; the extrusion opens once the rebuild succeeded.
+                finishSketchWork(this::extrudeSketchProfile);
+                return;
             } else if (inSketch()) {
                 mode = "Wybierz";
             }
@@ -8556,11 +8568,13 @@ if (isInsideViewport(e.getX(), e.getY())) {
             }).setNegativeButton("Wróć",null).show();
     }
 
-    private void finishSketchWork() {
+    private void finishSketchWork(){finishSketchWork(null);}
+    /** Commits the sketch (in the background); {@code then} runs after a successful rebuild (e.g. Wyciągnij continues). */
+    private void finishSketchWork(Runnable then) {
         if(!project.threePointDraft.isEmpty()){showThreePointActions(null);return;}
         if(!arcDraft.isEmpty()){showArcDraftActions(null);return;}
         if(!project.polylineDraft.isEmpty()){showPolylineActions(null);return;}
-        if(!SketchTransactions.active(project)){mode="Wybierz";invalidate();return;}
+        if(!SketchTransactions.active(project)){mode="Wybierz";invalidate();if(then!=null)then.run();return;}
         List<String> missing=SketchTransactions.unresolved(project);
         if(!missing.isEmpty()) {
             List<SketchPrimitive> profiles=new ArrayList<>();List<String> labels=new ArrayList<>();
@@ -8569,7 +8583,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             new PropertyBuilder().setTitle("Wskaż zamknięty profil zastępujący profil bryły")
                 .setItems(labels.toArray(new String[0]),(dialog,which)-> {
                     SketchTransactions.bind(project,missing.get(0),profiles.get(which).id);
-                    projectRepository.save(project);finishSketchWork();
+                    projectRepository.save(project);finishSketchWork(then);
                 }).setNegativeButton("Kontynuuj szkic",null).show();return;
         }
         try {
@@ -8579,6 +8593,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 mode="Wybierz";showSolid=true;selectedSketchId=null;selectedFace=-1;
                 trimMode=dimensionMode=coincidenceMode=false;closePropertyEditor();
                 operationMessage="Zatwierdzono szkic i przebudowano bryłę";leaveSketchView();
+                if(then!=null)try{then.run();}catch(RuntimeException error){recoverFromError("Po zatwierdzeniu szkicu",error);}
             },()->showFinishFailure(operationMessage));
         }catch(RuntimeException error) {
             showFinishFailure("Nie zatwierdzono: "+error.getMessage());

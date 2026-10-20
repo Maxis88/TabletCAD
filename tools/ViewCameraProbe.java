@@ -81,7 +81,7 @@ public final class ViewCameraProbe {
             check(Math.abs(back-t)<1e-6,"axis drag inverts projection at camera distance "+distance);
         }
         // Redesigned chrome: single 64 dp top bar, collapsible model tree, version visible.
-        check(Math.abs((float)call(view,"viewTop",new Class<?>[0])-66*dp)<.5f,"single top bar leaves the work area from 66 dp");
+        check(Math.abs((float)call(view,"viewTop",new Class<?>[0])-110*dp)<.5f,"top bar and options strip leave the work area from 110 dp");
         check(!String.valueOf(call(view,"appVersion",new Class<?>[0])).equals("?"),"installed version is readable for the top bar: v"+call(view,"appVersion",new Class<?>[0]));
         float expanded=(float)call(view,"leftWidth",new Class<?>[0]);
         WorkspaceUiProbe.tap(view,expanded-20*dp,(64+30)*dp);check((boolean)field(view,"treeCollapsed")&&(float)call(view,"leftWidth",new Class<?>[0])<expanded,"tree chevron collapses the model panel");

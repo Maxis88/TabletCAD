@@ -35,6 +35,7 @@ public final class SketchMoveUiProbe {
         long t=SystemClock.uptimeMillis();MotionEvent up=MotionEvent.obtain(start,t,MotionEvent.ACTION_UP,x2,y2,0);instrumentation.sendPointerSync(up);up.recycle();
         instrumentation.waitForIdleSync();
     }
+    static String diag(CadWorkspaceView view)throws Exception{String[] r={""};ui(()->{r[0]="mode="+field(view,"mode")+" tool="+field(view,"sketchTool")+" msg="+field(view,"operationMessage")+" finger="+field(view,"fingerDraws")+" plane="+field(view,"sketchPlaneChosen")+" sel="+field(view,"selectedSketchId");});return r[0];}
     static SketchPrimitive circle(CadWorkspaceView view)throws Exception {
         SketchPrimitive[] out={null};ui(()->{for(SketchPrimitive p:((CadProject)field(view,"project")).sketch)if(p.id.equals("probe-circle"))out[0]=p;});return out[0];
     }
@@ -58,7 +59,7 @@ public final class SketchMoveUiProbe {
         ui(()->{yaw[0]=(float)field(view,"cameraYaw");pitch[0]=(float)field(view,"cameraPitch");});
         drag(c[0]+6,c[1]+6,c[0]+206,c[1]+6,0);
         SketchPrimitive moved=circle(view);
-        check(moved!=null&&moved.x1>5&&Math.abs(Math.hypot(moved.x2-moved.x1,moved.y2-moved.y1)-8)<1e-6,"drag inside the circle moves it with its radius ("+(moved==null?"none":moved.x1+","+moved.y1)+")");
+        check(moved!=null&&moved.x1>5&&Math.abs(Math.hypot(moved.x2-moved.x1,moved.y2-moved.y1)-8)<1e-6,"drag inside the circle moves it with its radius ("+(moved==null?"none":moved.x1+","+moved.y1)+") "+diag(view));
         ui(()->check((float)field(view,"cameraYaw")==yaw[0]&&(float)field(view,"cameraPitch")==pitch[0],"moving sketch geometry never orbits the view"));
         // 2. Empty sketch space pans the view and keeps the orientation.
         float[] pan={0};ui(()->pan[0]=(float)field(view,"panX"));
