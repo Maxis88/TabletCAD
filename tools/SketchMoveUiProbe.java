@@ -96,7 +96,7 @@ public final class SketchMoveUiProbe {
         drag(b[0]+2,b[1]+2,b[0]+122,b[1]+2,0);
         SketchPrimitive firstAfter=circle(view);SketchPrimitive[] second={null};
         ui(()->{for(SketchPrimitive p:((CadProject)field(view,"project")).sketch)if(p.id.equals("probe-second"))second[0]=p;});
-        check(firstAfter.x1-first.x1>3&&Math.abs((firstAfter.x1-first.x1)-(second[0].x1+40))<1e-6,"dragging one selected element moves both by the same distance");
+        check(firstAfter.x1-first.x1>3&&Math.abs((firstAfter.x1-first.x1)-(second[0].x1+40))<1e-6,"dragging one selected element moves both by the same distance (first "+first.x1+"->"+firstAfter.x1+", second -40->"+second[0].x1+") "+diag(view));
         System.out.println("PASS SketchMoveUiProbe");
     }
 }
