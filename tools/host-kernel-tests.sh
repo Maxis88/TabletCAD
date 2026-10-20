@@ -56,8 +56,8 @@ find "$ROOT/app/src/main/java" -name '*.java' > "$OUT/sources.txt"
 javac -nowarn -encoding UTF-8 --release 17 -classpath "$ANDROID_JAR" -d "$OUT/classes" @"$OUT/sources.txt"
 CP="$OUT/probes:$OUT/classes:$JSON_JAR:$ANDROID_JAR"
 # Probes that only use the kernel and the document model run headless on the desktop JVM.
-PROBES="${PROBES:-KernelDiagnosticsProbe EdgeRepairKernelProbe IgesKernelProbe SolidPatternKernelProbe SketchDesignKernelProbe CadToolsKernelProbe ConstructionKernelProbe HistoryKernelProbe AnalysisKernelProbe PrintKernelProbe AssemblyKernelProbe FaceOffsetKernelProbe MateKernelProbe AcceptanceAKernelProbe ThreadProbe BodyPropertiesProbe EdgeChamferProbe SketchEditingProbe}"
-HOST_TESTS="${HOST_TESTS:-SketchDesignHostTest SolidPatternHostTest UnitsHostTest CadToolsHostTest ConstructionHostTest LinkedCopiesHostTest ProjectLibraryFilesHostTest BodyMassHostTest LibraryWorkspaceHostTest ViewCubeHostTest SketchPositionHostTest KernelCacheHostTest FaceProjectionHostTest SketchAngleHostTest SheetDimensionHostTest StylusHostTest SketchPointHostTest ThreeMfHostTest CompactPlacementHostTest SketchSnapHostTest}"
+PROBES="${PROBES:-KernelDiagnosticsProbe SplineKernelProbe SurfaceSplitKernelProbe EdgeRepairKernelProbe IgesKernelProbe SolidPatternKernelProbe SketchDesignKernelProbe CadToolsKernelProbe ConstructionKernelProbe HistoryKernelProbe AnalysisKernelProbe PrintKernelProbe AssemblyKernelProbe FaceOffsetKernelProbe MateKernelProbe AcceptanceAKernelProbe ThreadProbe BodyPropertiesProbe EdgeChamferProbe SketchEditingProbe}"
+HOST_TESTS="${HOST_TESTS:-SketchDesignHostTest SolidPatternHostTest UnitsHostTest CadToolsHostTest ConstructionHostTest LinkedCopiesHostTest ProjectLibraryFilesHostTest BodyMassHostTest LibraryWorkspaceHostTest ViewCubeHostTest SketchPositionHostTest KernelCacheHostTest FaceProjectionHostTest SketchAngleHostTest SheetDimensionHostTest StylusHostTest SketchPointHostTest ThreeMfHostTest CompactPlacementHostTest SketchSnapHostTest FacePickHostTest}"
 status=0
 for test in $HOST_TESTS $PROBES; do
   # A probe that does not compile must fail the run, never execute a stale class.

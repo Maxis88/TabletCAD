@@ -26,6 +26,8 @@
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <GC_MakeArcOfCircle.hxx>
+#include <Geom_BezierCurve.hxx>
+#include <NCollection_Array1.hxx>
 #include <Geom_TrimmedCurve.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
@@ -34,6 +36,8 @@
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Common.hxx>
+#include <BRepAlgoAPI_Splitter.hxx>
+#include <BRepTools_WireExplorer.hxx>
 #include <BRep_Builder.hxx>
 #include <TopoDS_Compound.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
@@ -403,6 +407,22 @@ TopoDS_Shape polygonPrism(const double* points, int count, double depth,
     return result;
 }
 
+// One segment of a closed curve path (7 values): kind 0 line (start, -, end), 1 arc (start,
+// mid, end), 2 cubic Bezier (start, control 1, control 2; the end is the next segment's start).
+// map converts sketch coordinates to the work plane. Returns a null edge on invalid input.
+template<class Map> TopoDS_Edge curveSegmentEdge(const double* s,const double* next,Map map) {
+    for(int j=1;j<7;j++)if(!std::isfinite(s[j])||std::abs(s[j])>5000)return {};
+    if(s[0]==2) {
+        gp_Pnt a=map(s[1],s[2]),b=map(next[1],next[2]);if(a.Distance(b)<.001)return {};
+        NCollection_Array1<gp_Pnt> poles(1,4);poles.SetValue(1,a);poles.SetValue(2,map(s[3],s[4]));poles.SetValue(3,map(s[5],s[6]));poles.SetValue(4,b);
+        Handle(Geom_BezierCurve) curve=new Geom_BezierCurve(poles);BRepBuilderAPI_MakeEdge edge(curve);return edge.IsDone()?edge.Edge():TopoDS_Edge();
+    }
+    if((s[0]!=0&&s[0]!=1)||std::hypot(s[5]-next[1],s[6]-next[2])>1e-6)return {};
+    gp_Pnt a=map(s[1],s[2]),b=map(s[5],s[6]);if(a.Distance(b)<.001)return {};
+    if(s[0]==1){GC_MakeArcOfCircle arc(a,map(s[3],s[4]),b);if(!arc.IsDone())return {};BRepBuilderAPI_MakeEdge edge(arc.Value());return edge.IsDone()?edge.Edge():TopoDS_Edge();}
+    BRepBuilderAPI_MakeEdge edge(a,b);return edge.IsDone()?edge.Edge():TopoDS_Edge();
+}
+
 TopoDS_Shape curvedPrism(const double* segments,int count,double depth,const gp_Pnt& origin,
         const gp_Vec& u,const gp_Vec& v,gp_Vec normal,bool feature,bool cut,bool symmetric) {
     if(count<2||count>128||!std::isfinite(depth)||std::abs(depth)<1e-6||normal.SquareMagnitude()<1e-20)return {};
@@ -412,15 +432,7 @@ TopoDS_Shape curvedPrism(const double* segments,int count,double depth,const gp_
     BRepBuilderAPI_MakeWire wire;
     for(int i=0;i<count;i++) {
         const double* s=segments+i*7;const double* next=segments+((i+1)%count)*7;
-        for(int j=1;j<7;j++)if(!std::isfinite(s[j])||std::abs(s[j])>5000)return {};
-        if((s[0]!=0&&s[0]!=1)||std::hypot(s[5]-next[1],s[6]-next[2])>1e-6)return {};
-        gp_Pnt a=start.Translated(u*s[1]+v*s[2]),b=start.Translated(u*s[5]+v*s[6]);
-        if(a.Distance(b)<.001)return {};
-        if(s[0]==1) {
-            gp_Pnt m=start.Translated(u*s[3]+v*s[4]);GC_MakeArcOfCircle arc(a,m,b);
-            if(!arc.IsDone())return {};
-            BRepBuilderAPI_MakeEdge edge(arc.Value());if(!edge.IsDone())return {};wire.Add(edge.Edge());
-        }else {BRepBuilderAPI_MakeEdge edge(a,b);if(!edge.IsDone())return {};wire.Add(edge.Edge());}
+        TopoDS_Edge e=curveSegmentEdge(s,next,[&](double x,double y){return start.Translated(u*x+v*y);});if(e.IsNull())return {};wire.Add(e);
     }
     if(!wire.IsDone())return {};
     BRepBuilderAPI_MakeFace face(wire.Wire(),true);if(!face.IsDone()||!BRepCheck_Analyzer(face.Face()).IsValid())return {};
@@ -462,10 +474,7 @@ TopoDS_Wire placedProfileWire(const double* p,const gp_Pnt& origin,const gp_Vec&
     const int count=tail/7;BRepBuilderAPI_MakeWire wire;
     for(int i=0;i<count;i++) {
         const double* sg=p+5+i*7;const double* next=p+5+((i+1)%count)*7;
-        if((sg[0]!=0&&sg[0]!=1)||std::hypot(sg[5]-next[1],sg[6]-next[2])>1e-6)return {};
-        gp_Pnt a=at(sg[1],sg[2]),b=at(sg[5],sg[6]);if(a.Distance(b)<.001)return {};
-        if(sg[0]==1){GC_MakeArcOfCircle arc(a,at(sg[3],sg[4]),b);if(!arc.IsDone())return {};wire.Add(BRepBuilderAPI_MakeEdge(arc.Value()).Edge());}
-        else wire.Add(BRepBuilderAPI_MakeEdge(a,b).Edge());
+        TopoDS_Edge e=curveSegmentEdge(sg,next,at);if(e.IsNull())return {};wire.Add(e);
     }
     return wire.IsDone()?wire.Wire():TopoDS_Wire();
 }
@@ -565,11 +574,7 @@ TopoDS_Shape revolvedProfile(const double* f,int available) {
         int count=static_cast<int>(f[20])-1000;BRepBuilderAPI_MakeWire builder;
         for(int i=0;i<count;i++) {
             const double* s=f+22+i*7;const double* next=f+22+((i+1)%count)*7;
-            for(int j=1;j<7;j++)if(std::abs(s[j])>5000)return {};
-            if((s[0]!=0&&s[0]!=1)||std::hypot(s[5]-next[1],s[6]-next[2])>1e-6)return {};
-            gp_Pnt a=point(s[1],s[2]),b=point(s[5],s[6]);if(a.Distance(b)<.001)return {};
-            if(s[0]==1){GC_MakeArcOfCircle arc(a,point(s[3],s[4]),b);if(!arc.IsDone())return {};builder.Add(BRepBuilderAPI_MakeEdge(arc.Value()).Edge());}
-            else builder.Add(BRepBuilderAPI_MakeEdge(a,b).Edge());
+            TopoDS_Edge e=curveSegmentEdge(s,next,point);if(e.IsNull())return {};builder.Add(e);
         }
         if(!builder.IsDone())return {};wire=builder.Wire();
     }else {
@@ -595,7 +600,7 @@ TopoDS_Shape revolvedProfile(const double* f,int available) {
             gp_Circ circle=curve.Circle();double a=gp_Vec(circle.Position().XDirection()).Dot(lateral),b=gp_Vec(circle.Position().YDirection()).Dot(lateral);
             double extremum=std::atan2(b,a);
             for(int k=-4;k<=4;k++){double t=extremum+k*M_PI;if(t>=first-1e-9&&t<=last+1e-9)addSide(curve.Value(t));}
-        }else if(curve.GetType()!=GeomAbs_Line)return {};
+        }else if(curve.GetType()!=GeomAbs_Line){for(int k=1;k<64;k++)addSide(curve.Value(first+(last-first)*k/64.0));}
     }
     if(low<-1e-7&&high>1e-7)return {};
     if(f[6]<0)direction.Reverse();
@@ -1127,6 +1132,49 @@ TopoDS_Shape transformBody(const TopoDS_Shape& shape,const double* f) {
     if(result.IsNull()||!BRepCheck_Analyzer(result).IsValid()){kernelReason("Przekształcenie dało niepoprawną bryłę");return {};}
     return result;
 }
+// Split by a surface: an open sketch path (lines, arcs, cubic spans) extruded symmetrically along
+// the sketch normal. Record: -26, created, depth, origin xyz, u xyz, v xyz, n, flip, 0, 0,
+// n segments (7 values) and a terminal slot (9, end x, end y, 0...). Returns {kept, created} or empty.
+bool surfaceSplit(const TopoDS_Shape& body,const double* c,int length,TopoDS_Shape& kept,TopoDS_Shape& created) {
+    const int n=static_cast<int>(c[12]);
+    if(n<1||n>128||c[12]!=std::floor(c[12])||length!=16+7*(n+1)||(c[13]!=0&&c[13]!=1)||c[14]!=0||c[15]!=0||!(c[2]>0)||c[2]>20000){kernelReason("Niepoprawne parametry podziału powierzchnią");return false;}
+    const double* end=c+16+7*n;if(end[0]!=9){kernelReason("Niepoprawne zakończenie ścieżki podziału");return false;}
+    const gp_Vec u(c[6],c[7],c[8]),v(c[9],c[10],c[11]);if(std::abs(u.Magnitude()-1)>1e-6||std::abs(v.Magnitude()-1)>1e-6||std::abs(u.Dot(v))>1e-6){kernelReason("Niepoprawny układ szkicu podziału");return false;}
+    gp_Vec normal=u.Crossed(v);normal.Normalize();
+    const gp_Pnt origin=gp_Pnt(c[3],c[4],c[5]).Translated(normal*(-c[2]/2));
+    auto map=[&](double x,double y){return origin.Translated(u*x+v*y);};
+    BRepBuilderAPI_MakeWire wire;
+    for(int i=0;i<n;i++){const double* sg=c+16+7*i;const double* next=c+16+7*(i+1);
+        // An arc or line slot must end where the next starts; the terminal slot carries the last end point.
+        double fake[7];const double* nx=next;if(i==n-1&&sg[0]!=2){fake[0]=0;fake[1]=sg[5];fake[2]=sg[6];nx=fake;if(std::hypot(sg[5]-end[1],sg[6]-end[2])>1e-6){kernelReason("Ścieżka podziału nie jest ciągła");return false;}}
+        TopoDS_Edge e=curveSegmentEdge(sg,nx,map);if(e.IsNull()){kernelReason("Ścieżka podziału zawiera niepoprawny odcinek");return false;}
+        wire.Add(e);if(!wire.IsDone()){kernelReason("Elementy ścieżki podziału nie tworzą ciągłej linii");return false;}}
+    TopoDS_Shape surface=BRepPrimAPI_MakePrism(wire.Wire(),normal*c[2]).Shape();
+    if(surface.IsNull()){kernelReason("Nie można utworzyć powierzchni podziału");return false;}
+    BRepAlgoAPI_Splitter splitter;NCollection_List<TopoDS_Shape> args,tools;args.Append(body);tools.Append(surface);
+    splitter.SetArguments(args);splitter.SetTools(tools);splitter.Build();
+    if(!splitter.IsDone()){kernelReason("OCCT nie podzielił bryły powierzchnią");return false;}
+    std::vector<TopoDS_Shape> parts;const double total=shapeVolume(body),eps=std::max(1e-7,total*1e-9);
+    for(TopExp_Explorer it(splitter.Shape(),TopAbs_SOLID);it.More();it.Next())if(shapeVolume(it.Current())>eps)parts.push_back(it.Current());
+    if(parts.size()!=2){kernelReason(parts.size()<2?"Powierzchnia nie przecina bryły na wylot – przedłuż krzywą poza bryłę":"Powierzchnia dzieli bryłę na więcej niż dwie części");return false;}
+    // Side of each part: left (+) or right (−) of the path direction in the sketch plane, measured
+    // at the path point nearest to the part's centre of mass (path sampled along its edges in order).
+    std::vector<std::array<double,2>> path;
+    for(BRepTools_WireExplorer it(wire.Wire());it.More();it.Next()){BRepAdaptor_Curve curve(it.Current());const bool reversed=it.Current().Orientation()==TopAbs_REVERSED;
+        const double t0=curve.FirstParameter(),t1=curve.LastParameter();
+        for(int k=0;k<=32;k++){double t=reversed?t1-(t1-t0)*k/32.0:t0+(t1-t0)*k/32.0;gp_Vec d(origin,curve.Value(t));path.push_back({d.Dot(u),d.Dot(v)});}}
+    auto side=[&](const TopoDS_Shape& part){GProp_GProps props;BRepGProp::VolumeProperties(part,props);gp_Vec d(origin,props.CentreOfMass());const double gx=d.Dot(u),gy=d.Dot(v);
+        double best=1e300,sign=0;
+        for(size_t k=0;k+1<path.size();k++){double ax=path[k][0],ay=path[k][1],bx=path[k+1][0]-ax,by=path[k+1][1]-ay,l=bx*bx+by*by;if(l<1e-18)continue;
+            double t=std::clamp(((gx-ax)*bx+(gy-ay)*by)/l,0.0,1.0),fx=ax+t*bx,fy=ay+t*by,dist=std::hypot(gx-fx,gy-fy);
+            if(dist<best){best=dist;sign=bx*(gy-fy)-by*(gx-fx);}}
+        return sign;};
+    double a=side(parts[0]),b=side(parts[1]);
+    int keep=(a>=b)?0:1;if(c[13]==1)keep=1-keep;
+    kept=parts[keep];created=parts[1-keep];
+    if(!BRepCheck_Analyzer(kept).IsValid()||!BRepCheck_Analyzer(created).IsValid()){kernelReason("Podział dał niepoprawną topologię");return false;}
+    return true;
+}
 TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& values,const std::vector<double>& rootBase,const TopoDS_Shape& rootShape,bool imported,BodyShapes* finalBodies,FaceOrigins* finalOrigins,EvalCache* cache=nullptr,const FaceOrigins* seed=nullptr,int seedTag=0) {
     const int count=static_cast<int>(values.size());int featureNumber=0;BodyShapes bodies;bool indexed=false;FaceOrigins origins;
     if(seed)origins=*seed;
@@ -1172,6 +1220,14 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                     const double total=shapeVolume(a),eps=std::max(1e-7,total*1e-9);
                     for(const auto& part:sides)if(part.IsNull()||countShapes(part,TopAbs_SOLID)==0||shapeVolume(part)<=eps||!BRepCheck_Analyzer(part).IsValid()){kernelFailAt(tag,"Płaszczyzna podziału nie przecina bryły");return {};}
                     bodies[target]=sides[0];bodies[created]=sides[1];
+                    BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
+                    updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
+                }
+                if(length>=30&&record[0]==-26) {
+                    const double* c=record.data();const int created=static_cast<int>(c[1]);
+                    if(target==0||c[1]!=std::floor(c[1])||created<2||bodies.contains(created)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    TopoDS_Shape kept,made;if(!surfaceSplit(bodies[target],c,length,kept,made)){kernelFailAt(tag,"Podział powierzchnią nie powiódł się");return {};}
+                    bodies[target]=kept;bodies[created]=made;
                     BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
                     updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
                 }

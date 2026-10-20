@@ -51,6 +51,8 @@ public final class SketchContours {
     private static double cross(double ax,double ay,double bx,double by,double cx,double cy) {
         return (bx-ax)*(cy-ay)-(by-ay)*(cx-ax);
     }
+    /** Signed shoelace area of a closed point list (x,y pairs; the closing edge is implied). */
+    public static double area(double[] v){double a=0;int n=v.length/2;for(int i=0;i<n;i++){int j=(i+1)%n;a+=v[2*i]*v[2*j+1]-v[2*j]*v[2*i+1];}return a/2;}
     public static void validate(double[] v) {
         if(v.length<6||v.length>512||v.length%2!=0) throw new IllegalArgumentException("Kontur wymaga 3–256 punktów");
         int n=v.length/2;double area=0;

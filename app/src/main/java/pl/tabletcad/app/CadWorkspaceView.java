@@ -918,7 +918,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 polylineTouch=false;
                 if(isInsideViewport(event.getX(),event.getY())) {
                     double[] point=polylinePoint(event.getX(),event.getY());
-                    if(project.polylineDraft.size()>=3 && point==project.polylineDraft.get(0))finishPolyline(!project.splineDraft);
+                    if(project.polylineDraft.size()>=3 && point==project.polylineDraft.get(0)){if(project.splineDraft)closeSplineDraft();else finishPolyline(true);}
                     else try {
                         if(project.splineDraft&&project.polylineDraft.size()>=128)throw new IllegalArgumentException("Splajn może mieć najwyżej 128 punktów");
                         PolylineDraft.add(project.polylineDraft,point[0],point[1]);redoStack.clear();
@@ -1481,6 +1481,21 @@ if (isInsideViewport(e.getX(), e.getY())) {
      * Selecting a sketch element in the model view means editing it: the owning sketch opens
      * in the sketch editor with the touched element selected and its parameters shown.
      */
+    /** Nearest model face depth (q = 1/eye distance) under the screen point, or NaN. */
+    private double faceDepthAt(float x,float y) {
+        double best=Double.NaN;
+        for(ProjectedTriangle t:projectedTriangles){double d=t.surface.depthAt(x,y);if(Double.isFinite(d)&&!(d<=best))best=d;}
+        return best;
+    }
+    /** True when the current sketch plane under (x,y) lies behind a visible face (by more than 0.05 mm). */
+    private boolean hiddenBySolid(float x,float y) {
+        if(!showSolid&&inSketch()||showingSection())return false;
+        double face=faceDepthAt(x,y);if(!Double.isFinite(face))return false;
+        try {
+            double[] uv=screenToSketch(x,y);double[] w=sketchToWorld(uv[0],uv[1]);double q=projectWorldPoint(w[0],w[1],w[2])[2];
+            return FacePick.behind(q,face,.05);
+        }catch(RuntimeException error){return false;}
+    }
     private boolean editVisibleSketchAt(float x,float y) {
         CadProject model=project;ModelTree.Row hitRow=null;String hitId=null;
         try {
@@ -1491,6 +1506,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 displayingTreeSketch=true;
                 for(String id:row.entities) {
                     project=ModelTree.display(model,row,id);SketchPrimitive entity=findSketchAt(x,y);
+                    // A sketch hidden behind a face of the body (e.g. the profile under its own boss) is not picked through the solid.
+                    if(entity!=null&&hiddenBySolid(x,y))continue;
                     if(entity!=null){hitRow=row;hitId=entity.id;break;}
                 }
                 if(hitRow!=null)break;
@@ -1750,7 +1767,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
             stripHint=projectionMode?"Dotknij krawędzi bryły":coincidenceMode?"Wskaż geometrię więzu":dimensionMode?"Dotknij elementu lub wartości wymiaru":trimMode?"Dotknij fragmentu między przecięciami":mode.equals("Edytuj szkic")?"Dotknij lub przeciągnij element":"Szkic "+sketchPlane+" · elementy: "+project.sketch.size();
             if(!project.polylineDraft.isEmpty()) {
                 stripHint="Punkty: "+project.polylineDraft.size();
-                out.add(new StripChip(project.splineDraft?"Zapisz splajn":"Zamknij obwód","Polilinia",false,true,()->finishPolyline(!project.splineDraft)));
+                if(project.splineDraft&&project.polylineDraft.size()>=3)out.add(new StripChip("Zamknij splajn","Splajn",false,true,()->closeSplineDraft()));
+                out.add(new StripChip(project.splineDraft?"Zapisz otwarty splajn":"Zamknij obwód","Polilinia",false,!project.splineDraft,()->finishPolyline(!project.splineDraft)));
                 if(!project.splineDraft)out.add(new StripChip("Otwarty łańcuch","Linia",false,false,()->finishPolyline(false)));
                 out.add(new StripChip("Cofnij punkt","Cofnij",false,false,()->removePolylinePoint()));
                 out.add(new StripChip("Anuluj rysowanie","Anuluj szkic",false,false,()->cancelPolyline()));
@@ -3060,7 +3078,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private double[] polylinePoint(float x,float y) {
-        if(!project.splineDraft && project.polylineDraft.size()>=3) {
+        if(project.polylineDraft.size()>=3) {
             double[] first=project.polylineDraft.get(0);PointF start=projectSketchPoint(first[0],first[1]);
             if(Math.hypot(x-start.x,y-start.y)<dp(14)){snapMarker=start;return first;}
         }
@@ -3068,6 +3086,16 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return snappedSketchPoint(x,y,null,last==null?null:last[0],last==null?null:last[1]);
     }
 
+    /** Tapping the first point of a spline closes it: a periodic, smooth closed profile that can be extruded. */
+    private boolean closeSplineDraft() {
+        double[] first=project.polylineDraft.get(0);
+        project.polylineDraft.add(new double[]{first[0],first[1]});
+        try{SketchSpline.spans(SketchSpline.points(project.polylineDraft));}
+        catch(IllegalArgumentException error){project.polylineDraft.remove(project.polylineDraft.size()-1);operationMessage=error.getMessage();invalidate();return false;}
+        boolean done=finishPolyline(false);
+        if(done)operationMessage="Zamknięty splajn — gładki profil gotowy do wyciągnięcia";
+        return done;
+    }
     private boolean finishPolyline(boolean closed) {
         try {
             boolean spline=project.splineDraft;
@@ -4040,9 +4068,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
             selectedNormalX = best.nx;
             selectedNormalY = best.ny;
             selectedNormalZ = best.nz;
-            selectedPointX = (best.wx[0] + best.wx[1] + best.wx[2]) / 3.0 + meshCenterX;
-            selectedPointY = (best.wy[0] + best.wy[1] + best.wy[2]) / 3.0 + meshCenterY;
-            selectedPointZ = (best.wz[0] + best.wz[1] + best.wz[2]) / 3.0 + meshCenterZ;
+            // The touched point itself (perspective-correct barycentric), not the centre of the
+            // mesh triangle: holes and sketch origins land where the finger was.
+            double[] hit=FacePick.hit(best.sx,best.sy,best.q,best.wx,best.wy,best.wz,x,y);
+            selectedPointX = hit[0] + meshCenterX;
+            selectedPointY = hit[1] + meshCenterY;
+            selectedPointZ = hit[2] + meshCenterZ;
             return best.faceId;
         }
         return -1;
@@ -5572,6 +5603,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(ShellFeature.is(feature)){showShellEditor(index);return;}
         if(BodyCombine.is(feature)){beginBodyCombine((int)feature[1],index);return;}
         if(BodySplit.is(feature)){showBodySplit(index);return;}
+        if(SurfaceSplit.is(feature)){showBodySplit(index);return;}
         if(SweepLoft.bodyPattern(feature)){showBodyPatternDialog((int)feature[1],index);return;}
         if(SweepLoft.loft(feature)||SweepLoft.sweep(feature)){showLoftSweepEditor(index);return;}
         if(DraftFeature.is(feature)){showDraftEditor(index);return;}
@@ -5735,8 +5767,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 if(in&&!p.construction&&size<area){chosen=p;area=size;}
                 continue;
             }
-            boolean inside=p.type.equals("Okrąg")?Math.hypot(point[0]-p.x1,point[1]-p.y1)<Math.hypot(p.x2-p.x1,p.y2-p.y1):p.vertices!=null?polygonContains(p.vertices,point[0],point[1]):p.curves!=null?polygonContains(SketchCurves.samples(p.curves,96),point[0],point[1]):point[0]>=Math.min(p.x1,p.x2)&&point[0]<=Math.max(p.x1,p.x2)&&point[1]>=Math.min(p.y1,p.y2)&&point[1]<=Math.max(p.y1,p.y2);
-            double size=p.type.equals("Okrąg")?Math.PI*Math.pow(Math.hypot(p.x2-p.x1,p.y2-p.y1),2):Math.abs((p.x2-p.x1)*(p.y2-p.y1));
+            boolean inside=p.type.equals("Okrąg")?Math.hypot(point[0]-p.x1,point[1]-p.y1)<Math.hypot(p.x2-p.x1,p.y2-p.y1):p.vertices!=null?polygonContains(SketchSpline.is(p)?SketchSpline.sample(p.vertices,24):p.vertices,point[0],point[1]):p.curves!=null?polygonContains(SketchCurves.samples(p.curves,96),point[0],point[1]):point[0]>=Math.min(p.x1,p.x2)&&point[0]<=Math.max(p.x1,p.x2)&&point[1]>=Math.min(p.y1,p.y2)&&point[1]<=Math.max(p.y1,p.y2);
+            double size=p.type.equals("Okrąg")?Math.PI*Math.pow(Math.hypot(p.x2-p.x1,p.y2-p.y1),2):SketchSpline.is(p)?Math.abs(SketchContours.area(SketchSpline.sample(p.vertices,24))):Math.abs((p.x2-p.x1)*(p.y2-p.y1));
             if(inside&&p.construction)overConstruction=true;
             if(inside&&!p.construction&&size<area){chosen=p;area=size;}
         }
@@ -6829,29 +6861,45 @@ if (isInsideViewport(e.getX(), e.getY())) {
     // ---- Split a body by a plane ----
     private void showBodySplit(int editIndex) {
         double[] original=editIndex>=0?project.committedFeatures.get(editIndex):null;final double[] face=selectedPlanarFace();
-        List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(original!=null)ids.remove(Integer.valueOf(BodySplit.created(original)));
+        final boolean surfaceOriginal=original!=null&&SurfaceSplit.is(original);
+        List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(original!=null)ids.remove(Integer.valueOf(surfaceOriginal?SurfaceSplit.created(original):BodySplit.created(original)));
         if(ids.isEmpty()){operationMessage="Brak bryły do podziału";invalidate();return;}
         String[] names=new String[ids.size()];for(int i=0;i<names.length;i++)names[i]=BodyGraph.name(project,ids.get(i));
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Część za płaszczyzną pozostaje w wybranej bryle, część przed nią (po stronie normalnej) staje się nową bryłą.");form.addView(info);
+        android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Płaszczyzna: część za nią pozostaje w bryle, część po stronie normalnej staje się nową bryłą. Powierzchnia z krzywej szkicu (linia, łuk, otwarty splajn — także falisty) przechodzi prostopadle do szkicu przez całą bryłę; część po lewej stronie kierunku krzywej zostaje.");form.addView(info);
         android.widget.Spinner body=new android.widget.Spinner(getContext());body.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,names));form.addView(body);
         body.setSelection(Math.max(0,ids.indexOf(original!=null?featureBody(project,editIndex):project.selectedBody)));if(original!=null)body.setEnabled(false);
         List<String> choices=new ArrayList<>(java.util.Arrays.asList("Płaszczyzna YZ (normalna X)","Płaszczyzna XZ (normalna Y)","Płaszczyzna XY (normalna Z)"));if(face!=null)choices.add("Płaszczyzna zaznaczonej ściany (stała)");
         final List<Datum> splitPlanes=datumsOf(Datum.PLANE);for(Datum d:splitPlanes)choices.add("Konstrukcja: "+d.name+" (odsunięcie)");
+        final int surfaceStart=choices.size();final List<SweepLoft.Placed> curves=new ArrayList<>();
+        for(SweepLoft.Placed e:SweepLoft.elements(project))if(SurfaceSplit.usable(e.shape)){curves.add(e);choices.add("Powierzchnia z krzywej: "+e.sketchName+" · "+sketchEntityName(e.shape));}
+        String originalRef=surfaceOriginal&&editIndex<project.committedProfileIds.size()?project.committedProfileIds.get(editIndex):null;
         android.widget.Spinner plane=new android.widget.Spinner(getContext());plane.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,choices));form.addView(plane);
-        int axis=original==null?0:Math.abs(original[5])>.5?0:Math.abs(original[6])>.5?1:2;plane.setSelection(original==null&&face!=null?3:axis);
+        int axis=original==null||surfaceOriginal?0:Math.abs(original[5])>.5?0:Math.abs(original[6])>.5?1:2;plane.setSelection(original==null&&face!=null?3:axis);
+        if(surfaceOriginal)for(int i=0;i<curves.size();i++)if(originalRef!=null&&originalRef.equals(SurfaceSplit.REF+curves.get(i).ref()))plane.setSelection(surfaceStart+i);
         double[] centre={modelCenterX,modelCenterY,modelCenterZ};
-        EditText offset=labeledCoordinate(form,"Położenie płaszczyzny [mm] (dla ściany: odsunięcie)",original!=null?original[2+axis]:face!=null?0:centre[0]);
-        android.widget.CheckBox flip=new android.widget.CheckBox(getContext());flip.setText("Odwróć strony podziału");flip.setChecked(original!=null&&original[5+axis]<0);form.addView(flip);
+        EditText offset=labeledCoordinate(form,"Położenie płaszczyzny [mm] (dla ściany: odsunięcie)",original!=null&&!surfaceOriginal?original[2+axis]:face!=null?0:centre[0]);
+        android.widget.CheckBox flip=new android.widget.CheckBox(getContext());flip.setText("Odwróć strony podziału");flip.setChecked(surfaceOriginal?SurfaceSplit.flipped(original):original!=null&&original[5+axis]<0);form.addView(flip);
         android.content.DialogInterface.OnClickListener apply=(d,w)->{
             try {
-                int choice=plane.getSelectedItemPosition();double value=parseCoordinate(offset),sign=flip.isChecked()?-1:1;double[] point=new double[3],normal=new double[3];
+                int choice=plane.getSelectedItemPosition();
+                if(choice>=surfaceStart) {
+                    List<SweepLoft.Placed> chosen=java.util.Collections.singletonList(curves.get(choice-surfaceStart));
+                    int target=ids.get(body.getSelectedItemPosition());double depth=Math.min(20000,Math.max(10,4*modelExtent()));
+                    String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
+                    double[] record;String ref=SurfaceSplit.ref(chosen);
+                    if(editIndex>=0){int created=surfaceOriginal?SurfaceSplit.created(original):BodySplit.created(original);record=SurfaceSplit.create(created,chosen,depth,flip.isChecked());next.committedFeatures.set(editIndex,record);next.committedProfileIds.set(editIndex,ref);}
+                    else {record=SurfaceSplit.create(BodyGraph.allocate(next),chosen,depth,flip.isChecked());next.committedFeatures.add(record);next.committedProfileIds.add(ref);next.featureBodyTargets.add(target);next.featureBodyOutputs.add(target);}
+                    BodyGraph.validate(next);commitProjectAsync(next,baseline,SurfaceSplit.describe(record)+" → nowa bryła: "+BodyGraph.name(next,SurfaceSplit.created(record)));
+                    return;
+                }
+                double value=parseCoordinate(offset),sign=flip.isChecked()?-1:1;double[] point=new double[3],normal=new double[3];
                 double[] reference=choice<3?null:face!=null&&choice==3?face:splitPlanes.get(choice-3-(face!=null?1:0)).frame();
                 if(choice<3){point[choice]=value;normal[choice]=sign;}else for(int i=0;i<3;i++){point[i]=reference[i]+reference[3+i]*value;normal[i]=reference[3+i]*sign;}
                 int target=ids.get(body.getSelectedItemPosition());
                 String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
                 double[] record;
-                if(editIndex>=0){record=BodySplit.create(BodySplit.created(original),point,normal);next.committedFeatures.set(editIndex,record);}
+                if(editIndex>=0){record=BodySplit.create(surfaceOriginal?SurfaceSplit.created(original):BodySplit.created(original),point,normal);next.committedFeatures.set(editIndex,record);next.committedProfileIds.set(editIndex,"");}
                 else {record=BodySplit.create(BodyGraph.allocate(next),point,normal);next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(target);next.featureBodyOutputs.add(target);}
                 BodyGraph.validate(next);commitProjectAsync(next,baseline,BodySplit.describe(record)+" → nowa bryła: "+BodyGraph.name(next,BodySplit.created(record)));
             }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}

@@ -1,12 +1,13 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **1.0.0-rc3**, versionCode **113**.
+Wersja źródeł: **1.0.0-rc4**, versionCode **114**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
 
+Wersja 1.0.0-rc4 — zamknięty splajn jako gładki profil (wyciągnięcie i wycięcie; krzywe Béziera w jądrze OCCT); podział bryły powierzchnią z krzywej szkicu, także falistej; wybór ściany w punkcie dotknięcia i bez zaznaczania szkiców ukrytych pod bryłą.
 Wersja 1.0.0-rc3 — przełącznik rodzaju wyciągnięcia (Auto/Nowa/Połącz/Wytnij/Wspólna) przy strzałce; przyciąganie do przecięć okręgów, punktów styczności i prostopadłej z początku linii.
 Wersja 1.0.0-rc2 — pasek opcji narzędzia pod górnym menu (nad oboma panelami bocznymi), prawy panel tylko dla pełnych formularzy, małe okienka przy edytowanej operacji, przełączniki Odwróć/Symetrycznie przy strzałce wyciągnięcia; szkice na ścianie, otwory, gwinty i fazy podążają za przesuniętą operacją ([docs/AUDIT-1.0.0-rc2.md](docs/AUDIT-1.0.0-rc2.md)).
 Wersja 1.0.0-rc1 — sterujący wymiar odległości punkt–linia i punkt–punkt; kandydat do wydania 1.0 —

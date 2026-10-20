@@ -98,11 +98,13 @@ public final class SketchPrimitive {
     }
     public double major(){return Math.hypot(x2-x1,y2-y1);}
     public SketchPrimitive withConstruction(boolean value){return construction==value?this:new SketchPrimitive(this,value);}
-    public boolean closedGeometry() {return (vertices!=null&&!type.equals("Splajn"))||type.equals("Kontur krzywy")||type.equals("Prostokąt")||type.equals("Okrąg")||isEllipse();}
+    public boolean closedGeometry() {return (vertices!=null&&(!type.equals("Splajn")||pl.tabletcad.app.SketchSpline.closed(vertices)))||type.equals("Kontur krzywy")||type.equals("Prostokąt")||type.equals("Okrąg")||isEllipse();}
     public boolean closedProfile(){return !construction&&closedGeometry();}
-    public double featureType() {if(construction||type.equals("Splajn"))throw new IllegalArgumentException("Wyciąganie wymaga zamkniętej geometrii zwykłej");return isEllipse()?2000:curves!=null?1000+curves.length/7:vertices==null?(type.equals("Okrąg")?1:0):2+vertices.length/2;}
+    public double featureType() {
+        if(type.equals("Splajn")&&!construction&&pl.tabletcad.app.SketchSpline.closed(vertices))return 1000+vertices.length/2-1;
+        if(construction||type.equals("Splajn"))throw new IllegalArgumentException("Wyciąganie wymaga zamkniętej geometrii zwykłej (otwarty splajn: zakończ go w pierwszym punkcie)");return isEllipse()?2000:curves!=null?1000+curves.length/7:vertices==null?(type.equals("Okrąg")?1:0):2+vertices.length/2;}
     public double[] appendVertices(double[] prefix) {
-        double[] tail=isEllipse()?new double[]{minor}:curves!=null?curves:vertices;
+        double[] tail=isEllipse()?new double[]{minor}:curves!=null?curves:type.equals("Splajn")?pl.tabletcad.app.SketchSpline.featureCurves(vertices):vertices;
         double[] result=java.util.Arrays.copyOf(prefix,prefix.length+(tail==null?0:tail.length));
         if(tail!=null) System.arraycopy(tail,0,result,prefix.length,tail.length);
         return result;
@@ -111,6 +113,8 @@ public final class SketchPrimitive {
         if(pl.tabletcad.app.ExtrusionPlan.placedBase(data))return pl.tabletcad.app.ExtrusionPlan.baseProfile(id,data);
         if(pl.tabletcad.app.Revolve.is(data))return pl.tabletcad.app.Revolve.profile(id,data);
         if(data[0]==2000)return ellipse(id,data[offset],data[offset+1],data[offset+2],data[offset+3],data[prefixLength]);
+        if(data[0]>=1001&&pl.tabletcad.app.SketchSpline.hasBezier(java.util.Arrays.copyOfRange(data,prefixLength,data.length)))
+            return new SketchPrimitive(id,pl.tabletcad.app.SketchSpline.fromFeatureCurves(java.util.Arrays.copyOfRange(data,prefixLength,data.length)),"Splajn");
         return data[0]>=1001 ? new SketchPrimitive(id,java.util.Arrays.copyOfRange(data,prefixLength,data.length),true):data[0]>=5 ? new SketchPrimitive(id,java.util.Arrays.copyOfRange(data,prefixLength,data.length))
             : new SketchPrimitive(id,type,data[offset],data[offset+1],data[offset+2],data[offset+3]);
     }

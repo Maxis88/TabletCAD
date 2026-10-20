@@ -34,7 +34,7 @@ public final class BodyGraph {
         if(p.featureOperation.equals("new")&&p.activeBodyOutput>0)ids.add(p.activeBodyOutput);return ids;
     }
     /** Body created by a routed record (split part, instance), or 0. */
-    public static int createdBody(double[] f){return BodySplit.is(f)?BodySplit.created(f):BodyInstance.is(f)?BodyInstance.created(f):0;}
+    public static int createdBody(double[] f){return BodySplit.is(f)?BodySplit.created(f):SurfaceSplit.is(f)?SurfaceSplit.created(f):BodyInstance.is(f)?BodyInstance.created(f):0;}
     public static String name(CadProject p,int id){return p.bodyNames.getOrDefault(id,"Bryła "+id);}
     public static int profileBody(CadProject p,String profile) {
         if(profile==null)return 0;if(profile.equals(p.featureBaseProfileId))return 1;
@@ -53,6 +53,7 @@ public final class BodyGraph {
         if(type==-3){double t=packed[offset+20];return 22+(t>=1001?((int)t-1000)*7:t>=5?((int)t-2)*2:0);}
         if(type==SweepLoft.LOFT||type==SweepLoft.SWEEP||type==SweepLoft.BODY_PATTERN)return SweepLoft.length(packed,offset);
         if(type==MateFeature.TYPE)return MateFeature.LENGTH;
+        if(type==SurfaceSplit.TYPE)return SurfaceSplit.length(packed,offset);
         if(type==2000)return 17;
         return 16+(type>=1001?((int)type-1000)*7:type>=5?((int)type-2)*2:0);
     }
@@ -65,6 +66,7 @@ public final class BodyGraph {
             // Suppressed operations, operations past the rollback marker and patterns of inactive sources keep their index as placeholders.
             if(index<p.committedFeatures.size()&&FeatureHistory.inactive(p,index)){records.add(FeatureHistory.placeholder());length+=16;continue;}
             // Loft/sweep geometry is refreshed from the referenced sketch elements before every evaluation.
+            if(SurfaceSplit.is(record)&&index<p.committedFeatures.size())record=SurfaceSplit.refresh(p,record,index<p.committedProfileIds.size()?p.committedProfileIds.get(index):null);
             if((SweepLoft.loft(record)||SweepLoft.sweep(record))&&index<p.committedFeatures.size())record=SweepLoft.refresh(p,record,index<p.committedProfileIds.size()?p.committedProfileIds.get(index):null);
             // Patterns are expanded here, from the current source operations, into one routed record.
             if(FeaturePattern.is(record)) {
