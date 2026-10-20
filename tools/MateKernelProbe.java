@@ -66,6 +66,14 @@ public final class MateKernelProbe {
         BodyAnalysis.Body pinIn=body(h,peg);close("persistent coaxial pin X",pinIn.centroid[0],50,1e-7);close("persistent coaxial pin Y",pinIn.centroid[1],30,1e-7);
         h.committedFeatures.set(0,ExtrusionPlan.feature(top,new SketchPrimitive("h","Okrąg",70,20,75,20),"cut",20,0,false,false));
         BodyAnalysis.Body pinMoved=body(h,peg);close("pin follows the moved hole (X)",pinMoved.centroid[0],70,1e-7);close("pin follows the moved hole (Y)",pinMoved.centroid[1],20,1e-7);close("axial position unchanged",pinMoved.centroid[2],15,1e-7);
+        // Persistent angle mate: -X face of the block at a set angle to the plate top (+Z).
+        double[] t0=body(twoBodies(new SketchPrimitive("b","Prostokąt",200,0,220,10),30),blk).tensor;
+        for(double ang:new double[]{90,0,45}){CadProject am=twoBodies(new SketchPrimitive("b","Prostokąt",200,0,220,10),30);
+            am.committedFeatures.add(MateFeature.create(MateFeature.ANGLE,1,ang,new double[]{200,5,15},new double[]{-1,0,0},0,new double[]{50,30,20},new double[]{0,0,1},-1));am.committedProfileIds.add("");am.featureBodyTargets.add(blk);am.featureBodyOutputs.add(blk);
+            BodyAnalysis.Body r=body(am,blk);close("angle mate "+ang+"° keeps volume",r.volume,6000,1e-6);
+            double diff=0;for(int i=0;i<6;i++)diff=Math.max(diff,Math.abs(r.tensor[i]-t0[i])/Math.max(1,Math.abs(t0[i])));
+            if(ang==90)check(diff<1e-6,"90° between already perpendicular faces leaves the block in place");else check(diff>1e-3,"angle "+ang+"° turns the block");}
+        boolean rej=false;try{MateFeature.create(MateFeature.ANGLE,1,200,new double[]{200,5,15},new double[]{-1,0,0},0,new double[]{50,30,20},new double[]{0,0,1},-1);}catch(IllegalArgumentException e){rej=true;}check(rej,"angle above 180° rejected");
         System.out.println("PASS MateKernelProbe: "+checks+" checks");
     }
 }

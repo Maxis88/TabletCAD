@@ -12,7 +12,7 @@ import java.util.Locale;
  */
 public final class MateFeature {
     public static final double TYPE=-25;
-    public static final int LENGTH=24,CONTACT=1,FLUSH=2,AXIS=3;
+    public static final int LENGTH=24,CONTACT=1,FLUSH=2,AXIS=3,ANGLE=4;
     private MateFeature() {}
     public static boolean is(double[] f){return f!=null&&f.length==LENGTH&&f[0]==TYPE;}
     public static double[] create(int kind,int otherBody,double gap,double[] movingPoint,double[] movingNormal,int movingCreator,double[] targetPoint,double[] targetNormal,int targetCreator) {
@@ -25,7 +25,8 @@ public final class MateFeature {
     public static void validate(double[] f) {
         if(!is(f))throw new IllegalArgumentException("Niepoprawny zapis dosunięcia brył");
         for(double v:f)if(!Double.isFinite(v))throw new IllegalArgumentException("Parametry dosunięcia muszą być skończone");
-        if(f[1]!=CONTACT&&f[1]!=FLUSH&&f[1]!=AXIS)throw new IllegalArgumentException("Nieznany rodzaj dosunięcia");
+        if(f[1]!=CONTACT&&f[1]!=FLUSH&&f[1]!=AXIS&&f[1]!=ANGLE)throw new IllegalArgumentException("Nieznany rodzaj dosunięcia");
+        if(f[1]==ANGLE&&(f[3]<0||f[3]>180))throw new IllegalArgumentException("Kąt między ścianami: 0–180°");
         if(f[2]!=Math.floor(f[2])||f[2]<1)throw new IllegalArgumentException("Niepoprawna bryła docelowa dosunięcia");
         if(Math.abs(f[3])>5000)throw new IllegalArgumentException("Odstęp dosunięcia: ±5000 mm");
         for(int at:new int[]{4,11})for(int i=0;i<3;i++)if(Math.abs(f[at+i])>10000)throw new IllegalArgumentException("Punkt ściany poza zakresem");
@@ -35,5 +36,5 @@ public final class MateFeature {
     }
     public static int other(double[] f){return (int)f[2];}
     public static double[] withGap(double[] f,int kind,double gap){double[] r=f.clone();r[1]=kind;r[3]=gap;validate(r);return r;}
-    public static String describe(double[] f,String otherName){return String.format(Locale.US,"Dosunięcie (%s) do: %s%s",f[1]==AXIS?"współosiowo":f[1]==FLUSH?"wyrównanie":"styk",otherName,f[3]!=0?String.format(Locale.US,", odstęp %.3f mm",f[3]):"");}
+    public static String describe(double[] f,String otherName){return String.format(Locale.US,"Dosunięcie (%s) do: %s%s",f[1]==AXIS?"współosiowo":f[1]==ANGLE?"kąt":f[1]==FLUSH?"wyrównanie":"styk",otherName,f[1]==ANGLE?String.format(Locale.US,", %.2f°",f[3]):f[3]!=0?String.format(Locale.US,", odstęp %.3f mm",f[3]):"");}
 }

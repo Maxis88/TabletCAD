@@ -1303,7 +1303,7 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                     // (contact: opposite normals, flush: equal normals) at the gap; re-solved on every rebuild.
                     const double* c=record.data();const int other=static_cast<int>(c[2]);
                     const double mn=c[7]*c[7]+c[8]*c[8]+c[9]*c[9],tn=c[14]*c[14]+c[15]*c[15]+c[16]*c[16];
-                    if(target==0||(c[1]!=1&&c[1]!=2&&c[1]!=3)||c[2]!=std::floor(c[2])||other==target||std::abs(c[3])>5000||std::abs(mn-1)>1e-6||std::abs(tn-1)>1e-6||c[10]!=std::floor(c[10])||c[17]!=std::floor(c[17])){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    if(target==0||(c[1]!=1&&c[1]!=2&&c[1]!=3&&c[1]!=4)||c[2]!=std::floor(c[2])||other==target||std::abs(c[3])>5000||(c[1]==4&&(c[3]<0||c[3]>180))||std::abs(mn-1)>1e-6||std::abs(tn-1)>1e-6||c[10]!=std::floor(c[10])||c[17]!=std::floor(c[17])){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                     for(int k=18;k<24;k++)if(c[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                     if(!bodies.contains(other)){kernelFailAt(tag,"Bryła, do której dosunięto ścianę, nie istnieje");return {};}
                     std::string error;
@@ -1320,6 +1320,21 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                         gp_Vec v(p,ta.Location());v-=gp_Vec(d)*v.Dot(gp_Vec(d));gp_Trsf translation;translation.SetTranslation(v);
                         BRepBuilderAPI_Transform moved(bodies[target],translation.Multiplied(rotation),true);
                         if(!moved.IsDone()||moved.Shape().IsNull()){kernelFailAt(tag,"Nie można ustawić brył współosiowo");return {};}
+                        bodies[target]=moved.Shape();
+                        BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
+                        updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
+                    }
+                    if(c[1]==4) {
+                        // Angle: the moving body turns about the line through its face point, perpendicular to both
+                        // face normals, until the outward normals make the given angle (degrees in c[3]).
+                        const TopoDS_Face moving=shellFace(bodies[target],c+4,origins,error,"obracanej");if(moving.IsNull()){kernelFailAt(tag,error.c_str());return {};}
+                        const TopoDS_Face fixed=shellFace(bodies[other],c+11,origins,error,"docelowej");if(fixed.IsNull()){kernelFailAt(tag,error.c_str());return {};}
+                        const gp_Dir m(c[7],c[8],c[9]),t(c[14],c[15],c[16]);
+                        gp_Vec axis=gp_Vec(m).Crossed(gp_Vec(t));if(axis.Magnitude()<1e-9)axis=gp_Vec(m).Crossed(std::abs(m.X())<.9?gp_Vec(1,0,0):gp_Vec(0,1,0));
+                        const double turn=m.Angle(t)-c[3]*M_PI/180.0;gp_Trsf rotation;
+                        if(std::abs(turn)>1e-12)rotation.SetRotation(gp_Ax1(gp_Pnt(c[4],c[5],c[6]),gp_Dir(axis)),turn);
+                        BRepBuilderAPI_Transform moved(bodies[target],rotation,true);
+                        if(!moved.IsDone()||moved.Shape().IsNull()){kernelFailAt(tag,"Nie można ustawić kąta między bryłami");return {};}
                         bodies[target]=moved.Shape();
                         BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
                         updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
