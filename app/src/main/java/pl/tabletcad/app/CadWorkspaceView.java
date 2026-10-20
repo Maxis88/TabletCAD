@@ -7343,7 +7343,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             double[] packed=NativeCadEngine.evaluateModel(modelWidth,modelHeight,modelDepth,radius,base,features,src);
             if(packed.length==0)return null;
             CadModelResult result=new CadModelResult(packed);
-            return new EdgeRepair.Model(result.mesh,result.features,NativeCadEngine.modelEdges(modelWidth,modelHeight,modelDepth,radius,base,features,src));
+            return new EdgeRepair.Model(result.mesh,result.features,NativeCadEngine.modelEdges(modelWidth,modelHeight,modelDepth,radius,base,features,src),result.holes);
         }catch(Exception error){return null;}
         finally{project=keep;modelWidth=w;modelHeight=h;modelDepth=d;}
     }
