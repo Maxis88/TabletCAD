@@ -37,3 +37,13 @@
   - Przeciągnięcie zaznaczonego okręgu za środek przesuwało tylko jego, nie całe zaznaczenie — naprawione.
   - Budowanie: brak jar.exe/javac.exe w C:\Program Files\Android — skrypty pakują APK bez jar.exe i używają third_party\jdk.
 - Nie sprawdzone automatycznie (do ręcznej oceny): wygoda paska opcji, położenie małych okienek przy klawiaturze, rysowanie rysikiem.
+
+## Poprawki 20.10 po uwagach z tabletu
+- Wielokąt (i kwadrat, prostokąt od środka) widoczny na żywo podczas rysowania.
+- Wielokąt foremny: przeciągnięcie wierzchołka skaluje i obraca cały wielokąt (zostaje foremny).
+- Opcje wyciągnięcia stoją obok strzałki, nie na niej (CompactPlacement.beside).
+- Linie wymiarowe można odsuwać od elementu przeciągnięciem wartości (zapis w projekcie: dimensionOffsets).
+- Okręgi: Ø zamiast R w szkicu i w pomiarze krawędzi.
+- Dotknięcie ściany zaznacza tylko tę ścianę (bez podświetlania całej operacji).
+- Przycinanie linii i łuków na elipsach (dokładnie) i splajnach (TrimCurvesHostTest); przycinanie samej elipsy — jeszcze nie.
+- Nowe: podział bryły powierzchnią przez kilka krzywych z różnych szkiców (rekord -27, SurfaceSplitKernelProbe).

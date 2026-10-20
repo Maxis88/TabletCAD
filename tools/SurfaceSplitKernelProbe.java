@@ -44,6 +44,17 @@ public final class SurfaceSplitKernelProbe {
         CadProject shortCurve=split(new SketchPrimitive("s","Linia",20,30,80,30),false);
         double[] bad=NativeCadEngine.bodyInertia(shortCurve.width,shortCurve.height,shortCurve.depth,0,shortCurve.featureBase,packed(shortCurve),null);
         check(bad.length==0&&NativeCadEngine.lastFailure().getMessage().length()>0,"a curve inside the body is refused: "+NativeCadEngine.lastFailure().getMessage());
+        // Surface through two curves in different sketches (below and above the plate): a twisted split.
+        CadProject lf=HistoryKernelProbe.plate();lf.sketchOriginZ=-10;lf.sketch.add(new SketchPrimitive("low",new double[]{-10,20, 50,35, 110,20},"Splajn"));lf.archiveCurrentSketch();
+        lf.sketchId=java.util.UUID.randomUUID().toString();lf.sketch.clear();lf.sketchOriginZ=30;lf.sketch.add(new SketchPrimitive("high","Linia",-10,40,110,40));
+        List<SweepLoft.Placed> two=new ArrayList<>();for(SweepLoft.Placed x:SweepLoft.elements(lf))two.add(x);
+        check(two.size()==2,"two curves in two sketches");
+        double[] lrec=SurfaceSplit.createLoft(BodyGraph.allocate(lf),two,false);
+        lf.committedFeatures.add(lrec);lf.committedProfileIds.add(SurfaceSplit.loftRef(two));lf.featureBodyTargets.add(1);lf.featureBodyOutputs.add(1);
+        double[] lr=inertia(lf),la=body(lr,1),lb=body(lr,(int)lrec[1]);
+        check(Math.abs(la[1]+lb[1]-plate)<1e-3&&la[1]>plate*.2&&lb[1]>plate*.2,"surface through two curves splits the plate ("+la[1]+" + "+lb[1]+")");
+        CadProject lfl=CadProject.fromJson(new org.json.JSONObject(lf.toJson().toString()));
+        check(Math.abs(body(inertia(lfl),1)[1]-la[1])<1e-6,"loft split saved and reloaded");
         try{SurfaceSplit.create(9,Collections.emptyList(),100,false);check(false,"empty");}catch(IllegalArgumentException e){check(true,"a curve is required");}
         System.out.println("PASS SurfaceSplitKernelProbe: "+checks+" checks");
     }

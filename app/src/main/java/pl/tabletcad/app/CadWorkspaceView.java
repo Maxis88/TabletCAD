@@ -5672,7 +5672,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(ShellFeature.is(feature)){showShellEditor(index);return;}
         if(BodyCombine.is(feature)){beginBodyCombine((int)feature[1],index);return;}
         if(BodySplit.is(feature)){showBodySplit(index);return;}
-        if(SurfaceSplit.is(feature)){showBodySplit(index);return;}
+        if(SurfaceSplit.is(feature)||SurfaceSplit.isLoft(feature)){showBodySplit(index);return;}
         if(SweepLoft.bodyPattern(feature)){showBodyPatternDialog((int)feature[1],index);return;}
         if(SweepLoft.loft(feature)||SweepLoft.sweep(feature)){showLoftSweepEditor(index);return;}
         if(DraftFeature.is(feature)){showDraftEditor(index);return;}
@@ -6930,8 +6930,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
     // ---- Split a body by a plane ----
     private void showBodySplit(int editIndex) {
         double[] original=editIndex>=0?project.committedFeatures.get(editIndex):null;final double[] face=selectedPlanarFace();
-        final boolean surfaceOriginal=original!=null&&SurfaceSplit.is(original);
-        List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(original!=null)ids.remove(Integer.valueOf(surfaceOriginal?SurfaceSplit.created(original):BodySplit.created(original)));
+        final boolean loftOriginal=original!=null&&SurfaceSplit.isLoft(original);
+        final boolean surfaceOriginal=original!=null&&(SurfaceSplit.is(original)||loftOriginal);
+        List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(original!=null)ids.remove(Integer.valueOf(surfaceOriginal?(int)original[1]:BodySplit.created(original)));
         if(ids.isEmpty()){operationMessage="Brak bryły do podziału";invalidate();return;}
         String[] names=new String[ids.size()];for(int i=0;i<names.length;i++)names[i]=BodyGraph.name(project,ids.get(i));
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
@@ -6943,22 +6944,42 @@ if (isInsideViewport(e.getX(), e.getY())) {
         final int surfaceStart=choices.size();final List<SweepLoft.Placed> curves=new ArrayList<>();
         for(SweepLoft.Placed e:SweepLoft.elements(project))if(SurfaceSplit.usable(e.shape)){curves.add(e);choices.add("Powierzchnia z krzywej: "+e.sketchName+" · "+sketchEntityName(e.shape));}
         String originalRef=surfaceOriginal&&editIndex<project.committedProfileIds.size()?project.committedProfileIds.get(editIndex):null;
+        final int loftChoice=choices.size();if(curves.size()>=2)choices.add("Powierzchnia przez kilka krzywych (zaznacz poniżej, w kolejności)");
+        final List<android.widget.CheckBox> loftBoxes=new ArrayList<>();final LinearLayout loftList=new LinearLayout(getContext());loftList.setOrientation(LinearLayout.VERTICAL);
+        for(SweepLoft.Placed e:curves){android.widget.CheckBox box=new android.widget.CheckBox(getContext());box.setText(e.sketchName+" · "+sketchEntityName(e.shape));
+            if(loftOriginal&&originalRef!=null)for(String part:originalRef.substring(SurfaceSplit.LOFT_REF.length()).split("\\|"))if(part.equals(e.ref()))box.setChecked(true);
+            loftBoxes.add(box);loftList.addView(box);}
         android.widget.Spinner plane=new android.widget.Spinner(getContext());plane.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,choices));form.addView(plane);
         int axis=original==null||surfaceOriginal?0:Math.abs(original[5])>.5?0:Math.abs(original[6])>.5?1:2;plane.setSelection(original==null&&face!=null?3:axis);
-        if(surfaceOriginal)for(int i=0;i<curves.size();i++)if(originalRef!=null&&originalRef.equals(SurfaceSplit.REF+curves.get(i).ref()))plane.setSelection(surfaceStart+i);
+        if(surfaceOriginal&&!loftOriginal)for(int i=0;i<curves.size();i++)if(originalRef!=null&&originalRef.equals(SurfaceSplit.REF+curves.get(i).ref()))plane.setSelection(surfaceStart+i);
+        if(loftOriginal)plane.setSelection(loftChoice);
+        form.addView(loftList);loftList.setVisibility(plane.getSelectedItemPosition()==loftChoice?View.VISIBLE:View.GONE);
+        plane.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
+            public void onItemSelected(android.widget.AdapterView<?> parent,View view,int position,long id){loftList.setVisibility(position==loftChoice?View.VISIBLE:View.GONE);}
+            public void onNothingSelected(android.widget.AdapterView<?> parent){}});
         double[] centre={modelCenterX,modelCenterY,modelCenterZ};
         EditText offset=labeledCoordinate(form,"Położenie płaszczyzny [mm] (dla ściany: odsunięcie)",original!=null&&!surfaceOriginal?original[2+axis]:face!=null?0:centre[0]);
         android.widget.CheckBox flip=new android.widget.CheckBox(getContext());flip.setText("Odwróć strony podziału");flip.setChecked(surfaceOriginal?SurfaceSplit.flipped(original):original!=null&&original[5+axis]<0);form.addView(flip);
         android.content.DialogInterface.OnClickListener apply=(d,w)->{
             try {
                 int choice=plane.getSelectedItemPosition();
-                if(choice>=surfaceStart) {
+                if(choice==loftChoice&&curves.size()>=2) {
+                    List<SweepLoft.Placed> chosen=new ArrayList<>();for(int i=0;i<curves.size();i++)if(loftBoxes.get(i).isChecked())chosen.add(curves.get(i));
+                    int target=ids.get(body.getSelectedItemPosition());
+                    String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
+                    double[] record;String ref=SurfaceSplit.loftRef(chosen);
+                    if(editIndex>=0){record=SurfaceSplit.createLoft((int)original[1],chosen,flip.isChecked());next.committedFeatures.set(editIndex,record);next.committedProfileIds.set(editIndex,ref);}
+                    else {record=SurfaceSplit.createLoft(BodyGraph.allocate(next),chosen,flip.isChecked());next.committedFeatures.add(record);next.committedProfileIds.add(ref);next.featureBodyTargets.add(target);next.featureBodyOutputs.add(target);}
+                    BodyGraph.validate(next);commitProjectAsync(next,baseline,"Podział powierzchnią przez "+chosen.size()+" krzywe → nowa bryła: "+BodyGraph.name(next,(int)record[1]));
+                    return;
+                }
+                if(choice>=surfaceStart&&choice<loftChoice) {
                     List<SweepLoft.Placed> chosen=java.util.Collections.singletonList(curves.get(choice-surfaceStart));
                     int target=ids.get(body.getSelectedItemPosition());double[] fo=curves.get(choice-surfaceStart).frame;double reach=modelRadius+Math.sqrt(Math.pow(fo[0]-modelCenterX,2)+Math.pow(fo[1]-modelCenterY,2)+Math.pow(fo[2]-modelCenterZ,2));
                     double depth=Math.min(20000,Math.max(10,Math.max(4*modelExtent(),2.4*reach)));// covers every body, wherever the sketch plane lies
                     String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
                     double[] record;String ref=SurfaceSplit.ref(chosen);
-                    if(editIndex>=0){int created=surfaceOriginal?SurfaceSplit.created(original):BodySplit.created(original);record=SurfaceSplit.create(created,chosen,depth,flip.isChecked());next.committedFeatures.set(editIndex,record);next.committedProfileIds.set(editIndex,ref);}
+                    if(editIndex>=0){int created=surfaceOriginal?(int)original[1]:BodySplit.created(original);record=SurfaceSplit.create(created,chosen,depth,flip.isChecked());next.committedFeatures.set(editIndex,record);next.committedProfileIds.set(editIndex,ref);}
                     else {record=SurfaceSplit.create(BodyGraph.allocate(next),chosen,depth,flip.isChecked());next.committedFeatures.add(record);next.committedProfileIds.add(ref);next.featureBodyTargets.add(target);next.featureBodyOutputs.add(target);}
                     BodyGraph.validate(next);commitProjectAsync(next,baseline,SurfaceSplit.describe(record)+" → nowa bryła: "+BodyGraph.name(next,SurfaceSplit.created(record)));
                     return;
@@ -6969,7 +6990,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 int target=ids.get(body.getSelectedItemPosition());
                 String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
                 double[] record;
-                if(editIndex>=0){record=BodySplit.create(surfaceOriginal?SurfaceSplit.created(original):BodySplit.created(original),point,normal);next.committedFeatures.set(editIndex,record);next.committedProfileIds.set(editIndex,"");}
+                if(editIndex>=0){record=BodySplit.create(surfaceOriginal?(int)original[1]:BodySplit.created(original),point,normal);next.committedFeatures.set(editIndex,record);next.committedProfileIds.set(editIndex,"");}
                 else {record=BodySplit.create(BodyGraph.allocate(next),point,normal);next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(target);next.featureBodyOutputs.add(target);}
                 BodyGraph.validate(next);commitProjectAsync(next,baseline,BodySplit.describe(record)+" → nowa bryła: "+BodyGraph.name(next,BodySplit.created(record)));
             }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}

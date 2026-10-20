@@ -1135,32 +1135,29 @@ TopoDS_Shape transformBody(const TopoDS_Shape& shape,const double* f) {
 // Split by a surface: an open sketch path (lines, arcs, cubic spans) extruded symmetrically along
 // the sketch normal. Record: -26, created, depth, origin xyz, u xyz, v xyz, n, flip, 0, 0,
 // n segments (7 values) and a terminal slot (9, end x, end y, 0...). Returns {kept, created} or empty.
-bool surfaceSplit(const TopoDS_Shape& body,const double* c,int length,TopoDS_Shape& kept,TopoDS_Shape& created) {
-    const int n=static_cast<int>(c[12]);
-    if(n<1||n>128||c[12]!=std::floor(c[12])||length!=16+7*(n+1)||(c[13]!=0&&c[13]!=1)||c[14]!=0||c[15]!=0||!(c[2]>0)||c[2]>20000){kernelReason("Niepoprawne parametry podziału powierzchnią");return false;}
-    const double* end=c+16+7*n;if(end[0]!=9){kernelReason("Niepoprawne zakończenie ścieżki podziału");return false;}
-    const gp_Vec u(c[6],c[7],c[8]),v(c[9],c[10],c[11]);if(std::abs(u.Magnitude()-1)>1e-6||std::abs(v.Magnitude()-1)>1e-6||std::abs(u.Dot(v))>1e-6){kernelReason("Niepoprawny układ szkicu podziału");return false;}
-    gp_Vec normal=u.Crossed(v);normal.Normalize();
-    const gp_Pnt origin=gp_Pnt(c[3],c[4],c[5]).Translated(normal*(-c[2]/2));
+// Open wire of a split path (n segments + terminal slot) placed at origin with axes u, v.
+TopoDS_Wire splitPathWire(const double* segs,int n,const gp_Pnt& origin,const gp_Vec& u,const gp_Vec& v) {
+    const double* end=segs+7*n;if(end[0]!=9){kernelReason("Niepoprawne zakończenie ścieżki podziału");return {};}
     auto map=[&](double x,double y){return origin.Translated(u*x+v*y);};
     BRepBuilderAPI_MakeWire wire;
-    for(int i=0;i<n;i++){const double* sg=c+16+7*i;const double* next=c+16+7*(i+1);
-        // An arc or line slot must end where the next starts; the terminal slot carries the last end point.
-        double fake[7];const double* nx=next;if(i==n-1&&sg[0]!=2){fake[0]=0;fake[1]=sg[5];fake[2]=sg[6];nx=fake;if(std::hypot(sg[5]-end[1],sg[6]-end[2])>1e-6){kernelReason("Ścieżka podziału nie jest ciągła");return false;}}
-        TopoDS_Edge e=curveSegmentEdge(sg,nx,map);if(e.IsNull()){kernelReason("Ścieżka podziału zawiera niepoprawny odcinek");return false;}
-        wire.Add(e);if(!wire.IsDone()){kernelReason("Elementy ścieżki podziału nie tworzą ciągłej linii");return false;}}
-    TopoDS_Shape surface=BRepPrimAPI_MakePrism(wire.Wire(),normal*c[2]).Shape();
+    for(int i=0;i<n;i++){const double* sg=segs+7*i;const double* next=segs+7*(i+1);
+        TopoDS_Edge e=curveSegmentEdge(sg,next,map);if(e.IsNull()){kernelReason("Ścieżka podziału zawiera niepoprawny odcinek");return {};}
+        wire.Add(e);if(!wire.IsDone()){kernelReason("Elementy ścieżki podziału nie tworzą ciągłej linii");return {};}}
+    return wire.Wire();
+}
+// Splits body by a surface into exactly two solids; the part left of the side path (in plane origin/u/v) is kept.
+bool splitBySurface(const TopoDS_Shape& body,const TopoDS_Shape& surface,const TopoDS_Wire& sidePath,const gp_Pnt& origin,const gp_Vec& u,const gp_Vec& v,bool flip,TopoDS_Shape& kept,TopoDS_Shape& created) {
     if(surface.IsNull()){kernelReason("Nie można utworzyć powierzchni podziału");return false;}
     BRepAlgoAPI_Splitter splitter;NCollection_List<TopoDS_Shape> args,tools;args.Append(body);tools.Append(surface);
     splitter.SetArguments(args);splitter.SetTools(tools);splitter.Build();
     if(!splitter.IsDone()){kernelReason("OCCT nie podzielił bryły powierzchnią");return false;}
     std::vector<TopoDS_Shape> parts;const double total=shapeVolume(body),eps=std::max(1e-7,total*1e-9);
     for(TopExp_Explorer it(splitter.Shape(),TopAbs_SOLID);it.More();it.Next())if(shapeVolume(it.Current())>eps)parts.push_back(it.Current());
-    if(parts.size()!=2){kernelReason(parts.size()<2?"Powierzchnia nie przecina bryły na wylot – przedłuż krzywą poza bryłę":"Powierzchnia dzieli bryłę na więcej niż dwie części");return false;}
-    // Side of each part: left (+) or right (−) of the path direction in the sketch plane, measured
-    // at the path point nearest to the part's centre of mass (path sampled along its edges in order).
+    if(parts.size()!=2){kernelReason(parts.size()<2?"Powierzchnia nie przecina bryły na wylot – przedłuż krzywe poza bryłę":"Powierzchnia dzieli bryłę na więcej niż dwie części");return false;}
+    // Side of each part: left (+) or right (−) of the path direction in the plane, at the path point
+    // nearest to the part's centre of mass (path sampled along its edges in order).
     std::vector<std::array<double,2>> path;
-    for(BRepTools_WireExplorer it(wire.Wire());it.More();it.Next()){BRepAdaptor_Curve curve(it.Current());const bool reversed=it.Current().Orientation()==TopAbs_REVERSED;
+    for(BRepTools_WireExplorer it(sidePath);it.More();it.Next()){BRepAdaptor_Curve curve(it.Current());const bool reversed=it.Current().Orientation()==TopAbs_REVERSED;
         const double t0=curve.FirstParameter(),t1=curve.LastParameter();
         for(int k=0;k<=32;k++){double t=reversed?t1-(t1-t0)*k/32.0:t0+(t1-t0)*k/32.0;gp_Vec d(origin,curve.Value(t));path.push_back({d.Dot(u),d.Dot(v)});}}
     auto side=[&](const TopoDS_Shape& part){GProp_GProps props;BRepGProp::VolumeProperties(part,props);gp_Vec d(origin,props.CentreOfMass());const double gx=d.Dot(u),gy=d.Dot(v);
@@ -1170,10 +1167,46 @@ bool surfaceSplit(const TopoDS_Shape& body,const double* c,int length,TopoDS_Sha
             if(dist<best){best=dist;sign=bx*(gy-fy)-by*(gx-fx);}}
         return sign;};
     double a=side(parts[0]),b=side(parts[1]);
-    int keep=(a>=b)?0:1;if(c[13]==1)keep=1-keep;
+    int keep=(a>=b)?0:1;if(flip)keep=1-keep;
     kept=parts[keep];created=parts[1-keep];
     if(!BRepCheck_Analyzer(kept).IsValid()||!BRepCheck_Analyzer(created).IsValid()){kernelReason("Podział dał niepoprawną topologię");return false;}
     return true;
+}
+// Split by a surface: an open sketch path (lines, arcs, cubic spans) extruded symmetrically along
+// the sketch normal. Record: -26, created, depth, origin xyz, u xyz, v xyz, n, flip, 0, 0,
+// n segments (7 values) and a terminal slot (9, end x, end y, 0...).
+bool surfaceSplit(const TopoDS_Shape& body,const double* c,int length,TopoDS_Shape& kept,TopoDS_Shape& created) {
+    const int n=static_cast<int>(c[12]);
+    if(n<1||n>128||c[12]!=std::floor(c[12])||length!=16+7*(n+1)||(c[13]!=0&&c[13]!=1)||c[14]!=0||c[15]!=0||!(c[2]>0)||c[2]>20000){kernelReason("Niepoprawne parametry podziału powierzchnią");return false;}
+    gp_Vec u,v;
+    u=gp_Vec(c[6],c[7],c[8]);v=gp_Vec(c[9],c[10],c[11]);if(std::abs(u.Magnitude()-1)>1e-6||std::abs(v.Magnitude()-1)>1e-6||std::abs(u.Dot(v))>1e-6){kernelReason("Niepoprawny układ szkicu podziału");return false;}
+    gp_Vec normal=u.Crossed(v);normal.Normalize();
+    const gp_Pnt origin=gp_Pnt(c[3],c[4],c[5]).Translated(normal*(-c[2]/2));
+    TopoDS_Wire wire=splitPathWire(c+16,n,origin,u,v);if(wire.IsNull())return false;
+    TopoDS_Shape surface=BRepPrimAPI_MakePrism(wire,normal*c[2]).Shape();
+    return splitBySurface(body,surface,wire,origin,u,v,c[13]==1,kept,created);
+}
+// Split by a surface through k open curves of different sketches (loft of open wires).
+// Record: -27, created, 0, k, flip, 11 zeros, then k sections: origin xyz, u xyz, v xyz, n, n segments, terminal slot.
+bool loftSplit(const TopoDS_Shape& body,const double* c,int length,TopoDS_Shape& kept,TopoDS_Shape& created) {
+    const int k=static_cast<int>(c[3]);
+    if(k<2||k>16||c[3]!=std::floor(c[3])||(c[4]!=0&&c[4]!=1)){kernelReason("Niepoprawne parametry podziału powierzchnią");return false;}
+    for(int i=5;i<16;i++)if(c[i]!=0){kernelReason("Niepoprawne parametry podziału powierzchnią");return false;}
+    BRepOffsetAPI_ThruSections loft(false,false,1e-6);loft.CheckCompatibility(true);
+    int at=16;TopoDS_Wire first;gp_Pnt firstOrigin;gp_Vec fu,fv;
+    for(int s=0;s<k;s++){
+        if(at+10>length){kernelReason("Niekompletny przekrój powierzchni podziału");return false;}
+        const double* sec=c+at;const int n=static_cast<int>(sec[9]);
+        if(n<1||n>128||sec[9]!=std::floor(sec[9])||at+10+7*(n+1)>length){kernelReason("Niepoprawna krzywa powierzchni podziału");return false;}
+        gp_Vec u(sec[3],sec[4],sec[5]),v(sec[6],sec[7],sec[8]);
+        if(std::abs(u.Magnitude()-1)>1e-6||std::abs(v.Magnitude()-1)>1e-6||std::abs(u.Dot(v))>1e-6){kernelReason("Niepoprawny układ szkicu podziału");return false;}
+        const gp_Pnt o(sec[0],sec[1],sec[2]);TopoDS_Wire w=splitPathWire(sec+10,n,o,u,v);if(w.IsNull())return false;
+        if(s==0){first=w;firstOrigin=o;fu=u;fv=v;}
+        loft.AddWire(w);at+=10+7*(n+1);
+    }
+    if(at!=length){kernelReason("Niepoprawna długość zapisu podziału");return false;}
+    loft.Build();if(!loft.IsDone()){kernelReason("OCCT nie utworzył powierzchni przez krzywe (sprawdź kolejność i kierunek krzywych)");return false;}
+    return splitBySurface(body,loft.Shape(),first,firstOrigin,fu,fv,c[4]==1,kept,created);
 }
 TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& values,const std::vector<double>& rootBase,const TopoDS_Shape& rootShape,bool imported,BodyShapes* finalBodies,FaceOrigins* finalOrigins,EvalCache* cache=nullptr,const FaceOrigins* seed=nullptr,int seedTag=0) {
     const int count=static_cast<int>(values.size());int featureNumber=0;BodyShapes bodies;bool indexed=false;FaceOrigins origins;
@@ -1220,6 +1253,14 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                     const double total=shapeVolume(a),eps=std::max(1e-7,total*1e-9);
                     for(const auto& part:sides)if(part.IsNull()||countShapes(part,TopAbs_SOLID)==0||shapeVolume(part)<=eps||!BRepCheck_Analyzer(part).IsValid()){kernelFailAt(tag,"Płaszczyzna podziału nie przecina bryły");return {};}
                     bodies[target]=sides[0];bodies[created]=sides[1];
+                    BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
+                    updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
+                }
+                if(length>=30&&record[0]==-27) {
+                    const double* c=record.data();const int created=static_cast<int>(c[1]);
+                    if(target==0||c[1]!=std::floor(c[1])||created<2||bodies.contains(created)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                    TopoDS_Shape kept,made;if(!loftSplit(bodies[target],c,length,kept,made)){kernelFailAt(tag,"Podział powierzchnią przez krzywe nie powiódł się");return {};}
+                    bodies[target]=kept;bodies[created]=made;
                     BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);for(const auto& body:bodies)builder.Add(compound,body.second);shape=compound;
                     updateOrigins(prior,shape,tag,origins);i+=16+length;continue;
                 }
