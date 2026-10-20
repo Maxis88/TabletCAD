@@ -8323,6 +8323,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 return;
             } else if (inSketch()) {
                 mode = "Wybierz";
+            } else if (selectedFace>=0&&isFacePlanar(selectedFace)&&project.hasSolid()&&project.importedMeshSource==null) {
+                // A selected planar face is pulled or pushed (like press-pull), not some sketch next to it.
+                beginFaceOffsetTool();
+                return;
             }
             extrudeSketchProfile();
         } else if (tool.equals("Głębokość")) showDepthEditor();
