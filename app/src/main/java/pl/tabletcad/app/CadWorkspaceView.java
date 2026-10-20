@@ -2390,6 +2390,13 @@ if (isInsideViewport(e.getX(), e.getY())) {
         text(canvas,label,x,y,10,Color.rgb(117,70,160),true,Paint.Align.CENTER);dimensionHits.add(new DimensionHit(entity.id,"angle",0,bounds));
     }
     private boolean dimensionReplay;
+    private final Runnable dimensionHold=()->{
+        if(dimensionTouch==null||!mode.equals("Szkic"))return;
+        dimensionTouch=null;lastDimensionHit=null;long now=android.os.SystemClock.uptimeMillis();
+        MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,dimensionTouchX,dimensionTouchY,0);
+        dimensionReplay=true;try{touchEvent(down);}finally{dimensionReplay=false;down.recycle();}
+        removeCallbacks(drawGrab);drawGrab.run();
+    };
     private boolean handleDimensionTouch(MotionEvent event) {
         if(!inSketch()||!showSketchDimensions||dimensionReplay)return false;
         int action=event.getActionMasked();
@@ -2398,9 +2405,13 @@ if (isInsideViewport(e.getX(), e.getY())) {
             for(DimensionHit hit:dimensionHits)if(hit.bounds.contains(event.getX(),event.getY())){
                 double distance=Math.hypot(event.getX()-hit.bounds.centerX(),event.getY()-hit.bounds.centerY());if(distance<best){nearest=hit;best=distance;}
             }
-            if(nearest!=null){dimensionTouch=nearest;dimensionTouchX=event.getX();dimensionTouchY=event.getY();return true;}
+            if(nearest!=null){dimensionTouch=nearest;dimensionTouchX=event.getX();dimensionTouchY=event.getY();
+                // While drawing, holding still on a label grabs the element under it (same as a long press elsewhere).
+                removeCallbacks(dimensionHold);if(mode.equals("Szkic")&&sketchPlaneChosen)postDelayed(dimensionHold,android.view.ViewConfiguration.getLongPressTimeout());
+                return true;}
         }
         if(dimensionTouch==null)return false;
+        if(action!=MotionEvent.ACTION_DOWN&&action!=MotionEvent.ACTION_MOVE||Math.hypot(event.getX()-dimensionTouchX,event.getY()-dimensionTouchY)>dp(12))removeCallbacks(dimensionHold);
         if(event.getPointerCount()>1||action==MotionEvent.ACTION_CANCEL){dimensionTouch=null;lastDimensionHit=null;return false;}
         if(Math.hypot(event.getX()-dimensionTouchX,event.getY()-dimensionTouchY)>dp(12)) {
             // Not a tap on the value: the finger is dragging what lies under the label (e.g. a small circle
