@@ -4117,9 +4117,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return PrintExport.overhang(mesh[o+11],project.overhangAngle);
     }
     private int meshFaceColor(ProjectedTriangle triangle) {
-        int shade = 207 + (int)Math.round(22.0 * Math.abs(triangle.nz)
-            + 9.0 * Math.abs(triangle.ny));
-        return Color.rgb(Math.min(238, shade), Math.min(246, shade + 18), Math.min(244, shade + 16));
+        // Lighting in camera space: a key light from the upper left (in front of the viewer) and a weak
+        // fill, so faces turned towards / away from the light differ clearly and edges read as 3D.
+        double yaw=Math.toRadians(cameraYaw),pitch=Math.toRadians(cameraPitch);
+        double rx=triangle.nx*Math.cos(yaw)+triangle.nz*Math.sin(yaw),rz=-triangle.nx*Math.sin(yaw)+triangle.nz*Math.cos(yaw);
+        double ry=triangle.ny*Math.cos(pitch)-rz*Math.sin(pitch),cz=triangle.ny*Math.sin(pitch)+rz*Math.cos(pitch);
+        return ShadeModel.color(rx,ry,cz);
     }
 
     private int findFaceAt(float x, float y) {
