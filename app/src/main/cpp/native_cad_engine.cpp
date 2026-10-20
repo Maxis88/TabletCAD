@@ -9,6 +9,9 @@
 #include <map>
 #include <mutex>
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <sys/stat.h>
 
 #include <BRepBndLib.hxx>
@@ -51,6 +54,7 @@
 #include <NCollection_IndexedDataMap.hxx>
 #include <NCollection_List.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
+#include <NCollection_DataMap.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
@@ -1616,7 +1620,9 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         cache.source=keySource;cache.sourceSize=keySize;cache.sourceTime=keyTime;cache.root=rootShape;cache.initial=shape;cache.rootBase=rootBase;
         }
         BodyShapes bodies;FaceOrigins origins;
-        shape=evaluateRecords(shape,values,rootBase,rootShape,javaSourceStep!=nullptr,&bodies,&origins,&cache);
+        auto perfT0=std::chrono::steady_clock::now();
+        auto perf=[&](const char* what){if(std::getenv("TABLETCAD_PERF")){auto now=std::chrono::steady_clock::now();std::fprintf(stderr,"perf %s %.1f ms\n",what,std::chrono::duration<double,std::milli>(now-perfT0).count());perfT0=now;}};
+        shape=evaluateRecords(shape,values,rootBase,rootShape,javaSourceStep!=nullptr,&bodies,&origins,&cache);perf("records");
         if(shape.IsNull()){kernelReason("Przebudowa modelu nie powiodła się");return env->NewDoubleArray(0);}
         if (!exportPath.empty()) {
             STEPControl_Writer writer;
@@ -1654,10 +1660,15 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
         }
         if(queryMode==6||queryMode==8) {
             std::vector<double> info,cylinders;int face=0;
+            // Hashed lookups (face → body, face → creating operation): a thread has hundreds of faces and
+            // the former pairwise IsSame scans made every preview of such a model take seconds.
+            NCollection_DataMap<TopoDS_Shape,int,TopTools_ShapeMapHasher> faceBody,faceOrigin;
+            for(const auto& body:bodies)for(TopExp_Explorer f(body.second,TopAbs_FACE);f.More();f.Next())if(!faceBody.IsBound(f.Current()))faceBody.Bind(f.Current(),body.first);
+            for(const auto& known:origins)if(!faceOrigin.IsBound(known.first))faceOrigin.Bind(known.first,known.second);
             for(TopExp_Explorer e(shape,TopAbs_FACE);e.More();e.Next()) {
                 int bodyId=0,origin=-1;face++;
-                for(const auto& body:bodies){for(TopExp_Explorer f(body.second,TopAbs_FACE);f.More();f.Next())if(e.Current().IsSame(f.Current())){bodyId=body.first;break;}if(bodyId)break;}
-                for(const auto& known:origins)if(e.Current().IsSame(known.first)){origin=known.second;break;}
+                if(const int* b=faceBody.Seek(e.Current()))bodyId=*b;
+                if(const int* o=faceOrigin.Seek(e.Current()))origin=*o;
                 info.push_back(face);info.push_back(bodyId);info.push_back(origin);
                 BRepAdaptor_Surface surface(TopoDS::Face(e.Current()),true);
                 if(surface.GetType()==GeomAbs_Cylinder) {
@@ -1666,14 +1677,20 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
                         const gp_Cylinder cylinder=surface.Cylinder();const gp_Pnt p=cylinder.Location();const gp_Dir axis=cylinder.Axis().Direction();
                         const double v=(vmin+vmax)/2,epsilon=std::max(1e-5,std::min(.001,cylinder.Radius()*.001));
                         gp_Pnt center=p.Translated(gp_Vec(axis)*v);gp_Vec radial(center,surface.Value((umin+umax)/2,v));if(radial.SquareMagnitude()<1e-12)continue;radial.Normalize();
-                        BRepClass3d_SolidClassifier inner(bodies.at(bodyId),center.Translated(radial*(cylinder.Radius()-epsilon)),1e-7),outer(bodies.at(bodyId),center.Translated(radial*(cylinder.Radius()+epsilon)),1e-7);
-                        if(inner.State()!=TopAbs_OUT||outer.State()!=TopAbs_IN)continue;
+                        static_cast<void>(epsilon);
+                        // A hole is a concave cylinder: the face's outward normal (surface normal, flipped for a
+                        // reversed face) points towards the axis. Exact and cheap — classifying points against a
+                        // threaded solid took hundreds of milliseconds per face.
+                        gp_Pnt on;gp_Vec du,dv;surface.D1((umin+umax)/2,v,on,du,dv);gp_Vec normal=du.Crossed(dv);if(normal.SquareMagnitude()<1e-18)continue;
+                        if(e.Current().Orientation()==TopAbs_REVERSED)normal.Reverse();
+                        if(normal.Dot(radial)>=0)continue;
                         for(double value:{static_cast<double>(face),static_cast<double>(bodyId),cylinder.Radius(),p.X(),p.Y(),p.Z(),axis.X(),axis.Y(),axis.Z(),vmin,vmax,umin,umax,1.0,0.0})cylinders.push_back(value);
                     }
                 }
             }
+            perf("faces+holes");
             if(queryMode==8&&!cylinders.empty()){info.push_back(-8);info.push_back(static_cast<double>(cylinders.size()/15));info.push_back(0);info.insert(info.end(),cylinders.begin(),cylinders.end());}
-            if(queryMode==8){std::vector<double> mesh=tessellatedTriangles(shape);if(mesh.empty()){kernelFailAt(-2,"Triangulacja bryły nie powiodła się");return env->NewDoubleArray(0);}std::vector<double> combined;combined.reserve(1+mesh.size()+info.size());combined.push_back(static_cast<double>(mesh.size()));combined.insert(combined.end(),mesh.begin(),mesh.end());combined.insert(combined.end(),info.begin(),info.end());info=std::move(combined);}
+            if(queryMode==8){std::vector<double> mesh=tessellatedTriangles(shape);perf("tessellation");if(mesh.empty()){kernelFailAt(-2,"Triangulacja bryły nie powiodła się");return env->NewDoubleArray(0);}std::vector<double> combined;combined.reserve(1+mesh.size()+info.size());combined.push_back(static_cast<double>(mesh.size()));combined.insert(combined.end(),mesh.begin(),mesh.end());combined.insert(combined.end(),info.begin(),info.end());info=std::move(combined);}
             jdoubleArray result=env->NewDoubleArray(static_cast<jsize>(info.size()));if(result&&!info.empty())env->SetDoubleArrayRegion(result,0,static_cast<jsize>(info.size()),info.data());return result;
         }
         if(queryMode==13) {
