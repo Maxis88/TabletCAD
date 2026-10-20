@@ -2398,7 +2398,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         removeCallbacks(drawGrab);drawGrab.run();
     };
     private boolean handleDimensionTouch(MotionEvent event) {
-        if(!inSketch()||!showSketchDimensions||dimensionReplay)return false;
+        if(!inSketch()||!showSketchDimensions||dimensionReplay||multiSelect)return false;// while selecting several elements a tap selects, it does not edit values
         int action=event.getActionMasked();
         if(action==MotionEvent.ACTION_DOWN&&event.getPointerCount()==1&&isInsideViewport(event.getX(),event.getY())) {
             DimensionHit nearest=null;double best=Double.POSITIVE_INFINITY;
