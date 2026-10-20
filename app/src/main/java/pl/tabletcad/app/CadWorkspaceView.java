@@ -4399,7 +4399,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
             android.os.Handler ui=new android.os.Handler(android.os.Looper.getMainLooper());
             geometryPreviewWorker=new GeometryPreviewWorker(task->ui.post(task));
         }
-        geometryPreviewWorker.submit(query,(mesh,error)-> {
+        final long previewStart=android.os.SystemClock.uptimeMillis();
+        geometryPreviewWorker.submit(()->{long t=android.os.SystemClock.uptimeMillis();double[] m=query.call();perf("preview kernel",t);return m;},(mesh,error)-> {
+            perf("preview total (queue+kernel+ui)",previewStart);
             if(propertyEditor!=owner)return;
             // An invalid/intermediate solid must never replace the last valid
             // preview: it would otherwise make the model flash/disappear.
@@ -6146,7 +6148,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
         try {project=next;base=evaluationBase()==null?null:evaluationBase().clone();features=kernelFeatures();}finally {project=current;}
         final String source=next.importedStep?new File(projectRepository.importedStepFile().getParentFile(),next.importedStepSource).getAbsolutePath():null;
         if(modelCommitWorker==null)modelCommitWorker=new GeometryPreviewWorker(task->post(task));modelOperationPending=true;operationMessage="Obliczanie geometrii…";invalidate();
-        modelCommitWorker.submit(()->NativeCadEngine.evaluateModelChecked(next.width,next.height,next.depth,next.importedStep?0:next.filletRadius,base,features,source),(packed,error)->{
+        final long commitStart=android.os.SystemClock.uptimeMillis();
+        modelCommitWorker.submit(()->{long t=android.os.SystemClock.uptimeMillis();double[] r=NativeCadEngine.evaluateModelChecked(next.width,next.height,next.depth,next.importedStep?0:next.filletRadius,base,features,source);perf("commit kernel",t);return r;},(packed,error)->{
+            perf("commit queue+kernel",commitStart);long applyStart=android.os.SystemClock.uptimeMillis();post(()->perf("commit apply+first frame",applyStart));
             modelOperationPending=false;
             try {
                 if(error!=null)throw new IllegalArgumentException(error.getMessage());CadModelResult result=new CadModelResult(packed);
@@ -7660,6 +7664,11 @@ if (isInsideViewport(e.getX(), e.getY())) {
         finally{project=keep;modelWidth=w;modelHeight=h;modelDepth=d;}
     }
     private boolean commitModelChange(Runnable change) {
+        long perfStart=android.os.SystemClock.uptimeMillis();try{return commitModelChangeTimed(change);}finally{perf("commitModelChange",perfStart);}
+    }
+    /** Timing of model operations in logcat (tag TabletCAD-perf) to find slow steps on the device. */
+    private static void perf(String what,long start){android.util.Log.i("TabletCAD-perf",what+" "+(android.os.SystemClock.uptimeMillis()-start)+" ms");}
+    private boolean commitModelChangeTimed(Runnable change) {
         CadProject previous = project;
         double[] previousMesh = nativeMesh, previousPrism = nativePrism;
         java.util.Map<Integer,Integer> previousFaceBodies=faceBodies,previousFaceFeatures=faceFeatures;
