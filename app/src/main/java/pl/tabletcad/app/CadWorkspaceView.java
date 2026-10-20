@@ -2389,8 +2389,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         text(canvas,label,x,y,10,Color.rgb(117,70,160),true,Paint.Align.CENTER);dimensionHits.add(new DimensionHit(entity.id,"angle",0,bounds));
     }
+    private boolean dimensionReplay;
     private boolean handleDimensionTouch(MotionEvent event) {
-        if(!inSketch()||!showSketchDimensions)return false;
+        if(!inSketch()||!showSketchDimensions||dimensionReplay)return false;
         int action=event.getActionMasked();
         if(action==MotionEvent.ACTION_DOWN&&event.getPointerCount()==1&&isInsideViewport(event.getX(),event.getY())) {
             DimensionHit nearest=null;double best=Double.POSITIVE_INFINITY;
@@ -2400,7 +2401,15 @@ if (isInsideViewport(e.getX(), e.getY())) {
             if(nearest!=null){dimensionTouch=nearest;dimensionTouchX=event.getX();dimensionTouchY=event.getY();return true;}
         }
         if(dimensionTouch==null)return false;
-        if(event.getPointerCount()>1||action==MotionEvent.ACTION_CANCEL||Math.hypot(event.getX()-dimensionTouchX,event.getY()-dimensionTouchY)>dp(12)){dimensionTouch=null;lastDimensionHit=null;return false;}
+        if(event.getPointerCount()>1||action==MotionEvent.ACTION_CANCEL){dimensionTouch=null;lastDimensionHit=null;return false;}
+        if(Math.hypot(event.getX()-dimensionTouchX,event.getY()-dimensionTouchY)>dp(12)) {
+            // Not a tap on the value: the finger is dragging what lies under the label (e.g. a small circle
+            // whose Ø sits inside it). Replay the press for the normal handlers, then continue with this move.
+            dimensionTouch=null;lastDimensionHit=null;
+            MotionEvent down=MotionEvent.obtain(event.getDownTime(),event.getDownTime(),MotionEvent.ACTION_DOWN,dimensionTouchX,dimensionTouchY,0);
+            dimensionReplay=true;try{touchEvent(down);}finally{dimensionReplay=false;down.recycle();}
+            return false;
+        }
         if(action==MotionEvent.ACTION_UP) {
             DimensionHit hit=dimensionTouch;dimensionTouch=null;long now=android.os.SystemClock.uptimeMillis();selectedSketchId=hit.entityId;
             // One tap on a dimension value opens its editor (a repeated tap of the same value is ignored while it is open).
