@@ -629,6 +629,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                         selectFilletEdge(e.getX(),e.getY());return true;
                     }
                     if(positionPickId!=null&&inSketch()){positionPickTap(e.getX(),e.getY());return true;}
+                    if(pathPatternSource!=null&&inSketch()){pathPatternTap(e.getX(),e.getY());return true;}
                     if (mode.equals("Edytuj szkic")) {
                         if(cornerFilletPicking){cornerFilletTap(e.getX(),e.getY());return true;}
                         if(coincidenceMode){coincidenceTap(e.getX(),e.getY());return true;}
@@ -787,7 +788,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 polylinePreview=null;snapMarker=null;invalidate();return true;
             }
         }
-        if (mode.equals("Edytuj szkic") && !trimMode && !dimensionMode && !coincidenceMode && !cornerFilletPicking && positionPickId==null) {
+        if (mode.equals("Edytuj szkic") && !trimMode && !dimensionMode && !coincidenceMode && !cornerFilletPicking && positionPickId==null && pathPatternSource==null) {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN
                     && isInsideViewport(event.getX(), event.getY())) {
                 draggedSketch = null;
@@ -1116,7 +1117,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private void recoverFromError(String where,RuntimeException error) {
         CrashReport.note(getContext(),where,error);
         try{closePropertyEditor();}catch(RuntimeException ignored){}
-        draggedSketch=dragPreview=null;dragSolvedPreview=null;sketching=false;sketchRect=null;snapMarker=null;positionPickId=null;positionNext=false;multiSelect=false;sketchMulti.clear();
+        draggedSketch=dragPreview=null;dragSolvedPreview=null;sketching=false;sketchRect=null;snapMarker=null;positionPickId=null;positionNext=false;pathPatternSource=null;multiSelect=false;sketchMulti.clear();
         sketchGhost.clear();drawGrabTarget=null;removeCallbacks(drawGrab);
         operationMessage=where+": błąd ("+error.getClass().getSimpleName()+(error.getMessage()==null?"":": "+error.getMessage())+"). Dane projektu nie zostały utracone.";
         invalidate();
@@ -1864,7 +1865,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             if(inSketch() && showSketchDimensions)drawSketchDrivingDimensions(canvas,shown);
         }
         if(!sketchGhost.isEmpty()){ghostDrawing=true;for(SketchPrimitive ghost:sketchGhost)drawSketchEntity(canvas,ghost);ghostDrawing=false;paint.setPathEffect(null);}
-        if(inSketch() && showSketchDimensions)drawPositionDimensions(canvas,displayedSketch);
+        if(inSketch() && showSketchDimensions){drawPositionDimensions(canvas,displayedSketch);drawAngleDimensions(canvas,displayedSketch);}
         paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1.5f));paint.setColor(Color.rgb(117,70,160));
         if(inSketch())for(SketchConstraints.Link link:project.coincidences)for(SketchPrimitive p:displayedSketch)if(p.id.equals(link.a)) {
             double[] a=SketchConstraints.anchor(p,link.ai);
@@ -2126,6 +2127,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     private void showDimensionValueEditor(DimensionHit hit) {
         if(hit.entityId.startsWith("link:")){showPositionDimensionEditor(Integer.parseInt(hit.entityId.substring(5)));return;}
+        if(hit.entityId.startsWith("angle:")){int index=Integer.parseInt(hit.entityId.substring(6));if(index>=0&&index<project.coincidences.size()){SketchConstraints.Link l=project.coincidences.get(index);SketchPrimitive a=null,b=null;for(SketchPrimitive p:project.sketch){if(p.id.equals(l.a))a=p;if(p.id.equals(l.b))b=p;}if(a!=null&&b!=null)showAngleEditor(index,a,b);}return;}
         SketchPrimitive found=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(hit.entityId))found=p;
         if(found==null)return;final SketchPrimitive source=found;beginSketchWork();mode="Edytuj szkic";
         if(source.isEllipse()) {
@@ -2190,6 +2192,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     /** Element being positioned while the user points at a reference (sketch point, element or body edge). */
     private String positionPickId;private int positionPickPoint;private List<String> positionGroup;
+    /** Element waiting for its path in "Szyk po ścieżce". */
+    private String pathPatternSource;
     /** Multi-selection in a sketch: tap toggles, dragging a member moves the whole group. */
     private final java.util.Set<String> sketchMulti=new java.util.LinkedHashSet<>();private boolean multiSelect;private double[] groupDrag;
     private static final String GROUP_ID="\u0000group";
@@ -2268,6 +2272,38 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }).show();
         Runnable ghost=()->{sketchGhost.clear();try{showSolvedGhost(compute.get().sketch);}catch(IllegalArgumentException ignored){}invalidate();};
         watchFields(form,ghost);
+    }
+    private void pathPatternTap(float x,float y) {
+        String id=pathPatternSource;SketchPrimitive path=findSketchAt(x,y);
+        if(path==null||path.id.equals(id)){operationMessage="Dotknij ścieżki (innego elementu niż powielany)";invalidate();return;}
+        pathPatternSource=null;showPathPattern(id,path.id);
+    }
+    /** Copies of an element at equal steps along a path, with live preview. */
+    private void showPathPattern(String id,String pathId) {
+        SketchPrimitive source=null,path=null;for(SketchPrimitive p:project.sketch){if(p.id.equals(id))source=p;if(p.id.equals(pathId))path=p;}
+        if(source==null||path==null)return;final SketchPrimitive src=source,way=path;
+        double length;try{length=SketchPathPattern.path(way).length;}catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();return;}
+        beginSketchWork();mode="Edytuj szkic";
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Ścieżka: "+sketchEntityName(way)+" · długość "+formatMm(length)+(way.closedGeometry()?" (zamknięta: elementy równo dookoła)":" (otwarta: elementy od początku do końca)"));form.addView(info);
+        EditText count=coordinateInput("Liczba elementów",5);android.widget.TextView label=new android.widget.TextView(getContext());label.setText("Liczba elementów (z oryginałem)");form.addView(label);form.addView(count);
+        android.widget.CheckBox start=new android.widget.CheckBox(getContext());start.setText("Przenieś element na początek ścieżki");start.setChecked(true);form.addView(start);
+        android.widget.CheckBox turn=new android.widget.CheckBox(getContext());turn.setText("Obracaj zgodnie z kierunkiem ścieżki");turn.setChecked(false);form.addView(turn);
+        java.util.function.Supplier<List<SketchPrimitive>> compute=()->{
+            double n=parseCoordinate(count);if(n!=Math.rint(n))throw new IllegalArgumentException("Liczba elementów musi być całkowita");
+            SketchPrimitive base=src;if(start.isChecked()){double[] d=SketchPathPattern.snapToStart(src,way);base=SketchTransform.move(src,d[0],d[1]);}
+            List<SketchPrimitive> result=new ArrayList<>();result.add(base);result.addAll(SketchPathPattern.copies(base,way,(int)n,turn.isChecked()));return result;
+        };
+        new PropertyBuilder().setTitle("Szyk po ścieżce").setView(form).setNegativeButton("Anuluj",(d,w)->{sketchGhost.clear();invalidate();}).setPositiveButton("Utwórz",(d,w)->{
+            sketchGhost.clear();
+            try{List<SketchPrimitive> made=compute.get();SketchPrimitive base=made.get(0);
+                List<SketchPrimitive> geometry=base==src?new ArrayList<>(project.sketch):SketchConstraints.edit(project.sketch,project.coincidences,src.id,base);
+                geometry.addAll(made.subList(1,made.size()));
+                if(applySolvedSketch(geometry,new ArrayList<>(project.coincidences)))operationMessage="Szyk po ścieżce: "+made.size()+" el. (kopie są niezależne)";}
+            catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+            invalidate();}).show();
+        Runnable ghost=()->{sketchGhost.clear();try{sketchGhost.addAll(compute.get());}catch(IllegalArgumentException ignored){}invalidate();};
+        watchFields(form,ghost);ghost.run();
     }
     /** "Położenie" of the multi-selection: a point of the common box at X/Y from a reference, or alignment. */
     private void showGroupPosition(int pointChoice,String refId,int refAnchor) {
@@ -2417,6 +2453,66 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return SketchDimensions.apply(source,first,second,true);
     }
 
+    /** Driving angle between two lines: new (index −1) or edit of a stored relation; live ghost. */
+    private void showAngleEditor(int index,SketchPrimitive a,SketchPrimitive b) {
+        beginSketchWork();mode="Edytuj szkic";
+        double current=Math.abs(NonlinearConstraints.angle(a,b));if(current<=0.001||current>=179.999)current=90;
+        final SketchConstraints.Link existing=index>=0&&index<project.coincidences.size()?project.coincidences.get(index):null;
+        if(existing!=null)current=Math.abs(existing.x);
+        EditText input=coordinateInput("Kąt [°]",current);
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Kąt sterujący między liniami (0–180°). Pierwsza wskazana linia pozostaje, druga obraca się wokół swojego początku.");form.addView(info);form.addView(input);
+        java.util.function.Function<Double,List<SketchConstraints.Link>> links=value->{
+            List<SketchConstraints.Link> list=new ArrayList<>(project.coincidences);
+            double stored=existing!=null?Math.copySign(value,existing.x==0?1:existing.x):NonlinearConstraints.angleValue(a,b,value);
+            if(!(value>0&&value<180))throw new IllegalArgumentException("Kąt musi być w zakresie 0–180°");
+            SketchConstraints.Link link=existing!=null?SketchConstraints.withValue(existing,stored):new SketchConstraints.Link("angle",a.id,0,b.id,0,stored,0);
+            if(existing!=null)list.set(list.indexOf(existing),link);else list.add(link);return list;
+        };
+        java.util.function.Function<Double,List<SketchPrimitive>> solve=value->{
+            List<SketchConstraints.Link> list=links.apply(value);
+            return existing!=null?SketchConstraints.resolve(project.sketch,list):SketchConstraints.connect(project.sketch,project.coincidences,list.get(list.size()-1));
+        };
+        new PropertyBuilder().setTitle(existing!=null?"Kąt między liniami":"Nowy kąt między liniami").setView(form).setNegativeButton("Anuluj",(d,w)->{sketchGhost.clear();invalidate();})
+            .setPositiveButton("Zastosuj",(d,w)->{sketchGhost.clear();
+                try{double value=parseCoordinate(input);if(applySolvedSketch(solve.apply(value),links.apply(value)))operationMessage="Kąt ∠ "+formatAngle(value)+" — wymiar sterujący widoczny na szkicu";}
+                catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+                invalidate();}).show();
+        watchFields(input,()->{sketchGhost.clear();try{showSolvedGhost(solve.apply(parseCoordinate(input)));}catch(IllegalArgumentException ignored){}invalidate();});
+    }
+    private static String formatAngle(double degrees){return (Math.abs(degrees-Math.rint(degrees))<1e-9?String.valueOf((long)Math.rint(degrees)):String.format(java.util.Locale.US,"%.2f",degrees).replace('.',','))+"°";}
+    /** Driving angles: an arc between the two lines at their intersection with the value; tap to edit. */
+    private void drawAngleDimensions(Canvas canvas,List<SketchPrimitive> geometry) {
+        for(int index=0;index<project.coincidences.size();index++) {
+            SketchConstraints.Link link=project.coincidences.get(index);if(!link.kind.equals("angle"))continue;
+            SketchPrimitive a=null,b=null;for(SketchPrimitive p:geometry){if(p.id.equals(link.a))a=p;if(p.id.equals(link.b))b=p;}
+            if(a==null||b==null)continue;
+            double ux=a.x2-a.x1,uy=a.y2-a.y1,vx=b.x2-b.x1,vy=b.y2-b.y1,det=ux*vy-uy*vx;
+            double cx,cy;
+            if(Math.abs(det)<1e-9){cx=(a.x1+b.x1)/2;cy=(a.y1+b.y1)/2;}
+            else{double t=((b.x1-a.x1)*vy-(b.y1-a.y1)*vx)/det;cx=a.x1+ux*t;cy=a.y1+uy*t;}
+            if(!sketchPointVisible(cx,cy))continue;
+            // Arc from the direction of a toward its far end to the direction of b toward its far end.
+            double[] da=far(a,cx,cy),db=far(b,cx,cy);
+            PointF c=projectSketchPoint(cx,cy),pa=projectSketchPoint(cx+da[0],cy+da[1]),pb=projectSketchPoint(cx+db[0],cy+db[1]);
+            double sa=Math.atan2(pa.y-c.y,pa.x-c.x),sb=Math.atan2(pb.y-c.y,pb.x-c.x),sweep=Math.IEEEremainder(sb-sa,Math.PI*2);
+            float radius=dp(46);RectF oval=new RectF(c.x-radius,c.y-radius,c.x+radius,c.y+radius);
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(Color.rgb(117,70,160));
+            canvas.drawArc(oval,(float)Math.toDegrees(sa),(float)Math.toDegrees(sweep),false,paint);
+            double mid=sa+sweep/2;float lx=c.x+(float)Math.cos(mid)*(radius+dp(16)),ly=c.y+(float)Math.sin(mid)*(radius+dp(16));
+            String label="∠ "+formatAngle(Math.abs(link.x));
+            text(canvas,label,lx,ly+dp(4),10,Color.rgb(117,70,160),true,Paint.Align.CENTER);
+            paint.setTextSize(dp(10));float width=paint.measureText(label);
+            dimensionHits.add(new DimensionHit("angle:"+index,"angle",0,new RectF(lx-width/2-dp(10),ly-dp(14),lx+width/2+dp(10),ly+dp(10))));
+        }
+    }
+    /** Unit vector from the intersection point toward the farther end of the line (sketch units scaled to 1 mm). */
+    private static double[] far(SketchPrimitive line,double cx,double cy) {
+        double d1=Math.hypot(line.x1-cx,line.y1-cy),d2=Math.hypot(line.x2-cx,line.y2-cy);
+        double fx=d2>=d1?line.x2:line.x1,fy=d2>=d1?line.y2:line.y1,l=Math.max(1e-9,Math.hypot(fx-cx,fy-cy));
+        if(l<1e-6){fx=line.x2;fy=line.y2;l=Math.max(1e-9,Math.hypot(fx-cx,fy-cy));}
+        return new double[]{(fx-cx)/l,(fy-cy)/l};
+    }
     /** Driving X/Y position dimensions (to the sketch origin or between two points). */
     private void drawPositionDimensions(Canvas canvas,List<SketchPrimitive> geometry) {
         for(int index=0;index<project.coincidences.size();index++) {
@@ -3260,6 +3356,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
             List<String> axes=new ArrayList<>(),labels=new ArrayList<>();axes.add("@X");labels.add("Oś X szkicu");axes.add("@Y");labels.add("Oś Y szkicu");
             for(SketchPrimitive p:project.sketch)if((p.type.equals("Linia")||p.type.equals("Pomocnicza"))&&!p.id.equals(a.id)&&!p.id.equals(b.id)){axes.add(p.id);labels.add("Linia osi · "+p.id.substring(0,Math.min(6,p.id.length())));}
             new PropertyBuilder().setTitle("Oś symetrii dwóch linii").setItems(labels.toArray(new String[0]),(d,w)->addSketchConstraint(new SketchConstraints.Link(kind,a.id,0,b.id,0,0,0,axes.get(w)))).setNegativeButton("Anuluj",null).show();
+        } else if(kind.equals("angle")) {
+            if(!(a.type.equals("Linia")||a.type.equals("Pomocnicza"))||!(b.type.equals("Linia")||b.type.equals("Pomocnicza"))){operationMessage="Kąt wymaga dwóch pojedynczych linii (rozbij kontur, aby użyć jego boku)";invalidate();return;}
+            showAngleEditor(-1,a,b);
         } else if(kind.equals("tangent")&&a.type.equals("Okrąg")&&b.type.equals("Okrąg")) {
             new PropertyBuilder().setTitle("Styczność okręgów").setItems(new String[]{"Zewnętrzna","Wewnętrzna"},(d,w)->addSketchConstraint(new SketchConstraints.Link(kind,a.id,0,b.id,0,w==0?1:-1,0))).setNegativeButton("Anuluj",null).show();
         } else {
@@ -3271,8 +3370,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     private void showConstraintMenu() {
         new PropertyBuilder().setTitle("Więzy szkicu")
-            .setItems(new String[]{"Połącz dwa punkty","Odcinek poziomy (H)","Odcinek pionowy (V)","Unieruchom punkt","Równoległość ∥","Prostopadłość ⊥","Równa długość / promień =","Styczność T","Współśrodkowość ◎","Symetria względem osi ↔︎","Punkt na obiekcie","Wymiar położenia X ↔︎","Wymiar położenia Y ↕︎","Współliniowość ⫽"},(d,which)-> {
-                constraintKind=new String[]{"coincident","horizontal","vertical","fixed","parallel","perpendicular","equal","tangent","concentric","symmetric","pointOn","dimX","dimY","collinear"}[which];
+            .setItems(new String[]{"Połącz dwa punkty","Odcinek poziomy (H)","Odcinek pionowy (V)","Unieruchom punkt","Równoległość ∥","Prostopadłość ⊥","Równa długość / promień =","Styczność T","Współśrodkowość ◎","Symetria względem osi ↔︎","Punkt na obiekcie","Wymiar położenia X ↔︎","Wymiar położenia Y ↕︎","Współliniowość ⫽","Kąt między liniami ∠"},(d,which)-> {
+                constraintKind=new String[]{"coincident","horizontal","vertical","fixed","parallel","perpendicular","equal","tangent","concentric","symmetric","pointOn","dimX","dimY","collinear","angle"}[which];
                 coincidenceMode=true;coincidenceFirst=null;
                 operationMessage=NonlinearConstraints.relation(constraintKind)?"Wskaż dwa elementy relacji "+NonlinearConstraints.symbol(constraintKind):which==0?"Wskaż dwa punkty różnych elementów":which==3?"Dotknij punktu, który ma pozostać na miejscu":"Dotknij odcinka lub boku konturu";
                 invalidate();
@@ -3357,7 +3456,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
         lock.setText("Zablokuj wymiary");lock.setChecked(true);form.addView(lock);
         android.widget.TextView hint=new android.widget.TextView(getContext());
         hint.setText("Początek elementu pozostaje na miejscu. Blokada zachowuje rozmiar przy przesuwaniu. Zakończ zatwierdza szkic i przebudowuje powiązaną bryłę.");form.addView(hint);
-        new PropertyBuilder().setTitle("Wymiary · "+entity.type).setView(form)
+        PropertyBuilder builder=new PropertyBuilder().setTitle("Wymiary · "+entity.type).setView(form);
+        if(entity.type.equals("Linia")||entity.type.equals("Pomocnicza"))builder.setNeutralButton("Kąt do innej linii…",(d,w)->{
+            mode="Edytuj szkic";coincidenceMode=true;constraintKind="angle";coincidenceFirst=entity.id;coincidenceAnchor=0;selectedSketchId=entity.id;
+            operationMessage="Dotknij drugiej linii — kąt zostanie zwymiarowany od tej linii";invalidate();});
+        builder.setNeutralButton("Położenie…",(d,w)->showSketchPosition(entity.id,0,null,0));
+        builder
             .setNeutralButton(entity.driving==null?"Pozycja (opcjonalnie)":"Odblokuj",(d,w)-> {
                 if(entity.driving!=null)replaceSketchEntity(entity,SketchDimensions.unlocked(entity));
                 else showSketchCoordinateEditor(entity);
@@ -7318,10 +7422,15 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(inSketch()&&!SketchTransactions.active(project))beginSketchWork();
         boolean hadSketchPlane=inSketch() && sketchPlaneChosen;
         closePropertyEditor();
-        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;positionPickId=null;positionNext=false;multiSelect=false;if(!tool.equals("Położenie")&&!tool.equals("Usuń"))sketchMulti.clear();
+        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;positionPickId=null;positionNext=false;pathPatternSource=null;multiSelect=false;if(!tool.equals("Położenie")&&!tool.equals("Usuń"))sketchMulti.clear();
         dimensionMode=false;
         coincidenceMode=false;coincidenceFirst=null;
         if(tool.equals("Przesuń szkic")||tool.equals("Obróć szkic")||tool.equals("Skaluj szkic")){mode="Edytuj szkic";showSketchTransform(tool);invalidate();return;}
+        if(tool.equals("Szyk po ścieżce")) {
+            mode="Edytuj szkic";SketchPrimitive chosen=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(selectedSketchId))chosen=p;
+            if(chosen==null){operationMessage="Najpierw zaznacz element do powielenia (Edytuj), potem Szyk po ścieżce";invalidate();return;}
+            pathPatternSource=chosen.id;operationMessage="Dotknij ścieżki: linii, łańcucha, łuku, splajnu, okręgu lub konturu";invalidate();return;
+        }
         if(tool.equals("Położenie")) {
             mode="Edytuj szkic";SketchPrimitive chosen=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(selectedSketchId))chosen=p;
             if(sketchMulti.size()>1)showGroupPosition(0,null,0);
@@ -7906,7 +8015,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     private void enterSketchEditor() {
         restoreSketchPlacement();
-        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;positionPickId=null;positionNext=false;multiSelect=false;sketchMulti.clear();
+        trimMode=false;cornerFilletPicking=false;cornerFirst=null;projectionMode=false;positionPickId=null;positionNext=false;pathPatternSource=null;multiSelect=false;sketchMulti.clear();
         dimensionMode=false;
         coincidenceMode=false;coincidenceFirst=null;
         mode = "Edytuj szkic";

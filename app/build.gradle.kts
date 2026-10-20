@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 99
-        versionName = "0.88.0-sketch-groups"
+        versionCode = 100
+        versionName = "0.89.0-sketch-angles"
     }
 
     externalNativeBuild {

@@ -7,9 +7,9 @@ import pl.tabletcad.app.SketchConstraints.Link;
 /** Bounded connected-component nonlinear sketch solver. Never publishes an unconverged result. */
 public final class NonlinearConstraints {
     private NonlinearConstraints() {}
-    public static boolean relation(String kind){return Arrays.asList("parallel","perpendicular","equal","concentric","tangent","pointOn","symmetric","collinear","rigid").contains(kind);}
+    public static boolean relation(String kind){return Arrays.asList("parallel","perpendicular","equal","concentric","tangent","pointOn","symmetric","collinear","rigid","angle").contains(kind);}
     public static boolean present(List<Link> links){for(Link l:links)if(relation(l.kind))return true;return false;}
-    public static String symbol(String kind){return kind.equals("parallel")?"∥":kind.equals("perpendicular")?"⊥":kind.equals("equal")?"=":kind.equals("concentric")?"◎":kind.equals("tangent")?"T":kind.equals("pointOn")?"P∈":kind.equals("collinear")?"⫽":kind.equals("rigid")?"⧉":kind.equals("symmetric")?"↔︎":kind;}
+    public static String symbol(String kind){return kind.equals("parallel")?"∥":kind.equals("perpendicular")?"⊥":kind.equals("equal")?"=":kind.equals("concentric")?"◎":kind.equals("tangent")?"T":kind.equals("pointOn")?"P∈":kind.equals("collinear")?"⫽":kind.equals("rigid")?"⧉":kind.equals("symmetric")?"↔︎":kind.equals("angle")?"∠":kind;}
     static final class Block {
         final SketchPrimitive source;final int start,size;
         Block(SketchPrimitive p,int offset){source=p;start=offset;size=p.curves!=null?0:p.vertices!=null?p.vertices.length:4;}
@@ -74,6 +74,12 @@ public final class NonlinearConstraints {
                 line(a);line(b);double la=length(p),lb=length(q);if(la<.001||lb<.001)throw new IllegalArgumentException("Zerowa linia więzu");
                 double ax=p[2]-p[0],ay=p[3]-p[1],bx=q[2]-q[0],by=q[3]-q[1];
                 out.add(10*(l.kind.equals("parallel")?ax*by-ay*bx:ax*bx+ay*by)/(la*lb));break;
+            case "angle": {
+                // Oriented angle from line a to line b equals l.x degrees (modulo 180°: a line has no direction).
+                line(a);line(b);double la2=length(p),lb2=length(q);if(la2<.001||lb2<.001)throw new IllegalArgumentException("Zerowa linia więzu");
+                double ux=p[2]-p[0],uy=p[3]-p[1],vx=q[2]-q[0],vy=q[3]-q[1],t=Math.toRadians(l.x);
+                out.add(10*((ux*vy-uy*vx)*Math.cos(t)-(ux*vx+uy*vy)*Math.sin(t))/(la2*lb2));break;
+            }
             case "equal":
                 if(!((a.line()&&b.line())||(a.circle()&&b.circle())))throw new IllegalArgumentException("Równość wymaga dwóch linii lub dwóch okręgów");out.add(length(p)-length(q));break;
             case "concentric":
@@ -162,6 +168,15 @@ public final class NonlinearConstraints {
         }
         return rank;
     }
+    /** Current oriented angle from line a to line b in degrees (−180, 180]. */
+    public static double angle(SketchPrimitive a,SketchPrimitive b) {
+        double ux=a.x2-a.x1,uy=a.y2-a.y1,vx=b.x2-b.x1,vy=b.y2-b.y1;return Math.toDegrees(Math.atan2(ux*vy-uy*vx,ux*vx+uy*vy));
+    }
+    /** Stored value for a requested angle between lines (0–180°), keeping the side the lines are on now. */
+    public static double angleValue(SketchPrimitive a,SketchPrimitive b,double degrees) {
+        if(!Double.isFinite(degrees)||degrees<=0||degrees>=180)throw new IllegalArgumentException("Kąt musi być w zakresie 0–180°");
+        return Math.copySign(degrees,angle(a,b)==0?1:angle(a,b));
+    }
     public static void validate(List<SketchPrimitive> geometry,Link link) {
         Map<String,Block> blocks=new LinkedHashMap<>();int size=0;for(SketchPrimitive p:geometry){Block b=new Block(p,size);blocks.put(p.id,b);size+=b.size;}
         double[] all=coordinates(blocks,size);List<Double> residual=new ArrayList<>();residual(link,blocks,all,residual);
@@ -183,6 +198,11 @@ public final class NonlinearConstraints {
                 line(a);line(b);double angle=Math.atan2(p[3]-p[1],p[2]-p[0])+(l.kind.equals("perpendicular")?Math.PI/2:0),current=Math.atan2(q[3]-q[1],q[2]-q[0]);
                 if(Math.abs(Math.IEEEremainder(angle-current,Math.PI*2))>Math.PI/2)angle+=Math.PI;
                 double length=length(q);q[2]=q[0]+length*Math.cos(angle);q[3]=q[1]+length*Math.sin(angle);put(b,all,q);break;
+            }
+            case "angle": {
+                line(a);line(b);double target=Math.atan2(p[3]-p[1],p[2]-p[0])+Math.toRadians(l.x),current=Math.atan2(q[3]-q[1],q[2]-q[0]);
+                if(Math.abs(Math.IEEEremainder(target-current,Math.PI*2))>Math.PI/2)target+=Math.PI;
+                double length=length(q);q[2]=q[0]+length*Math.cos(target);q[3]=q[1]+length*Math.sin(target);put(b,all,q);break;
             }
             case "equal":if((a.line()&&b.line())||(a.circle()&&b.circle())) {double factor=length(p)/length(q);q[2]=q[0]+(q[2]-q[0])*factor;q[3]=q[1]+(q[3]-q[1])*factor;put(b,all,q);}break;
             case "rigid":{double[] m=mappedData(a,p,l.axis);if(m.length==q.length){System.arraycopy(m,0,q,0,m.length);put(b,all,q);}break;}
@@ -241,7 +261,7 @@ public final class NonlinearConstraints {
             Block editedBlock=block(blocks,edited);double[] point=editedBlock.point(coordinates(blocks,size),fixed.ai);
             if(Math.abs(point[0]-fixed.x)>1e-7||Math.abs(point[1]-fixed.y)>1e-7)throw new IllegalArgumentException("Przesunięcie narusza unieruchomiony punkt");
         }
-        if(added==null)for(Link relation:links)if((relation.kind.equals("parallel")||relation.kind.equals("perpendicular"))&&blocks.containsKey(relation.a)) {
+        if(added==null)for(Link relation:links)if((relation.kind.equals("parallel")||relation.kind.equals("perpendicular")||relation.kind.equals("angle"))&&blocks.containsKey(relation.a)) {
             List<Double> r0=new ArrayList<>();residual(relation,blocks,all,r0);
             if(Math.abs(r0.get(0))>9.999999) {
                 Link oriented=relation;Block follower=block(blocks,relation.b);boolean movable=false;

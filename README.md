@@ -1,11 +1,14 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **0.88.0-sketch-groups**, versionCode **99**.
+Wersja źródeł: **0.89.0-sketch-angles**, versionCode **100**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
+
+Wersja 0.89 — sterujący wymiar kąta między liniami (widoczny łuk z wartością), szyk po ścieżce w szkicu.
+[Audyt 0.89](docs/AUDIT-0.89.md) — testy na tablecie do wykonania.
 
 Wersja 0.88 — zaznaczanie wielu elementów szkicu: wspólne przeciąganie, przesunięcie o X/Y, położenie
 i wyrównanie zaznaczenia, usuwanie. [Audyt 0.88](docs/AUDIT-0.88.md) — testy na tablecie do wykonania.
