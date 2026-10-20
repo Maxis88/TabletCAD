@@ -48,6 +48,23 @@ public final class AssemblyKernelProbe {
         FeatureRemoval.apply(saved,FeatureRemoval.plan(saved,1));Assembly.prune(saved);check(saved.components.size()==1,"removed instance leaves only the source component");
         boolean blocked=false;try{FeatureRemoval.plan(p,0);}catch(IllegalArgumentException e){blocked=true;}check(!blocked,"source operations stay editable");
         try{FeatureHistory.setSuppressed(p,1,true);check(true,"an instance can be suppressed");}catch(IllegalArgumentException e){throw new AssertionError(e);}
+        // 0.96: persistent mate of an instance (its faces are created by the instance record).
+        CadProject m=plate();Component src=Assembly.group(m,"Płyta",Collections.singletonList(1));
+        Component w=Component.create("Płyta · wystąpienie");w.instanceOf=src.id;
+        int instBody=addInstance(m,src,w,Assembly.instance(2,new double[]{150,0,30},new double[]{0,0,1},0,new double[3]));m.components.add(w);
+        int instanceRecord=m.committedFeatures.size()-1;
+        m.committedFeatures.add(MateFeature.create(MateFeature.CONTACT,1,0,new double[]{150,30,40},new double[]{-1,0,0},instanceRecord,new double[]{100,30,10},new double[]{1,0,0},-1));
+        m.committedProfileIds.add("");m.featureBodyTargets.add(instBody);m.featureBodyOutputs.add(instBody);
+        close("mated instance lies against the plate (centroid X)",body(bodies(m),instBody).centroid[0],150,1e-7);
+        close("mate keeps the height (centroid Z)",body(bodies(m),instBody).centroid[2],40,1e-7);
+        m.featureBase=new double[]{0,0,0,150,60,0,20};m.width=150;
+        close("widened source: the instance is wider and still against the plate",body(bodies(m),instBody).centroid[0],225,1e-7);
+        CadProject mSaved=CadProject.fromJson(new JSONObject(m.toJson().toString()));check(MateFeature.is(mSaved.committedFeatures.get(mSaved.committedFeatures.size()-1)),"instance mate is saved");
+        boolean held=false;try{FeatureRemoval.plan(mSaved,instanceRecord);}catch(IllegalArgumentException e){held=true;}
+        check(held,"the instance cannot be removed while its mate exists (the UI removes the mate first)");
+        check(Assembly.removeMates(mSaved,w.bodies)==1,"removing the instance removes its mate first");
+        FeatureRemoval.apply(mSaved,FeatureRemoval.plan(mSaved,instanceRecord));Assembly.prune(mSaved);BodyGraph.validate(mSaved);
+        check(BodyGraph.bodies(mSaved).size()==1,"then the instance itself is removed");
         System.out.println("PASS AssemblyKernelProbe: "+checks+" checks");
     }
 }

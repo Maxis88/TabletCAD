@@ -5000,7 +5000,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
         final double[] tp=point,tn=normal,ta=axis,mp=mateMovingPoint,mn=mateMovingNormal,ma=mateMovingAxis;final String component=mateComponent;final java.util.Set<Integer> bodies=new java.util.LinkedHashSet<>(mateBodies);
         final Integer movingCreator=mateMovingCreator,targetCreator=faceFeatures.get(face);final int targetBody=body;
         // A plane mate of one ordinary body is stored as a persistent mate (re-solved when either body changes).
-        final boolean persistent=component==null&&bodies.size()==1&&movingCreator!=null&&targetCreator!=null&&project.bodyGraphStart>=0;
+        // Single-body instances are mated persistently too: their faces are created by the instance record.
+        Component instanceComponent=component==null?null:Assembly.find(project,component);
+        final Integer instanceBody=instanceComponent!=null&&instanceComponent.bodies.size()==1?instanceComponent.bodies.iterator().next():null;
+        final boolean persistent=(component==null&&bodies.size()==1||instanceBody!=null)&&movingCreator!=null&&targetCreator!=null&&project.bodyGraphStart>=0;
         mode="Wybierz";selectedFace=face;
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         android.widget.TextView info=new android.widget.TextView(getContext());form.addView(info);
@@ -5012,7 +5015,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
             try {
                 double[][] delta=ta==null?Assembly.planeDelta(mp,mn,tp,tn,parseCoordinate(gapField),flush.isChecked()):Assembly.axisDelta(new double[]{ma[0],ma[1],ma[2]},new double[]{ma[3],ma[4],ma[5]},new double[]{ta[0],ta[1],ta[2]},new double[]{ta[3],ta[4],ta[5]});
                 String baseline=project.toJson().toString();CadProject next=copyProject(project);String name;
-                if(component!=null) {
+                if(component!=null&&persistent) {
+                    Component c=Assembly.find(next,component);name=c.name;
+                    double[] mate=ta!=null?MateFeature.create(MateFeature.AXIS,targetBody,0,new double[]{ma[0],ma[1],ma[2]},new double[]{ma[3],ma[4],ma[5]},movingCreator,new double[]{ta[0],ta[1],ta[2]},new double[]{ta[3],ta[4],ta[5]},targetCreator)
+                        :MateFeature.create(flush.isChecked()?MateFeature.FLUSH:MateFeature.CONTACT,targetBody,parseCoordinate(gapField),mp,mn,movingCreator,tp,tn,targetCreator);
+                    next.committedFeatures.add(mate);next.committedProfileIds.add("");next.featureBodyTargets.add(instanceBody);next.featureBodyOutputs.add(instanceBody);
+                } else if(component!=null) {
                     Component c=Assembly.find(next,component);name=c.name;
                     for(int index:Assembly.instanceRecords(next,c))next.committedFeatures.set(index,Assembly.composeDelta(delta,next.committedFeatures.get(index)));
                 } else {
@@ -5048,9 +5056,11 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private void removeInstance(Component c) {
         try {
             String baseline=project.toJson().toString();CadProject next=copyProject(project);Component x=Assembly.find(next,c.id);
+            // Mates of the instance (moving it, or holding something against it) go first.
+            int mates=Assembly.removeMates(next,x.bodies);
             List<Integer> records=Assembly.instanceRecords(next,x);java.util.Collections.sort(records,java.util.Collections.reverseOrder());
             for(int index:records)FeatureRemoval.apply(next,FeatureRemoval.plan(next,index));
-            next.components.removeIf(y->y.id.equals(c.id));BodyGraph.validate(next);commitProjectAsync(next,baseline,"Usunięto wystąpienie „"+c.name+"”");
+            next.components.removeIf(y->y.id.equals(c.id));BodyGraph.validate(next);commitProjectAsync(next,baseline,"Usunięto wystąpienie „"+c.name+"”"+(mates>0?" i jego dosunięcia ("+mates+")":""));
         }catch(org.json.JSONException|IllegalArgumentException error){operationMessage="Nie usunięto: "+error.getMessage();invalidate();}
     }
     private void showInterference() {

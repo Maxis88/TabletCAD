@@ -218,7 +218,8 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
 3. Złożenia: komponenty, powiązane wystąpienia, dosuwanie (styk, wyrównanie,
    współosiowość), kolizje i lista części są od 0.80/0.82. Od 0.85 dosunięcie płaskich
    ścian i współosiowość walców zwykłych brył są trwałymi wiązaniami przeliczanymi
-   po zmianie geometrii; dosunięcie wystąpień złożenia zapisuje położenie.
+   po zmianie geometrii; od 0.96 także jednobryłowe wystąpienia złożenia (wielobryłowe
+   wystąpienia nadal zapisują położenie).
 4. Dokumentacja: arkusz z rzutami i przekrojem; wymiary arkusza dotykiem — liniowe (0.90),
    średnice/promienie i środki otworów (0.91), kąty i tolerancje (0.94); wymiary podążają za
    zmianą rozmiaru modelu (0.94), a niemożliwe do odnalezienia są oznaczane na czerwono.

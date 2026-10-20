@@ -60,7 +60,8 @@ PROBES="${PROBES:-KernelDiagnosticsProbe SolidPatternKernelProbe SketchDesignKer
 HOST_TESTS="${HOST_TESTS:-SketchDesignHostTest SolidPatternHostTest UnitsHostTest CadToolsHostTest ConstructionHostTest LinkedCopiesHostTest ProjectLibraryFilesHostTest BodyMassHostTest LibraryWorkspaceHostTest ViewCubeHostTest SketchPositionHostTest KernelCacheHostTest FaceProjectionHostTest SketchAngleHostTest SheetDimensionHostTest StylusHostTest SketchPointHostTest}"
 status=0
 for test in $HOST_TESTS $PROBES; do
-  javac -nowarn -encoding UTF-8 -classpath "$CP" -d "$OUT/probes" "$ROOT/tools/$test.java"
+  # A probe that does not compile must fail the run, never execute a stale class.
+  javac -nowarn -encoding UTF-8 -classpath "$CP" -d "$OUT/probes" "$ROOT/tools/$test.java" || { echo "FAIL $test — compilation"; status=1; }
 done
 for test in $HOST_TESTS $PROBES; do
   mkdir -p "$OUT/work/$test"

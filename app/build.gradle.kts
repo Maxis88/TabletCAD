@@ -10,8 +10,8 @@ android {
         applicationId = "pl.tabletcad.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 106
-        versionName = "0.95.0-sketch-points"
+        versionCode = 107
+        versionName = "0.96.0-instance-mates"
     }
 
     externalNativeBuild {

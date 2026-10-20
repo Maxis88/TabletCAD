@@ -14,6 +14,14 @@ public final class Assembly {
     private Assembly() {}
 
     /** Removes bodies that no longer exist and empty instance components. */
+    /** Removes persistent mates that move one of the bodies or hold another body against it; returns how many. */
+    public static int removeMates(CadProject p,Collection<Integer> bodies) {
+        int removed=0;
+        for(int j=p.committedFeatures.size()-1;j>=0;j--){double[] f=p.committedFeatures.get(j);if(!MateFeature.is(f))continue;
+            int moved=j<p.featureBodyTargets.size()?p.featureBodyTargets.get(j):-1;
+            if(bodies.contains(moved)||bodies.contains(MateFeature.other(f))){FeatureRemoval.apply(p,FeatureRemoval.plan(p,j));removed++;}}
+        return removed;
+    }
     public static void prune(CadProject p) {
         Set<Integer> alive=BodyGraph.bodies(p);
         for(Component c:p.components)c.bodies.retainAll(alive);
