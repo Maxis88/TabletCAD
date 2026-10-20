@@ -12,6 +12,9 @@ Brakujące pozycje listy 6.1 promptu.
 - **Przytrzymanie elementu szkicu** w trybie Edytuj otwiera jego menu (położenie, więzy,
   geometria pomocnicza, rozbijanie, usuwanie…); ruch palca przed upływem czasu przytrzymania
   rozpoczyna zwykłe przesuwanie. Przytrzymanie w trybie rysowania nadal chwyta element (0.86).
+- **Dłoń najpierw, potem rysik**: gdy dłoń oparta na ekranie została odrzucona, a rysik dotyka
+  ekranu w trakcie tego samego gestu, kreska zaczyna się od rysika (wcześniej cały gest byłby
+  zignorowany); dłoń pozostaje pomijana.
 - Bez zmian: jeden palec — wybór i narzędzie, przeciągnięcie po pustym miejscu — obrót (model)
   lub przesuwanie (szkic), dwa palce — przesuwanie, ściskanie — powiększenie, przytrzymanie ściany
   — edycja operacji.

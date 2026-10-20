@@ -758,7 +758,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private final StylusFilter stylus=new StylusFilter();private int activeTool=StylusFilter.FINGER;private boolean rejectGesture,stylusPanning;
-    private float stylusLastX,stylusLastY;
+    private float stylusLastX,stylusLastY;private long penDownTime;
     /** With a stylus in use, fingers navigate in drawing tools unless the user lets them draw too. */
     private boolean fingerDraws,stylusAnnounced;
     private boolean fingerNavigates(){return stylus.stylusSeen()&&!fingerDraws&&activeTool!=StylusFilter.STYLUS&&activeTool!=StylusFilter.ERASER;}
@@ -773,7 +773,19 @@ if (isInsideViewport(e.getX(), e.getY())) {
             if(stylus.stylusSeen()&&!stylusAnnounced){stylusAnnounced=true;operationMessage="Wykryto rysik: rysik rysuje i wybiera precyzyjnie, palec przesuwa widok, dłoń jest ignorowana. Przycisk rysika + przeciągnięcie = przesuwanie widoku.";}
             if(rejectGesture)return true;// palm or finger while the stylus is writing
         }
-        if(rejectGesture){if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){stylus.up(activeTool,now);rejectGesture=false;}return true;}
+        if(rejectGesture) {
+            // Palm resting first, then the stylus touches: the stroke starts at the stylus, the palm stays ignored.
+            if(action==MotionEvent.ACTION_POINTER_DOWN) {
+                int index=event.getActionIndex(),tool=event.getToolType(index);
+                if(tool==StylusFilter.STYLUS||tool==StylusFilter.ERASER) {
+                    stylus.down(tool,0,now);activeTool=tool;pickScale=StylusFilter.pickScale(tool);rejectGesture=false;penDownTime=now;
+                    MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,event.getX(index),event.getY(index),event.getMetaState());
+                    try{touchEvent(down);}catch(RuntimeException error){recoverFromError("Dotyk",error);}finally{down.recycle();}
+                    return true;
+                }
+            }
+            if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){stylus.up(activeTool,now);rejectGesture=false;}return true;
+        }
         // Stylus side button: drag pans the view in any mode (never edits geometry).
         if(activeTool==StylusFilter.STYLUS&&(event.getButtonState()&MotionEvent.BUTTON_STYLUS_PRIMARY)!=0&&event.getPointerCount()==1) {
             if(!stylusPanning||action==MotionEvent.ACTION_DOWN){stylusPanning=true;stylusLastX=event.getX();stylusLastY=event.getY();
@@ -790,9 +802,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
         catch(RuntimeException error){recoverFromError("Dotyk",error);return true;}
         finally{
             if(recycle)delivered.recycle();
-            if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)stylus.up(activeTool,now);
+            if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){stylus.up(activeTool,now);penDownTime=0;}
             // The stylus left while a finger still rests on the screen: the rest of this gesture is the palm.
-            if(penLifted){stylus.up(StylusFilter.STYLUS,now);rejectGesture=true;}
+            if(penLifted){stylus.up(StylusFilter.STYLUS,now);rejectGesture=true;penDownTime=0;}
         }
     }
     /** The stylus pointer alone: fingers resting on the screen during a stroke are dropped. */
@@ -801,7 +813,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(pen<0)return event;
         int action=event.getActionMasked();
         if(action==MotionEvent.ACTION_POINTER_DOWN||action==MotionEvent.ACTION_POINTER_UP)action=event.getActionIndex()==pen?(action==MotionEvent.ACTION_POINTER_UP?MotionEvent.ACTION_UP:MotionEvent.ACTION_MOVE):MotionEvent.ACTION_MOVE;
-        MotionEvent single=MotionEvent.obtain(event.getDownTime(),event.getEventTime(),action,event.getX(pen),event.getY(pen),event.getMetaState());
+        MotionEvent single=MotionEvent.obtain(penDownTime>0?penDownTime:event.getDownTime(),event.getEventTime(),action,event.getX(pen),event.getY(pen),event.getMetaState());
         single.setSource(event.getSource());return single;
     }
     private static MotionEvent cancelOf(MotionEvent event) {
