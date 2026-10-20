@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Sdk = $(if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }),
     [string]$Jdk = "C:\Program Files\Android\Android Studio\jbr"
 )
@@ -21,6 +21,25 @@ $AndroidJar = Join-Path $Sdk "platforms\android-36\android.jar"
 $Javac = Join-Path $Jdk "bin\javac.exe"
 $Keytool = Join-Path $Jdk "bin\keytool.exe"
 $Jar = Join-Path $Jdk "bin\jar.exe"
+# Newer Android Studio runtimes ship without jar.exe: fall back to .NET zip handling (APK and JAR are zip files).
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+function Zip-Add([string]$Archive, [string]$BaseDir, [string]$Relative, [switch]$Create) {
+    if ($Create -and (Test-Path $Archive)) { Remove-Item $Archive -Force }
+    $mode = if (Test-Path $Archive) { [IO.Compression.ZipArchiveMode]::Update } else { [IO.Compression.ZipArchiveMode]::Create }
+    $zip = [IO.Compression.ZipFile]::Open($Archive, $mode)
+    try {
+        $start = [IO.Path]::GetFullPath((Join-Path $BaseDir $Relative))
+        $files = if (Test-Path $start -PathType Container) { Get-ChildItem $start -Recurse -File } else { @(Get-Item $start) }
+        $base = [IO.Path]::GetFullPath($BaseDir).TrimEnd('\') + '\'
+        foreach ($f in $files) {
+            $name = $f.FullName.Substring($base.Length).Replace('\', '/')
+            $old = $zip.GetEntry($name); if ($old) { $old.Delete() }
+            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $f.FullName, $name, [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+        }
+    } finally { $zip.Dispose() }
+    $global:LASTEXITCODE = 0
+}
+$HasJar = Test-Path $Jar
 $Keystore = Join-Path $Root ".debug\tabletcad-debug.jks"
 $env:JAVA_HOME = $Jdk
 if (-not (Test-Path (Join-Path $Root 'build\occt-arm64\lin64\clang\lib\libTKDEIGES.so'))) {
@@ -41,14 +60,14 @@ Copy-Item (Join-Path $Root "third_party\occt\LICENSE_LGPL_21.txt") (Join-Path $B
 Assert-ExitCode "Resource compilation"
 & $Aapt2 link -o (Join-Path $Build "unsigned.apk") -I $AndroidJar --manifest (Join-Path $Root "app\src\main\AndroidManifest.xml") (Join-Path $Build "res.zip") --min-sdk-version 34 --target-sdk-version 36 --version-code $VersionCode --version-name $VersionName --java (Join-Path $Build "generated") --auto-add-overlay
 Assert-ExitCode "Resource linking"
-& $Jar uf (Join-Path $Build "unsigned.apk") -C $Build assets
+if ($HasJar) { & $Jar uf (Join-Path $Build "unsigned.apk") -C $Build assets } else { Zip-Add (Join-Path $Build "unsigned.apk") $Build "assets" }
 Assert-ExitCode "License assets packaging"
 
 $Sources = Get-ChildItem (Join-Path $Root "app\src\main\java") -Recurse -Filter "*.java" | ForEach-Object { $_.FullName }
 & $Javac -source 17 -target 17 -encoding UTF-8 -classpath $AndroidJar -d (Join-Path $Build "classes") $Sources
 Assert-ExitCode "Java compilation"
 $ClassesJar = Join-Path $Build "classes.jar"
-& $Jar cf $ClassesJar -C (Join-Path $Build "classes") .
+if ($HasJar) { & $Jar cf $ClassesJar -C (Join-Path $Build "classes") . } else { Zip-Add $ClassesJar (Join-Path $Build "classes") "." -Create }
 Assert-ExitCode "Class archive creation"
 New-Item -ItemType Directory -Force -Path (Join-Path $Build "dex") | Out-Null
 & $D8 --lib $AndroidJar --output (Join-Path $Build "dex") $ClassesJar
@@ -56,7 +75,7 @@ Assert-ExitCode "DEX compilation"
 
 Push-Location (Join-Path $Build "dex")
 try {
-    & $Jar uf (Join-Path $Build "unsigned.apk") "classes.dex"
+    if ($HasJar) { & $Jar uf (Join-Path $Build "unsigned.apk") "classes.dex" } else { Zip-Add (Join-Path $Build "unsigned.apk") (Get-Location).Path "classes.dex" }
     Assert-ExitCode "DEX packaging"
 } finally {
     Pop-Location
@@ -78,7 +97,7 @@ if ($OcctLibraries.Count -ne 27) { throw "Expected 27 OCCT STEP, IGES, fillet an
 $OcctLibraries | Copy-Item -Destination $NativePackage -Force
 Push-Location (Join-Path $Build "native-package")
 try {
-    & $Jar uf (Join-Path $Build "unsigned.apk") "lib\arm64-v8a"
+    if ($HasJar) { & $Jar uf (Join-Path $Build "unsigned.apk") "lib\arm64-v8a" } else { Zip-Add (Join-Path $Build "unsigned.apk") (Get-Location).Path "lib\arm64-v8a" }
     Assert-ExitCode "Native library packaging"
 } finally {
     Pop-Location

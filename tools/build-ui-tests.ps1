@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Sdk = $(if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }),
     [string]$Jdk = 'C:\Program Files\Android\Android Studio\jbr'
 )
@@ -23,14 +23,14 @@ $Sources=@((Get-ChildItem (Join-Path $Root 'tools\*Probe.java')).FullName)+(Join
 Check 'Compile probes'
 # Package probe classes into one jar: passing every .class path exceeds the Windows command-line limit.
 $ProbeJar=Join-Path $Build 'probes.jar';if(Test-Path $ProbeJar){Remove-Item $ProbeJar -Force}
-& (Join-Path $Jdk 'bin\jar.exe') cf $ProbeJar -C $Classes .;Check 'Package probe classes'
+if(Test-Path (Join-Path $Jdk 'bin\jar.exe')){& (Join-Path $Jdk 'bin\jar.exe') cf $ProbeJar -C $Classes .}else{Add-Type -AssemblyName System.IO.Compression.FileSystem;[IO.Compression.ZipFile]::CreateFromDirectory($Classes,$ProbeJar);$global:LASTEXITCODE=0};Check 'Package probe classes'
 & (Join-Path $BuildTools 'd8.bat') --min-api 34 --lib $AndroidJar --classpath $AppClasses --output $Dex $ProbeJar
 Check 'DEX probes'
 $Apk=Join-Path $Build 'TabletCAD-ui-tests.apk'
 & (Join-Path $BuildTools 'aapt2.exe') link -o $Apk -I $AndroidJar --manifest (Join-Path $Root 'tools\AndroidManifest-ui-test.xml')
 Check 'Package test manifest'
 Push-Location $Dex
-try{& (Join-Path $Jdk 'bin\jar.exe') uf $Apk classes.dex;Check 'Package test DEX'}finally{Pop-Location}
+try{if(Test-Path (Join-Path $Jdk 'bin\jar.exe')){& (Join-Path $Jdk 'bin\jar.exe') uf $Apk classes.dex}else{Add-Type -AssemblyName System.IO.Compression.FileSystem;$z=[IO.Compression.ZipFile]::Open($Apk,'Update');try{$e=$z.GetEntry('classes.dex');if($e){$e.Delete()};[IO.Compression.ZipFileExtensions]::CreateEntryFromFile($z,(Join-Path (Get-Location).Path 'classes.dex'),'classes.dex')|Out-Null}finally{$z.Dispose()};$global:LASTEXITCODE=0};Check 'Package test DEX'}finally{Pop-Location}
 & (Join-Path $BuildTools 'apksigner.bat') sign --ks (Join-Path $Root '.debug\tabletcad-debug.jks') --ks-pass pass:android --key-pass pass:android --ks-key-alias tabletcad $Apk
 Check 'Sign test APK'
 & (Join-Path $BuildTools 'apksigner.bat') verify $Apk
