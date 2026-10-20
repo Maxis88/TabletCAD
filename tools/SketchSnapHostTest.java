@@ -22,6 +22,12 @@ public final class SketchSnapHostTest {
         check(SketchSnapper.circleHits(0,0,1,5,0,1).isEmpty(),"separate circles do not intersect");
         double[] mid=SketchSnapper.snap(20.4,19.6,l,null,1,null,null);
         check(Math.abs(mid[0]-20)<1e-9&&Math.abs(mid[1]-20)<1e-9,"midpoint snapping kept");
+        SketchSnapper.snap(6.2,7.8,g,null,1,null,null);check(SketchSnapper.lastKind.equals("Przecięcie"),"kind: intersection");
+        SketchSnapper.snap(2.2,4.4,c,null,1,13.0,0.0);check(SketchSnapper.lastKind.equals("Styczna"),"kind: tangent");
+        SketchSnapper.snap(14.7,15.6,l,null,1,30.0,0.0);check(SketchSnapper.lastKind.equals("Prostopadła"),"kind: perpendicular");
+        SketchSnapper.snap(20.4,19.6,l,null,1,null,null);check(SketchSnapper.lastKind.equals("Środek"),"kind: midpoint");
+        SketchSnapper.snap(39.6,40.3,l,null,1,null,null);check(SketchSnapper.lastKind.equals("Punkt"),"kind: end point");
+        SketchSnapper.snap(70,-55,l,null,1,null,null);check(SketchSnapper.lastKind.isEmpty(),"free point: no kind");
         System.out.println("PASS SketchSnapHostTest: "+checks+" checks");
     }
 }

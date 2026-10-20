@@ -20,6 +20,8 @@ public final class Revolve {
     public static SketchPrimitive profile(String id,double[] f) {
         if(!is(f))throw new IllegalArgumentException("Niepoprawny zapis obrotu");
         double type=f[20];
+        if(type>=1002&&type<=1128&&type==Math.floor(type)&&f.length==PREFIX+((int)type-1000)*7&&SketchSpline.hasBezier(Arrays.copyOfRange(f,PREFIX,f.length)))
+            return new SketchPrimitive(id,SketchSpline.fromFeatureCurves(Arrays.copyOfRange(f,PREFIX,f.length)),"Splajn");
         if(type>=1002&&type<=1128&&type==Math.floor(type)&&f.length==PREFIX+((int)type-1000)*7)
             return new SketchPrimitive(id,Arrays.copyOfRange(f,PREFIX,f.length),true);
         if(type>=5&&type<=258&&type==Math.floor(type)&&f.length==PREFIX+((int)type-2)*2) {
@@ -59,7 +61,7 @@ public final class Revolve {
                     for(int sign:new int[]{-1,1}){double x=a.x+sign*a.r*dx,y=a.y+sign*a.r*dy;if(a.contains(x,y))add(range,side(x,y,f));}
                 }
             }
-        }else if(p.vertices!=null)for(int i=0;i<p.vertices.length;i+=2)add(range,side(p.vertices[i],p.vertices[i+1],f));
+        }else if(p.vertices!=null){double[] v=SketchSpline.is(p)?SketchSpline.sample(p.vertices,64):p.vertices;for(int i=0;i<v.length;i+=2)add(range,side(v[i],v[i+1],f));}
         else if(p.type.equals("Okrąg")) {
             double r=Math.hypot(p.x2-p.x1,p.y2-p.y1),d=side(p.x1,p.y1,f);
             if(r<.01)throw new IllegalArgumentException("Promień profilu musi być dodatni");add(range,d-r);add(range,d+r);

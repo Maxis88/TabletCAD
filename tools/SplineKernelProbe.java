@@ -30,6 +30,25 @@ public final class SplineKernelProbe {
         double[] f=loaded.committedFeatures.get(0);
         SketchPrimitive back=SketchPrimitive.fromFeature("s","Splajn",f,2,16);
         check(SketchSpline.is(back)&&back.vertices.length==pts.length&&Math.abs(back.vertices[2]-62)<1e-9,"source spline rebuilt from the operation (editable)");
+        // Revolve a closed spline (on XZ at x 30..42) about the Z axis: a smooth ring.
+        CadProject rv=HistoryKernelProbe.plate();
+        double[] ring={30,-15, 36,-10, 42,-15, 36,-20, 30,-15};SketchPrimitive rs=new SketchPrimitive("r",ring,"Splajn");
+        double[] rec=Revolve.create(rs,rv,new double[]{0,-50,0,50},360,false);
+        check(SketchSpline.is(Revolve.profile("r",rec)),"revolve record rebuilds the spline profile");
+        double[] rp=NativeCadEngine.bodyProperties(1,1,1,0,rec,new double[0],null);if(rp.length!=7)throw new AssertionError("revolve: "+NativeCadEngine.lastFailure().getMessage());
+        double[] rsm=SketchSpline.sample(ring,64);double ra=Math.abs(SketchContours.area(java.util.Arrays.copyOf(rsm,rsm.length-2)));
+        double cx=0;double aw=0;for(int i=0;i+3<rsm.length;i+=2){double x0=rsm[i],y0=rsm[i+1],x1=rsm[i+2],y1=rsm[i+3],cr=x0*y1-x1*y0;aw+=cr;cx+=(x0+x1)*cr;}cx/=3*aw;
+        check(rp.length==7&&Math.abs(rp[0]-2*Math.PI*Math.abs(cx)*ra)<2*Math.PI*36*ra*3e-3,"revolved spline: volume = 2π·r̄·area (Pappus) "+(rp.length==7?rp[0]:-1));
+        try{Revolve.create(rs,rv,new double[]{36,-50,36,50},360,false);check(false,"axis through");}catch(IllegalArgumentException e){check(true,"axis through the spline refused");}
+        // Loft from the closed spline (z=20) to a circle 30 mm higher: a smooth new body.
+        CadProject lf=HistoryKernelProbe.plate();lf.sketchOriginZ=20;lf.sketch.add(new SketchPrimitive("s",pts,"Splajn"));lf.archiveCurrentSketch();
+        lf.sketchId=java.util.UUID.randomUUID().toString();lf.sketch.clear();lf.sketchOriginZ=50;lf.sketch.add(new SketchPrimitive("c","Okrąg",50,30,56,30));
+        java.util.List<SweepLoft.Placed> secs=new java.util.ArrayList<>();for(SweepLoft.Placed e:SweepLoft.elements(lf))secs.add(e);
+        check(secs.size()==2,"two sections: spline and circle");
+        double[] loft=SweepLoft.loftRecord(secs,1-1+0==0?0:0,false);
+        HistoryKernelProbe.add(lf,loft,SweepLoft.loftRef(secs),1);
+        double lv=HistoryKernelProbe.volume(lf)-plate;
+        check(lv>Math.PI*36*30*.9&&lv<a*30*1.05,"loft spline → circle added material ("+lv+")");
         SketchPrimitive open=new SketchPrimitive("o",new double[]{0,0,10,5,20,0},"Splajn");
         check(!open.closedProfile(),"an open spline is not a profile");
         try{open.featureType();check(false,"open refused");}catch(IllegalArgumentException e){check(true,"open spline refused with a hint: "+e.getMessage());}

@@ -2184,6 +2184,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(snapMarker!=null) {
             paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(2));paint.setColor(ACCENT);
             canvas.drawCircle(snapMarker.x,snapMarker.y,dp(7),paint);paint.setStyle(Paint.Style.FILL);
+            if(!snapKind.isEmpty()){paint.setTextSize(dp(11));float w=paint.measureText(snapKind)+dp(10);RectF tag=new RectF(snapMarker.x+dp(10),snapMarker.y-dp(26),snapMarker.x+dp(10)+w,snapMarker.y-dp(8));
+                paint.setColor(Color.argb(220,20,26,33));canvas.drawRoundRect(tag,dp(5),dp(5),paint);text(canvas,snapKind,tag.left+dp(5),tag.bottom-dp(5),11,ACCENT,true);}
         }
 
         if (mode.equals("Szkic") || mode.equals("Edytuj szkic")) {
@@ -3080,7 +3082,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private double[] polylinePoint(float x,float y) {
         if(project.polylineDraft.size()>=3) {
             double[] first=project.polylineDraft.get(0);PointF start=projectSketchPoint(first[0],first[1]);
-            if(Math.hypot(x-start.x,y-start.y)<dp(14)){snapMarker=start;return first;}
+            if(Math.hypot(x-start.x,y-start.y)<dp(14)){snapMarker=start;snapKind="Zamknij";return first;}
         }
         double[] last=project.polylineDraft.isEmpty()?null:project.polylineDraft.get(project.polylineDraft.size()-1);
         return snappedSketchPoint(x,y,null,last==null?null:last[0],last==null?null:last[1]);
@@ -3168,9 +3170,11 @@ if (isInsideViewport(e.getX(), e.getY())) {
         double[] snapped=SketchSnapper.snap(raw[0],raw[1],snapGeometry(),excluded,tolerance,startX,startY);
         snapMarker=Math.hypot(raw[0]-snapped[0],raw[1]-snapped[1])>1e-7
             ? projectSketchPoint(snapped[0],snapped[1]):null;
+        snapKind=snapMarker==null?"":SketchSnapper.lastKind;
         return snapped;
     }
 
+    private String snapKind="";
     private boolean isProfileUsed(String id) {
         return id.equals(project.featureProfileId)||id.equals(project.featureBaseProfileId)
             ||project.committedProfileIds.contains(id);
@@ -6885,7 +6889,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 int choice=plane.getSelectedItemPosition();
                 if(choice>=surfaceStart) {
                     List<SweepLoft.Placed> chosen=java.util.Collections.singletonList(curves.get(choice-surfaceStart));
-                    int target=ids.get(body.getSelectedItemPosition());double depth=Math.min(20000,Math.max(10,4*modelExtent()));
+                    int target=ids.get(body.getSelectedItemPosition());double[] fo=curves.get(choice-surfaceStart).frame;double reach=modelRadius+Math.sqrt(Math.pow(fo[0]-modelCenterX,2)+Math.pow(fo[1]-modelCenterY,2)+Math.pow(fo[2]-modelCenterZ,2));
+                    double depth=Math.min(20000,Math.max(10,Math.max(4*modelExtent(),2.4*reach)));// covers every body, wherever the sketch plane lies
                     String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
                     double[] record;String ref=SurfaceSplit.ref(chosen);
                     if(editIndex>=0){int created=surfaceOriginal?SurfaceSplit.created(original):BodySplit.created(original);record=SurfaceSplit.create(created,chosen,depth,flip.isChecked());next.committedFeatures.set(editIndex,record);next.committedProfileIds.set(editIndex,ref);}

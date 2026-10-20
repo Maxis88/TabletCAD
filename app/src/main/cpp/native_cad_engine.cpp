@@ -505,7 +505,7 @@ TopoDS_Shape applyGeneratedTool(const TopoDS_Shape& shape,const TopoDS_Shape& to
 // Loft through k sections; record: -19, flags, k, ruled, 12 zeros, sections.
 TopoDS_Shape loftFeature(const TopoDS_Shape& shape,const double* f,int available,int& stride) {
     const int k=static_cast<int>(f[2]);stride=16;
-    BRepOffsetAPI_ThruSections loft(true,f[3]==1,1e-6);loft.CheckCompatibility(false);
+    BRepOffsetAPI_ThruSections loft(true,f[3]==1,1e-6);loft.CheckCompatibility(true);
     for(int i=0;i<k;i++){const int len=sectionLength(f+stride,available-stride);if(!len){stride=0;return {};}
         TopoDS_Wire w=sectionWire(f+stride);if(w.IsNull()){kernelReason("Przekrój przejścia nie tworzy zamkniętego profilu");stride=-1;return {};}loft.AddWire(w);stride+=len;}
     loft.Build();if(!loft.IsDone()){kernelReason("OCCT nie utworzył przejścia między profilami (sprawdź kolejność i kształt przekrojów)");return {};}

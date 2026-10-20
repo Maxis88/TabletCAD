@@ -26,9 +26,11 @@ public final class SketchSnapper {
         }
         return new double[]{dx+sx,dy+sy};
     }
+    /** What the last snap() locked to (shown next to the marker): Punkt, Środek, Przecięcie, Styczna, Prostopadła, Na krzywej, Oś; empty when free. */
+    public static String lastKind="";
     public static double[] snap(double x,double y,List<SketchPrimitive> geometry,
                                 String excluded,double tolerance,Double startX,Double startY) {
-        double best=tolerance;double[] result={x,y};
+        double best=tolerance;double[] result={x,y};lastKind="";
         java.util.ArrayList<double[]> points=new java.util.ArrayList<>();
         java.util.ArrayList<double[]> lines=new java.util.ArrayList<>();
         java.util.ArrayList<double[]> arcs=new java.util.ArrayList<>();
@@ -76,7 +78,9 @@ public final class SketchSnapper {
                 lines.add(new double[]{p.x1,p.y2,p.x1,p.y1});
             } else if(!p.type.equals("Okrąg")&&!p.isPoint()) lines.add(new double[]{p.x1,p.y1,p.x2,p.y2});
         }
+        int ends=points.size();
         for(double[] l:lines) points.add(new double[]{(l[0]+l[2])/2,(l[1]+l[3])/2});
+        int mids=points.size();
         // Bounded segment intersections; construction lines remain ordinary finite guides.
         java.util.ArrayList<double[]> nearby=new java.util.ArrayList<>();
         for(double[] l:lines) {
@@ -95,16 +99,19 @@ public final class SketchSnapper {
         for(double[] line:nearby)for(double[] arc:arcs)points.addAll(SketchCurves.lineHits(line,arc));
         // Circle–circle and arc–arc intersections.
         for(int i=0;i<arcs.size();i++)for(int j=i+1;j<arcs.size();j++)points.addAll(arcHits(SketchCurves.arc(arcs.get(i),0),SketchCurves.arc(arcs.get(j),0)));
+        int crossings=points.size(),tangents=crossings;
         if(startX!=null&&startY!=null) {
             // Tangent from the stroke start to a circle or arc, and the perpendicular foot on a line.
             for(double[] arc:arcs){SketchCurves.Arc c=SketchCurves.arc(arc,0);for(double[] t:tangentPoints(startX,startY,c.x,c.y,c.r))if(c.contains(t[0],t[1]))points.add(t);}
+            tangents=points.size();
             for(double[] l:lines){double[] f=perpendicularFoot(startX,startY,l);if(f!=null&&Math.hypot(f[0]-startX,f[1]-startY)>1e-9)points.add(f);}
         }
-        for(double[] p:points) {
+        int hit=-1;
+        for(int i=0;i<points.size();i++) {double[] p=points.get(i);
             double d=Math.hypot(x-p[0],y-p[1]);
-            if(d<best) {best=d;result=p;}
+            if(d<best) {best=d;result=p;hit=i;}
         }
-        if(best<tolerance) return result; // endpoints/intersections before projected positions
+        if(best<tolerance){lastKind=hit<ends?"Punkt":hit<mids?"Środek":hit<crossings?"Przecięcie":hit<tangents?"Styczna":"Prostopadła";return result;} // endpoints/intersections before projected positions
         for(double[] l:lines) {
             double dx=l[2]-l[0],dy=l[3]-l[1],length=dx*dx+dy*dy;
             if(length<1e-12) continue;
@@ -112,16 +119,16 @@ public final class SketchSnapper {
             double px=l[0]+t*dx,py=l[1]+t*dy,d=Math.hypot(x-px,y-py);
             if(d<best) {best=d;result=new double[]{px,py};}
         }
-        if(best<tolerance) return result;
+        if(best<tolerance){lastKind="Na krzywej";return result;}
         for(double[] arc:arcs) {
             SketchCurves.Arc a=SketchCurves.arc(arc,0);double angle=Math.atan2(y-a.y,x-a.x),px=a.x+a.r*Math.cos(angle),py=a.y+a.r*Math.sin(angle),d=Math.hypot(x-px,y-py);
             if(d<best&&a.contains(px,py)){best=d;result=new double[]{px,py};}
         }
-        if(best<tolerance)return result;
+        if(best<tolerance){lastKind="Na krzywej";return result;}
         // Horizontal/vertical inference relative to stroke start, then the origin axes.
         double referenceX=startX==null?0:startX,referenceY=startY==null?0:startY;
-        if(Math.abs(x-referenceX)<tolerance) result[0]=referenceX;
-        if(Math.abs(y-referenceY)<tolerance) result[1]=referenceY;
+        if(Math.abs(x-referenceX)<tolerance){result[0]=referenceX;lastKind=startX==null?"Oś":"Pionowo";}
+        if(Math.abs(y-referenceY)<tolerance){result[1]=referenceY;lastKind=startX==null?"Oś":"Poziomo";}
         return result;
     }
     /** Points where a line from (sx,sy) touches the circle (centre cx,cy, radius r); empty when the point is inside. */
