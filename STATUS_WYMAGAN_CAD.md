@@ -212,9 +212,10 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
    kąt między liniami szkicu i szyk po ścieżce. Brak wymiarów kątowych między elementami
    różnych szkiców i powiązanego (parametrycznego) szyku po ścieżce.
 2. Referencje topologiczne: ściany są identyfikowane przez operację źródłową, normalną
-   i punkt (otwory, powłoka, pochylenie, odsunięcie ściany, wymiary otworów). Brak
-   ogólnego nazewnictwa krawędzi po dowolnych operacjach Boolean; utrata odniesienia
-   jest zgłaszana, nigdy zgadywana.
+   i punkt (otwory, powłoka, pochylenie, odsunięcie ściany, wymiary otworów). Od 0.98
+   zaokrąglenia i fazy pojedynczych krawędzi są przypinane ponownie do krawędzi między tymi
+   samymi ścianami (twórcy i kierunki ścian), gdy edycja wcześniejszej operacji przesunie
+   krawędź; gdy takiej krawędzi nie ma, utrata odniesienia jest zgłaszana, nigdy zgadywana.
 3. Złożenia: komponenty, powiązane wystąpienia, dosuwanie (styk, wyrównanie,
    współosiowość), kolizje i lista części są od 0.80/0.82. Od 0.85 dosunięcie płaskich
    ścian i współosiowość walców zwykłych brył są trwałymi wiązaniami przeliczanymi

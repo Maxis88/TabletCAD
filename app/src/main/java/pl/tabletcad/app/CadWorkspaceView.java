@@ -7252,6 +7252,21 @@ if (isInsideViewport(e.getX(), e.getY())) {
         postInvalidateDelayed(32);
     }
 
+    /** Model of the first operations of a document for edge identification (kernel evaluation of a truncated copy). */
+    private EdgeRepair.Model edgeModel(CadProject source,int operations) {
+        CadProject keep=project;double w=modelWidth,h=modelHeight,d=modelDepth;
+        try {
+            CadProject t=CadProject.fromJson(new org.json.JSONObject(source.toJson().toString()));FeatureRemoval.truncate(t,operations);
+            project=t;modelWidth=t.width;modelHeight=t.height;modelDepth=t.depth;
+            String src=t.importedStep?importedSourceFile().getAbsolutePath():null;double radius=t.importedStep?0:t.filletRadius;
+            double[] base=evaluationBase(),features=kernelFeatures();
+            double[] packed=NativeCadEngine.evaluateModel(modelWidth,modelHeight,modelDepth,radius,base,features,src);
+            if(packed.length==0)return null;
+            CadModelResult result=new CadModelResult(packed);
+            return new EdgeRepair.Model(result.mesh,result.features,NativeCadEngine.modelEdges(modelWidth,modelHeight,modelDepth,radius,base,features,src));
+        }catch(Exception error){return null;}
+        finally{project=keep;modelWidth=w;modelHeight=h;modelDepth=d;}
+    }
     private boolean commitModelChange(Runnable change) {
         CadProject previous = project;
         double[] previousMesh = nativeMesh, previousPrism = nativePrism;
@@ -7266,6 +7281,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
             change.run();
             BodyGraph.reconcile(project);
             FeatureHistory.settle(project);
+            // Fillets/chamfers of edges moved by an edit of an earlier operation follow their edge.
+            int repairedEdges=0;
+            if(!SketchTransactions.active(project)&&project.importedMeshSource==null) {
+                CadProject reference=SketchTransactions.active(previous)?SketchTransactions.baseline(previous):previous;
+                try{repairedEdges=EdgeRepair.repair(reference,project,this::edgeModel);}catch(RuntimeException ignored){repairedEdges=0;}
+            }
             HoleAssociation.update(project,project.importedStep?importedSourceFile().getAbsolutePath():null);
             Assembly.prune(project);
             modelWidth = project.width; modelHeight = project.height; modelDepth = project.depth;
@@ -7275,6 +7296,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             undoStack.push(snapshot);
             while (undoStack.size() > 50) undoStack.removeLast();
             redoStack.clear();
+            if(repairedEdges>0)android.widget.Toast.makeText(getContext(),"Zachowano "+repairedEdges+(repairedEdges==1?" zaokrąglenie/fazę":" zaokrąglenia/fazy")+" na przesuniętych krawędziach",android.widget.Toast.LENGTH_SHORT).show();
             return true;
         } catch (Exception failure) {
             project = previous;
