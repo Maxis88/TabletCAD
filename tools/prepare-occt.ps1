@@ -43,7 +43,7 @@ $Options = @(
 )
 & $Cmake @Options
 Check 'OCCT configure'
-$Targets = @('TKDESTEP','TKDE','TKXCAF','TKXSBase','TKVCAF','TKCAF','TKLCAF',
+$Targets = @('TKDEIGES','TKDESTEP','TKDE','TKXCAF','TKXSBase','TKVCAF','TKCAF','TKLCAF',
     'TKCDF','TKOffset','TKFillet','TKBool','TKBO','TKPrim','TKV3d','TKService','TKMesh',
     'TKShHealing','TKHLR','TKTopAlgo','TKGeomAlgo','TKBRep','TKGeomBase',
     'TKG3d','TKG2d','TKMath','TKernel')

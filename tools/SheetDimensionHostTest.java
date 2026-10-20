@@ -64,6 +64,12 @@ public final class SheetDimensionHostTest {
         double[] tol=width.clone();tol[9]=.1;tol[10]=.1;check(TechnicalSheet.label(tol).equals("100.00 ±0.1"),"symmetric tolerance printed as ±");
         tol[10]=.05;check(TechnicalSheet.label(tol).equals("100.00 +0.1/−0.05"),"different deviations printed as +/−");
         TechnicalSheet.validate(tol);check(true,"tolerances validate");
+        // A3 sheet (0.99): larger view boxes allow a larger standard scale; the format persists.
+        double[] small={0,0,0,0,60,0, 0,0,60,0,60,30, 0,0,60,30,0,30, 0,0,0,30,0,0};
+        check(new TechnicalSheet(small,.5,false).scaleLabel().equals("1:1"),"60 mm part on A4 at 1:1");
+        check(new TechnicalSheet(small,.5,true).scaleLabel().equals("2:1"),"the same part on A3 at 2:1");
+        CadProject fmt=new CadProject();fmt.drawingFormat="A3";
+        check("A3".equals(CadProject.fromJson(new JSONObject(fmt.toJson().toString())).drawingFormat),"sheet format is saved");
         System.out.println("PASS SheetDimensionHostTest: "+checks+" checks");
     }
 }

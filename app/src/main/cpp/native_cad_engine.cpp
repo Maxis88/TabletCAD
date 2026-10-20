@@ -62,6 +62,13 @@
 #include <gp_Vec.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
+#ifdef TABLETCAD_IGES
+#include <IGESControl_Reader.hxx>
+#include <IGESControl_Writer.hxx>
+#include <Interface_Static.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#endif
 #include <IFSelect_ReturnStatus.hxx>
 #include <HLRBRep_Algo.hxx>
 #include <HLRBRep_HLRToShape.hxx>
@@ -1819,4 +1826,55 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeExportStep(
     } catch (const Standard_Failure&) {
         return JNI_FALSE;
     }
+}
+
+// IGES exchange through STEP: mode 0 converts IGES → STEP (sewing loose faces into solids when they
+// close), mode 1 converts STEP → IGES (B-Rep entities). Returns null on success, else a reason.
+extern "C" JNIEXPORT jstring JNICALL
+Java_pl_tabletcad_app_NativeCadEngine_nativeConvertExchange(JNIEnv* env,jclass,jstring javaFrom,jstring javaTo,jint mode) {
+#ifndef TABLETCAD_IGES
+    static_cast<void>(javaFrom);static_cast<void>(javaTo);static_cast<void>(mode);
+    return env->NewStringUTF("IGES nie jest dostępny w tej kompilacji rdzenia (brak biblioteki TKDEIGES)");
+#else
+    if(javaFrom==nullptr||javaTo==nullptr)return env->NewStringUTF("IGES: brak ścieżki pliku");
+    const char* f=env->GetStringUTFChars(javaFrom,nullptr);const char* t=env->GetStringUTFChars(javaTo,nullptr);
+    const std::string from(f?f:""),to(t?t:"");if(f)env->ReleaseStringUTFChars(javaFrom,f);if(t)env->ReleaseStringUTFChars(javaTo,t);
+    if(mode<0)return nullptr;// availability probe
+    try {
+        if(mode==0) {
+            IGESControl_Reader reader;
+            if(reader.ReadFile(from.c_str())!=IFSelect_RetDone)return env->NewStringUTF("IGES: nie można odczytać pliku");
+            if(reader.TransferRoots()<=0)return env->NewStringUTF("IGES: plik nie zawiera geometrii do przeniesienia");
+            TopoDS_Shape shape=reader.OneShape();
+            if(shape.IsNull())return env->NewStringUTF("IGES: plik nie zawiera geometrii");
+            if(countShapes(shape,TopAbs_SOLID)==0) {
+                // Surface models: sew the faces; closed shells become solids.
+                BRepBuilderAPI_Sewing sewing(1e-3);sewing.Add(shape);sewing.Perform();const TopoDS_Shape sewn=sewing.SewedShape();
+                BRep_Builder builder;TopoDS_Compound solids;builder.MakeCompound(solids);int made=0;
+                for(TopExp_Explorer e(sewn,TopAbs_SHELL);e.More();e.Next()) {
+                    if(!BRep_Tool::IsClosed(e.Current()))continue;
+                    BRepBuilderAPI_MakeSolid solid(TopoDS::Shell(e.Current()));if(!solid.IsDone())continue;
+                    TopoDS_Shape candidate=solid.Shape();GProp_GProps volume;BRepGProp::VolumeProperties(candidate,volume);if(volume.Mass()<0)candidate.Reverse();
+                    if(BRepCheck_Analyzer(candidate).IsValid()){builder.Add(solids,candidate);made++;}
+                }
+                if(made==0)return env->NewStringUTF("IGES zawiera tylko powierzchnie, które nie zamykają bryły");
+                shape=solids;
+            }
+            STEPControl_Writer writer;
+            if(writer.Transfer(shape,STEPControl_AsIs)!=IFSelect_RetDone||writer.Write(to.c_str())!=IFSelect_RetDone)return env->NewStringUTF("IGES: nie można przygotować modelu");
+            return nullptr;
+        }
+        STEPControl_Reader reader;
+        if(reader.ReadFile(from.c_str())!=IFSelect_RetDone||reader.TransferRoots()<=0)return env->NewStringUTF("IGES: brak modelu do zapisu");
+        const TopoDS_Shape shape=reader.OneShape();if(shape.IsNull())return env->NewStringUTF("IGES: brak modelu do zapisu");
+        Interface_Static::SetIVal("write.iges.brep.mode",1);
+        IGESControl_Writer writer("MM",1);
+        if(!writer.AddShape(shape))return env->NewStringUTF("IGES: nie można przenieść bryły");
+        writer.ComputeModel();
+        if(!writer.Write(to.c_str()))return env->NewStringUTF("IGES: zapis pliku nieudany");
+        return nullptr;
+    } catch(const Standard_Failure&) {
+        return env->NewStringUTF("IGES: wyjątek jądra CAD");
+    }
+#endif
 }

@@ -1576,7 +1576,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     contextAction(contents,"Wymiaruj kąt (wierzchołek, dwa ramiona)",false,()->{sheetDimensionMode=sheetAngleMode=true;sheetFirst=sheetSecond=null;operationMessage="Dotknij wierzchołka kąta, potem końców obu ramion";});
                 }
                 if(!project.drawingDimensions.isEmpty())contextText(contents,"Wymiary arkusza: "+project.drawingDimensions.size()+" — dotknij wartości, aby ją zmienić",false);
-                contextAction(contents,"Ustawienia arkusza…",false,()->showDrawingOptions());
+                contextAction(contents,"Ustawienia arkusza…",false,()->showSheetSettings());
                 contextAction(contents,"Dane rysunkowe…",false,()->showDrawingMetadataEditor());
                 contextAction(footer,"Powrót do modelu",true,()->{mode="Wybierz";sheetDimensionMode=sheetAngleMode=false;sheetFirst=sheetSecond=null;invalidate();});
             }
@@ -3055,6 +3055,26 @@ if (isInsideViewport(e.getX(), e.getY())) {
         showSketchDimensionEditor(entity);
     }
 
+    /** Sheet format, section position and title block of the technical drawing. */
+    private void showSheetSettings() {
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView label=new android.widget.TextView(getContext());label.setText("Format arkusza");form.addView(label);
+        android.widget.Spinner format=new android.widget.Spinner(getContext());format.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,new String[]{"A4 · 297 × 210 mm","A3 · 420 × 297 mm"}));
+        format.setSelection("A3".equals(project.drawingFormat)?1:0);form.addView(format);
+        EditText section=labeledCoordinate(form,"Położenie przekroju A–A (X) [%]",project.drawingSectionFraction*100);
+        if(technicalSheet!=null){android.widget.TextView scale=new android.widget.TextView(getContext());scale.setText("Skala rzutów: "+technicalSheet.scaleLabel()+" (dobierana do formatu)");form.addView(scale);}
+        new PropertyBuilder().setTitle("Ustawienia arkusza").setView(form).setNegativeButton("Anuluj",null)
+            .setNeutralButton("Tabliczka rysunkowa…",(d,w)->showDrawingMetadataEditor())
+            .setPositiveButton("Zastosuj",(d,w)->{
+                try {
+                    double fraction=parseCoordinate(section)/100;if(!(fraction>0&&fraction<1))throw new IllegalArgumentException("Podaj położenie przekroju pomiędzy 0 a 100%");
+                    checkpoint();project.drawingSectionFraction=fraction;project.drawingFormat=format.getSelectedItemPosition()==1?"A3":"A4";
+                    projectRepository.save(project);prepareTechnicalSheet();
+                    operationMessage="Arkusz "+project.drawingFormat+(technicalSheet!=null?" · skala "+technicalSheet.scaleLabel():"");
+                }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+                invalidate();
+            }).show();
+    }
     private void showDrawingOptions() {
         if(!mode.equals("Szkic"))return;
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
@@ -5159,7 +5179,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             if(!exportStep(source.getAbsolutePath())) {operationMessage="Nie można przeliczyć modelu arkusza";return false;}
             double[] segments=NativeCadEngine.technicalDrawing(source.getAbsolutePath(),project.drawingSectionFraction);
             if(segments.length==0) {operationMessage="Nie można wygenerować rzutów OCCT";return false;}
-            technicalSheet=new TechnicalSheet(segments,project.drawingSectionFraction);
+            technicalSheet=new TechnicalSheet(segments,project.drawingSectionFraction,"A3".equals(project.drawingFormat));
             operationMessage="Gotowe: rzuty, linie niewidoczne i przekrój OCCT";
             return true;
         } finally {source.delete();}
@@ -5170,8 +5190,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         android.graphics.pdf.PdfDocument pdf=new android.graphics.pdf.PdfDocument();
         try {
             android.graphics.pdf.PdfDocument.Page page=pdf.startPage(
-                new android.graphics.pdf.PdfDocument.PageInfo.Builder(842,595,1).create());
-            technicalSheet.draw(page.getCanvas(),new RectF(0,0,842,595),project);
+                technicalSheet.a3()?new android.graphics.pdf.PdfDocument.PageInfo.Builder(1191,842,1).create():new android.graphics.pdf.PdfDocument.PageInfo.Builder(842,595,1).create());
+            technicalSheet.draw(page.getCanvas(),technicalSheet.a3()?new RectF(0,0,1191,842):new RectF(0,0,842,595),project);
             pdf.finishPage(page);pdf.writeTo(output);
         } finally {pdf.close();}
     }
@@ -7060,15 +7080,17 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private void showExportPicker() {
-        String[] formats = {"STEP — precyzyjna bryła", "STL — siatka binarna", "STL — tekst ASCII", "DXF — szkic 2D", "PDF — arkusz techniczny A4", "OBJ — siatka, jednostki mm", "3MF — druk 3D, bryły jako obiekty", "Jakość siatki eksportu…"};
+        String[] formats = {"STEP — precyzyjna bryła", "STL — siatka binarna", "STL — tekst ASCII", "DXF — szkic 2D", "PDF — arkusz techniczny A4", "OBJ — siatka, jednostki mm", "3MF — druk 3D, bryły jako obiekty", "Jakość siatki eksportu…", "IGES — bryła B-Rep (starsze systemy CAD)"};
         new PropertyBuilder()
             .setTitle("Eksportuj projekt")
             .setItems(formats, (dialog, which) -> {
-                if((which==0||which==4) && project.importedMeshSource != null) {
+                if((which==0||which==4||which==8) && project.importedMeshSource != null) {
                     operationMessage="Eksport STEP wymaga bryły B-Rep; siatkę zapisz jako STL";
                     invalidate(); return;
                 }
                 if(which==7){showExportQuality();return;}
+                if(which==8&&!NativeCadEngine.igesAvailable()){operationMessage="IGES nie jest dostępny w tej kompilacji rdzenia — użyj STEP";invalidate();return;}
+                if(which==8){if(fileRequestListener!=null)fileRequestListener.requestExport("iges");return;}
                 if (fileRequestListener != null) {
                     fileRequestListener.requestExport(which == 0 ? "step" : which == 1 ? "stl" : which == 2 ? "stla" : which==3 ? "dxf" : which==4 ? "pdf" : which==5 ? "obj" : "3mf");
                 }
@@ -8002,7 +8024,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private void showFileMenu() {
         closePropertyEditor();dismissToolPopup();
         new PropertyBuilder().setTitle("Plik")
-            .setItems(new String[]{"Importuj plik (STEP, STL, OBJ, 3MF, DXF)…","Eksportuj…","Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt"},(d,which)-> {
+            .setItems(new String[]{"Importuj plik (STEP, IGES, STL, OBJ, 3MF, DXF)…","Eksportuj…","Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt"},(d,which)-> {
                 if(which==0){if(fileRequestListener!=null)fileRequestListener.requestOpenStep();}
                 else if(which==1)showExportPicker();else if(which==2)showNewProject();else if(which==3)showProjectLibrary();else if(which==4)showProjectCopy();else showProjectTrash();
             }).setNegativeButton("Zamknij",null).show();

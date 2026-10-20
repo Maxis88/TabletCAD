@@ -185,6 +185,18 @@ public final class NativeCadEngine {
         double depth, double radius, double[] base, double[] features, String exportPath,
         String sourceStep, int queryMode);
 
+    private static native String nativeConvertExchange(String from,String to,int mode);
+    /** IGES → STEP (mode 0) or STEP → IGES (mode 1); null on success, otherwise the reason. */
+    public static String convertExchange(String from,String to,int mode) {
+        if(!LOADED)return "Rdzeń C++ niedostępny";
+        try{return nativeConvertExchange(from,to,mode);}catch(UnsatisfiedLinkError e){return "IGES nie jest dostępny w tej kompilacji rdzenia";}
+    }
+    private static Boolean iges;
+    /** Whether the native kernel was built with the OCCT IGES toolkit. */
+    public static boolean igesAvailable() {
+        if(iges==null){String r=convertExchange("","",-1);iges=r==null||!r.contains("dostępny");}
+        return iges;
+    }
     public static String stepRoundTrip(String path) {
         return LOADED ? nativeStepRoundTrip(path) : "STEP: rdzeń C++ niedostępny";
     }

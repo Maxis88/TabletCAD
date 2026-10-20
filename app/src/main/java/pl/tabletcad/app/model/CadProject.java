@@ -33,6 +33,8 @@ public final class CadProject {
     /** User dimensions on the technical sheet (see TechnicalSheet.dimension). */
     public final java.util.List<double[]> drawingDimensions = new java.util.ArrayList<>();
     public double drawingSectionFraction = .5;
+    /** Technical sheet format: "A4" or "A3". */
+    public String drawingFormat = "A4";
     /** Uniform density for all solids; 0 means unspecified. */
     public double materialDensityKgM3;
     /** Densities of individual bodies [kg/m³]; bodies without one use materialDensityKgM3. */
@@ -137,7 +139,7 @@ public final class CadProject {
         root.put("drawingSectionFraction", drawingSectionFraction);
         JSONObject drawingData = new JSONObject();
         drawingData.put("number",drawingNumber).put("author",drawingAuthor)
-            .put("material",drawingMaterial).put("revision",drawingRevision);
+            .put("material",drawingMaterial).put("revision",drawingRevision).put("format",drawingFormat);
         root.put("drawingData",drawingData);
         if(!drawingDimensions.isEmpty()){JSONArray dims=new JSONArray();for(double[] d:drawingDimensions){JSONArray row=new JSONArray();for(double v:d)row.put(v);dims.put(row);}root.put("drawingDimensions",dims);}
         root.put("id", id);
@@ -259,6 +261,7 @@ public final class CadProject {
             project.drawingAuthor=drawingData.optString("author","");
             project.drawingMaterial=drawingData.optString("material","");
             project.drawingRevision=drawingData.optString("revision","A");
+            project.drawingFormat="A3".equals(drawingData.optString("format","A4"))?"A3":"A4";
         }
         JSONArray sheetDimensions=root.optJSONArray("drawingDimensions");
         if(sheetDimensions!=null)for(int i=0;i<sheetDimensions.length()&&i<500;i++){JSONArray row=sheetDimensions.getJSONArray(i);double[] d=new double[row.length()];for(int j=0;j<d.length;j++)d[j]=row.getDouble(j);

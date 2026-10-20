@@ -23,7 +23,8 @@ $Keytool = Join-Path $Jdk "bin\keytool.exe"
 $Jar = Join-Path $Jdk "bin\jar.exe"
 $Keystore = Join-Path $Root ".debug\tabletcad-debug.jks"
 $env:JAVA_HOME = $Jdk
-if (-not (Test-Path (Join-Path $Root 'build\occt-arm64\lin64\clang\lib\libTKOffset.so'))) {
+if (-not (Test-Path (Join-Path $Root 'build\occt-arm64\lin64\clang\lib\libTKDEIGES.so'))) {
+    # 0.99 adds IGES; the incremental OCCT build compiles only the missing toolkit.
     & (Join-Path $PSScriptRoot 'prepare-occt.ps1') -Sdk $Sdk
 }
 $env:TEMP = Join-Path $Build "temp"
@@ -73,7 +74,7 @@ New-Item -ItemType Directory -Force -Path $NativePackage | Out-Null
 Copy-Item (Join-Path $NativeBuild "libtabletcad.so") $NativePackage -Force
 $OcctLibDir = Join-Path $Root "build\occt-arm64\lin64\clang\lib"
 $OcctLibraries = Get-ChildItem $OcctLibDir -Filter "*.so"
-if ($OcctLibraries.Count -ne 26) { throw "Expected 26 OCCT STEP, fillet and sweep dependency libraries, found $($OcctLibraries.Count)" }
+if ($OcctLibraries.Count -ne 27) { throw "Expected 27 OCCT STEP, IGES, fillet and sweep dependency libraries, found $($OcctLibraries.Count)" }
 $OcctLibraries | Copy-Item -Destination $NativePackage -Force
 Push-Location (Join-Path $Build "native-package")
 try {

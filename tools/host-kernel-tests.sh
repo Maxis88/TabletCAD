@@ -30,8 +30,8 @@ echo "3cf6cd6892e32e2b4c1c39e0f52f5248a2f5b37646fdfbb79a66b46b618414ed  $JSON_JA
 
 if [ ! -d "$OCCT_SRC" ]; then git clone --branch V8_0_1 --depth 1 https://github.com/Open-Cascade-SAS/OCCT.git "$OCCT_SRC"; fi
 [ "$(git -C "$OCCT_SRC" rev-parse HEAD)" = "$REVISION" ] || { echo "Unexpected OCCT revision in $OCCT_SRC" >&2; exit 1; }
-LIBS="TKDESTEP TKDE TKXCAF TKXSBase TKVCAF TKCAF TKLCAF TKCDF TKOffset TKFillet TKBool TKBO TKPrim TKV3d TKService TKMesh TKShHealing TKHLR TKTopAlgo TKGeomAlgo TKBRep TKGeomBase TKG3d TKG2d TKMath TKernel"
-if [ ! -f "$OUT/occt/lin64/gcc/lib/libTKDESTEP.so" ]; then
+LIBS="TKDEIGES TKDESTEP TKDE TKXCAF TKXSBase TKVCAF TKCAF TKLCAF TKCDF TKOffset TKFillet TKBool TKBO TKPrim TKV3d TKService TKMesh TKShHealing TKHLR TKTopAlgo TKGeomAlgo TKBRep TKGeomBase TKG3d TKG2d TKMath TKernel"
+if [ ! -f "$OUT/occt/lin64/gcc/lib/libTKDEIGES.so" ]; then
   cmake -S "$OCCT_SRC" -B "$OUT/occt" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_LIBRARY_TYPE=Shared \
     -DBUILD_RESOURCES=OFF -DBUILD_MODULE_FoundationClasses=ON -DBUILD_MODULE_ModelingData=ON \
     -DBUILD_MODULE_ModelingAlgorithms=ON -DBUILD_MODULE_DataExchange=ON -DBUILD_MODULE_ApplicationFramework=OFF \
@@ -47,7 +47,7 @@ JAVA_HOME="${JAVA_HOME:-$(dirname "$(dirname "$(readlink -f "$(command -v javac)
 mkdir -p "$OUT/native" "$OUT/classes" "$OUT/probes" "$OUT/results"
 LINK=""; for l in $LIBS; do LINK="$LINK -l$l"; done
 # shellcheck disable=SC2086
-c++ -std=c++20 -O1 -fPIC -shared -Wall -Wextra -Werror -Wno-misleading-indentation \
+c++ -std=c++20 -O1 -fPIC -shared -Wall -Wextra -Werror -Wno-misleading-indentation -DTABLETCAD_IGES=1 \
   -I"$OCCT_INC" -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" \
   "$ROOT/app/src/main/cpp/native_cad_engine.cpp" -L"$OCCT_LIB" $LINK -Wl,-rpath,"$OCCT_LIB" \
   -o "$OUT/native/libtabletcad.so"
@@ -56,7 +56,7 @@ find "$ROOT/app/src/main/java" -name '*.java' > "$OUT/sources.txt"
 javac -nowarn -encoding UTF-8 --release 17 -classpath "$ANDROID_JAR" -d "$OUT/classes" @"$OUT/sources.txt"
 CP="$OUT/probes:$OUT/classes:$JSON_JAR:$ANDROID_JAR"
 # Probes that only use the kernel and the document model run headless on the desktop JVM.
-PROBES="${PROBES:-KernelDiagnosticsProbe EdgeRepairKernelProbe SolidPatternKernelProbe SketchDesignKernelProbe CadToolsKernelProbe ConstructionKernelProbe HistoryKernelProbe AnalysisKernelProbe PrintKernelProbe AssemblyKernelProbe FaceOffsetKernelProbe MateKernelProbe AcceptanceAKernelProbe ThreadProbe BodyPropertiesProbe EdgeChamferProbe SketchEditingProbe}"
+PROBES="${PROBES:-KernelDiagnosticsProbe EdgeRepairKernelProbe IgesKernelProbe SolidPatternKernelProbe SketchDesignKernelProbe CadToolsKernelProbe ConstructionKernelProbe HistoryKernelProbe AnalysisKernelProbe PrintKernelProbe AssemblyKernelProbe FaceOffsetKernelProbe MateKernelProbe AcceptanceAKernelProbe ThreadProbe BodyPropertiesProbe EdgeChamferProbe SketchEditingProbe}"
 HOST_TESTS="${HOST_TESTS:-SketchDesignHostTest SolidPatternHostTest UnitsHostTest CadToolsHostTest ConstructionHostTest LinkedCopiesHostTest ProjectLibraryFilesHostTest BodyMassHostTest LibraryWorkspaceHostTest ViewCubeHostTest SketchPositionHostTest KernelCacheHostTest FaceProjectionHostTest SketchAngleHostTest SheetDimensionHostTest StylusHostTest SketchPointHostTest ThreeMfHostTest}"
 status=0
 for test in $HOST_TESTS $PROBES; do

@@ -13,7 +13,11 @@ public final class TechnicalSheet {
     private final double scale;
     private final String scaleLabel;
     private final double sectionFraction;
-    public TechnicalSheet(double[] segments,double sectionFraction) {
+    /** Sheet format: A4 (297 × 210) or A3 (420 × 297); the layout is drawn in A4 units scaled by √2 on A3. */
+    private final boolean a3;
+    public TechnicalSheet(double[] segments,double sectionFraction){this(segments,sectionFraction,false);}
+    public TechnicalSheet(double[] segments,double sectionFraction,boolean a3) {
+        this.a3=a3;
         this.segments=segments;
         this.sectionFraction=sectionFraction;
         for(double[] b:bounds) {b[0]=b[1]=Double.POSITIVE_INFINITY;b[2]=b[3]=Double.NEGATIVE_INFINITY;}
@@ -25,11 +29,14 @@ public final class TechnicalSheet {
         double fit=Double.POSITIVE_INFINITY;
         for(double[] b:bounds) if(Double.isFinite(b[0]))
             fit=Math.min(fit,Math.min(100/Math.max(.001,b[2]-b[0]),54/Math.max(.001,b[3]-b[1])));
-        double chosen=Math.min(.001,fit);
-        for(double s:new double[]{2,1,.5,.2,.1,.05,.02,.01,.005,.002,.001}) if(s<=fit) {chosen=s;break;}
-        scale=chosen;
-        scaleLabel=scale>=1 ? String.format(Locale.US,"%.0f:1",scale)
-            : String.format(Locale.US,"1:%.0f",1/scale);
+        // On A3 the view boxes are √2 larger on paper: the standard scale is chosen for that size and the
+        // layout (in A4 units) uses scale/√2, so the printed scale is exactly the labelled one.
+        double k=a3?420.0/297:1;
+        double chosen=Math.min(.001,fit*k);
+        for(double s:new double[]{10,5,2,1,.5,.2,.1,.05,.02,.01,.005,.002,.001}) if(s<=fit*k) {chosen=s;break;}
+        scale=chosen/k;
+        scaleLabel=chosen>=1 ? String.format(Locale.US,"%.0f:1",chosen)
+            : String.format(Locale.US,"1:%.0f",1/chosen);
     }
     private void line(Canvas c,float x1,float y1,float x2,float y2,float width) {
         paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(width);paint.setColor(Color.BLACK);
@@ -102,7 +109,7 @@ public final class TechnicalSheet {
         fittedText(canvas,"Nazwa: "+project.name,14,185,3.2f,151);
         fittedText(canvas,"Nr rysunku: "+project.drawingNumber+"   Rewizja: "+project.drawingRevision,14,191,2.5f,151);
         fittedText(canvas,"Autor: "+project.drawingAuthor+"   Materiał: "+project.drawingMaterial,14,197,2.5f,151);
-        text(canvas,"Skala "+scaleLabel,174,187,3);text(canvas,"A4 · 297 × 210",239,187,2.5f);
+        text(canvas,"Skala "+scaleLabel,174,187,3);text(canvas,a3?"A3 · 420 × 297":"A4 · 297 × 210",239,187,2.5f);
         text(canvas,"Jednostka: mm",174,197,2.5f);text(canvas,"Arkusz 1 / 1",239,197,2.5f);
         canvas.restore();
     }
@@ -216,6 +223,8 @@ public final class TechnicalSheet {
         return new float[]{(x-(cx-297*factor/2))/factor,(y-(cy-210*factor/2))/factor};
     }
     /** Paper position (mm) of a point given in a view's coordinates. */
+    public boolean a3(){return a3;}
+    public String scaleLabel(){return scaleLabel;}
     /** Paper scale (paper mm per model mm). */
     public double scale(){return scale;}
     public float[] paperOf(int view,double x,double y){return hasView(view)?new float[]{px(view,x),py(view,y)}:null;}

@@ -41,9 +41,9 @@ public final class MainActivity extends Activity {
             @Override public void requestExport(String format) { requestExportFile(format); }
             @Override public void requestOpenStep() {
                 new android.app.AlertDialog.Builder(MainActivity.this).setTitle("Otwórz plik")
-                    .setItems(new String[]{"STEP — bryła", "STL — siatka ASCII / binarna", "DXF — szkic 2D", "OBJ — siatka", "3MF — siatka (druk 3D)"},
+                    .setItems(new String[]{"STEP — bryła", "STL — siatka ASCII / binarna", "DXF — szkic 2D", "OBJ — siatka", "3MF — siatka (druk 3D)", "IGES / IGS — bryła lub powierzchnie"},
                         (dialog,which)-> {
-                            pendingImportFormat = which==0 ? "step" : which==1 ? "stl" : which==2 ? "dxf" : which==3 ? "obj" : "3mf";
+                            pendingImportFormat = which==0 ? "step" : which==1 ? "stl" : which==2 ? "dxf" : which==3 ? "obj" : which==4 ? "3mf" : "iges";
                             requestStepFile();
                         }).setNegativeButton("Anuluj",null).show();
             }
@@ -67,8 +67,8 @@ public final class MainActivity extends Activity {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(format.equals("pdf") ? "application/pdf" : format.equals("step") ? "application/step"
-            : format.startsWith("stl") ? "model/stl" : format.equals("obj") ? "model/obj" : format.equals("3mf") ? "model/3mf" : format.equals("csv") ? "text/csv" : "application/dxf");
-        intent.putExtra(Intent.EXTRA_TITLE, "TabletCAD-model." + (format.equals("stla") ? "stl" : format));
+            : format.equals("iges") ? "model/iges" : format.startsWith("stl") ? "model/stl" : format.equals("obj") ? "model/obj" : format.equals("3mf") ? "model/3mf" : format.equals("csv") ? "text/csv" : "application/dxf");
+        intent.putExtra(Intent.EXTRA_TITLE, "TabletCAD-model." + (format.equals("stla") ? "stl" : format.equals("iges") ? "igs" : format));
         startActivityForResult(intent, CREATE_EXPORT_FILE);
     }
 
@@ -84,7 +84,7 @@ public final class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == OPEN_STEP_FILE && resultCode == RESULT_OK && data != null
                 && data.getData() != null) {
-            if(pendingImportFormat.equals("step")) importStep(data.getData());
+            if(pendingImportFormat.equals("step")||pendingImportFormat.equals("iges")) importStep(data.getData());
             else importExchange(data.getData());
             return;
         }
@@ -111,6 +111,14 @@ public final class MainActivity extends Activity {
                     workspace.write3mf(output);
                 } else if (format.equals("dxf")) {
                     workspace.writeDxf(output);
+                } else if (format.equals("iges")) {
+                    File step=new File(getCacheDir(),"tabletcad-export-iges.step"),iges=new File(getCacheDir(),"tabletcad-export.igs");
+                    try {
+                        if(!workspace.exportStep(step.getAbsolutePath()))throw new IOException("Rdzeń OCCT nie zapisał modelu");
+                        String failure=NativeCadEngine.convertExchange(step.getAbsolutePath(),iges.getAbsolutePath(),1);
+                        if(failure!=null)throw new IOException(failure);
+                        try(FileInputStream input=new FileInputStream(iges)){byte[] buffer=new byte[64*1024];int read;while((read=input.read(buffer))>=0)output.write(buffer,0,read);}
+                    } finally {step.delete();iges.delete();}
                 } else {
                     File temporary = new File(getCacheDir(), "tabletcad-export.step");
                     if (!workspace.exportStep(temporary.getAbsolutePath())) {
@@ -147,8 +155,17 @@ public final class MainActivity extends Activity {
                 output.write(buffer, 0, read);
             }
             output.flush();
-            workspace.importStep(staged);
-            Toast.makeText(this, "Model STEP otwarty", Toast.LENGTH_LONG).show();
+            boolean iges=pendingImportFormat.equals("iges");
+            if(iges) {
+                // IGES is converted to STEP by the kernel (faces sewn into solids) and imported as STEP.
+                File converted=new File(getCacheDir(),"imported-iges.step");
+                try {
+                    String failure=NativeCadEngine.convertExchange(staged.getAbsolutePath(),converted.getAbsolutePath(),0);
+                    if(failure!=null)throw new IOException(failure);
+                    workspace.importStep(converted);
+                } finally {converted.delete();}
+            } else workspace.importStep(staged);
+            Toast.makeText(this, iges?"Model IGES otwarty":"Model STEP otwarty", Toast.LENGTH_LONG).show();
         } catch (IOException error) {
             Toast.makeText(this, "Import nieudany: " + error.getMessage(), Toast.LENGTH_LONG).show();
         } finally { staged.delete(); }

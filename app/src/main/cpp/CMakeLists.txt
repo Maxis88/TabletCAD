@@ -11,6 +11,11 @@ set(OCCT_LIBRARIES
     TKDESTEP TKDE TKXCAF TKXSBase TKVCAF TKCAF TKLCAF TKCDF TKFillet TKBool TKBO
     TKOffset TKPrim TKV3d TKService TKMesh TKShHealing TKHLR TKTopAlgo
     TKGeomAlgo TKBRep TKGeomBase TKG3d TKG2d TKMath TKernel)
+# IGES exchange when the OCCT build provides it (tools/prepare-occt.ps1 builds TKDEIGES since 0.99).
+if(EXISTS "${OCCT_LIB_DIR}/libTKDEIGES.so")
+    list(INSERT OCCT_LIBRARIES 0 TKDEIGES)
+    set(TABLETCAD_WITH_IGES ON)
+endif()
 
 foreach(OCCT_LIBRARY IN LISTS OCCT_LIBRARIES)
     add_library(${OCCT_LIBRARY} SHARED IMPORTED)
@@ -20,6 +25,9 @@ endforeach()
 
 target_include_directories(tabletcad PRIVATE "${OCCT_BUILD}/include/opencascade")
 target_link_libraries(tabletcad PRIVATE ${OCCT_LIBRARIES})
+if(TABLETCAD_WITH_IGES)
+    target_compile_definitions(tabletcad PRIVATE TABLETCAD_IGES=1)
+endif()
 set_target_properties(tabletcad PROPERTIES
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN ON)
