@@ -73,8 +73,10 @@ public final class NativeCadEngine {
 
     public static double[] evaluateFeatures(double width, double height, double depth,
             double radius, double[] base, double[] features, String exportPath, String sourceStep) {
-        return LOADED ? nativeEvaluateFeatures(width, height, depth, radius, base, features,
-            exportPath, sourceStep, 0) : new double[0];
+        if(!LOADED)return new double[0];
+        // Without an export file the evaluation is a pure query (preview meshes): memoised.
+        if(exportPath==null)return cached(width,height,depth,radius,base,features,sourceStep,0);
+        return nativeEvaluateFeatures(width, height, depth, radius, base, features, exportPath, sourceStep, 0);
     }
 
     /** Segments: signature (start/mid/end xyz), segment endpoints xyz, edge index. */

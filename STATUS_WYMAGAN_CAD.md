@@ -220,8 +220,8 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
    ścian i współosiowość walców zwykłych brył są trwałymi wiązaniami przeliczanymi
    po zmianie geometrii; dosunięcie wystąpień złożenia zapisuje położenie.
 4. Dokumentacja: arkusz z rzutami i przekrojem; od 0.90 własne wymiary liniowe arkusza
-   (poziome, pionowe, równoległe) zapisywane w dokumencie i w PDF. Brak wymiarów promieni,
-   średnic i kątów na arkuszu, tolerancji oraz tabliczek w wielu formatach; wymiary nie
+   (poziome, pionowe, równoległe), od 0.91 średnice/promienie i wymiary od środków otworów,
+   zapisywane w dokumencie i w PDF. Brak kątów na arkuszu, tolerancji oraz tabliczek w wielu formatach; wymiary nie
    podążają za zmianą modelu (nieaktualne są oznaczane na czerwono).
 5. Formaty: brak IGES; 3MF tylko eksport; weryfikacja w zewnętrznych CAD do wykonania.
 6. Powierzchnie, blachy i rozwinięcia: poza obecnym zakresem.

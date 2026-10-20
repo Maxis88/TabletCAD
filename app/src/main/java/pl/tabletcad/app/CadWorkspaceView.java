@@ -4610,8 +4610,22 @@ if (isInsideViewport(e.getX(), e.getY())) {
         int existing=technicalSheet.dimensionAt(project.drawingDimensions,paper[0],paper[1]);
         if(existing>=0&&(!sheetDimensionMode||sheetFirst==null)){showSheetDimensionMenu(existing);return;}
         if(!sheetDimensionMode){operationMessage="Wymiaruj w panelu dodaje wymiary; dotknięcie wartości wymiaru pozwala go zmienić";invalidate();return;}
-        double[] hit=technicalSheet.snap(paper[0],paper[1],dp(20)/factor);
-        if(hit==null){operationMessage="Dotknij narożnika lub końca krawędzi w rzucie";invalidate();return;}
+        double tolerance=dp(20)/factor;
+        double[] hit=technicalSheet.snap(paper[0],paper[1],tolerance),centre=technicalSheet.centreAt(paper[0],paper[1],tolerance*.8);
+        if(centre!=null)hit=centre;// circle centres (hole positions) take precedence over polyline points
+        if(sheetFirst==null&&centre==null) {
+            double[] circle=technicalSheet.circleAt(paper[0],paper[1],tolerance);
+            boolean onOutline=circle!=null&&(hit==null||Math.abs(Math.hypot(hit[1]-circle[1],hit[2]-circle[2])-circle[3])<1e-3);
+            if(onOutline) {
+                float[] c=technicalSheet.paperOf((int)circle[0],circle[1],circle[2]);
+                double angle=Math.toDegrees(Math.atan2(-(paper[1]-c[1]),paper[0]-c[0]));
+                double[] d=TechnicalSheet.circleDimension((int)circle[0],circle[1],circle[2],circle[3],circle[4]==1,Math.rint(angle));
+                try{checkpoint();project.drawingDimensions.add(d);projectRepository.save(project);operationMessage=(circle[4]==1?"Średnica Ø":"Promień R")+formatMm(circle[4]==1?2*circle[3]:circle[3])+" dodany. Środek okręgu można też wskazać jako punkt wymiaru.";}
+                catch(RuntimeException error){project.drawingDimensions.remove(d);operationMessage="Nie zapisano wymiaru: "+error.getMessage();}
+                invalidate();return;
+            }
+        }
+        if(hit==null){operationMessage="Dotknij narożnika, końca krawędzi, środka lub obrysu okręgu w rzucie";invalidate();return;}
         if(sheetFirst==null){sheetFirst=hit;operationMessage="Wskaż drugi punkt w tym samym rzucie";invalidate();return;}
         if((int)hit[0]!=(int)sheetFirst[0]){operationMessage="Oba punkty muszą leżeć w tym samym rzucie";sheetFirst=hit;invalidate();return;}
         if(Math.hypot(hit[1]-sheetFirst[1],hit[2]-sheetFirst[2])<1e-6){operationMessage="Wskaż inny punkt";invalidate();return;}
@@ -4621,8 +4635,22 @@ if (isInsideViewport(e.getX(), e.getY())) {
         catch(RuntimeException error){project.drawingDimensions.remove(d);operationMessage="Nie zapisano wymiaru: "+error.getMessage();}
         invalidate();
     }
+    private void showSheetCircleMenu(int index) {
+        double[] d=project.drawingDimensions.get(index);double r=Math.hypot(d[3]-d[1],d[4]-d[2]);
+        String[] items={"Średnica Ø","Promień R","Obróć odnośnik o 45°","Obróć odnośnik o −45°","Usuń wymiar"};
+        new PropertyBuilder().setTitle("Wymiar okręgu · "+((int)d[5]==TechnicalSheet.DIAMETER?"Ø"+formatMm(2*r):"R"+formatMm(r))).setItems(items,(dialog,which)->{
+            double angle=d[6]+(which==2?45:which==3?-45:0);if(angle>180)angle-=360;if(angle<-180)angle+=360;
+            double[] next=TechnicalSheet.circleDimension((int)d[0],d[1],d[2],r,which==0||(which>1&&(int)d[5]==TechnicalSheet.DIAMETER),angle);
+            checkpoint();
+            if(which==4)project.drawingDimensions.remove(index);else project.drawingDimensions.set(index,next);
+            try{projectRepository.save(project);operationMessage=which==4?"Usunięto wymiar arkusza":"Zmieniono wymiar okręgu";}
+            catch(RuntimeException error){operationMessage="Nie zapisano: "+error.getMessage();}
+            invalidate();
+        }).setNegativeButton("Zamknij",null).show();
+    }
     private void showSheetDimensionMenu(int index) {
         double[] d=project.drawingDimensions.get(index);
+        if((int)d[5]>=TechnicalSheet.DIAMETER){showSheetCircleMenu(index);return;}
         String[] items={"Poziomy","Pionowy","Równoległy do punktów","Odsuń dalej (+4 mm)","Przysuń bliżej (−4 mm)","Odwróć stronę","Usuń wymiar"};
         new PropertyBuilder().setTitle("Wymiar arkusza · "+formatMm(TechnicalSheet.value(d))).setItems(items,(dialog,which)->{
             double[] next=d.clone();

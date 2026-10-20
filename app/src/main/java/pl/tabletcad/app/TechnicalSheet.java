@@ -6,7 +6,8 @@ import pl.tabletcad.app.model.CadProject;
 
 /** A4 landscape drawing in millimetres; same vector renderer for screen and PDF. */
 public final class TechnicalSheet {
-    private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG | Paint.LINEAR_TEXT_FLAG);
+    /** Created on first draw, so the geometry queries (snapping, circles) work without a display. */
+    private Paint paint;
     private final double[] segments;
     private final double[][] bounds=new double[4][4];
     private final double scale;
@@ -49,6 +50,7 @@ public final class TechnicalSheet {
         text(c,fitted,x,y,size);
     }
     public void draw(Canvas canvas,RectF area,CadProject project) {
+        if(paint==null)paint=new Paint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG | Paint.LINEAR_TEXT_FLAG);
         canvas.save();
         float factor=Math.min(area.width()/297,area.height()/210);
         canvas.translate(area.centerX()-297*factor/2,area.centerY()-210*factor/2);
@@ -114,7 +116,7 @@ public final class TechnicalSheet {
     /** Dimension being placed (preview), drawn in the accent colour. */
     public double[] pending;
     /** Kinds of user dimensions on the sheet. */
-    public static final int ALIGNED=0,HORIZONTAL=1,VERTICAL=2;
+    public static final int ALIGNED=0,HORIZONTAL=1,VERTICAL=2,DIAMETER=3,RADIUS=4;
     /** Record of a sheet dimension: view, x1, y1, x2, y2 (view coordinates in mm), kind, offset (paper mm). */
     public static double[] dimension(int view,double x1,double y1,double x2,double y2,int kind,double offset) {
         return new double[]{view,x1,y1,x2,y2,kind,offset};
@@ -122,7 +124,7 @@ public final class TechnicalSheet {
     public static void validate(double[] d) {
         if(d==null||d.length!=7)throw new IllegalArgumentException("Niepoprawny wymiar arkusza");
         for(double v:d)if(!Double.isFinite(v))throw new IllegalArgumentException("Niepoprawny wymiar arkusza");
-        if(d[0]<0||d[0]>3||d[0]!=Math.rint(d[0])||d[5]<0||d[5]>2||d[5]!=Math.rint(d[5])||Math.abs(d[6])>100)throw new IllegalArgumentException("Niepoprawny wymiar arkusza");
+        if(d[0]<0||d[0]>3||d[0]!=Math.rint(d[0])||d[5]<0||d[5]>4||d[5]!=Math.rint(d[5])||Math.abs(d[6])>(d[5]>=DIAMETER?180:100))throw new IllegalArgumentException("Niepoprawny wymiar arkusza");
     }
     /** Automatic kind: nearly horizontal or vertical pairs get a horizontal/vertical dimension. */
     public static int autoKind(double x1,double y1,double x2,double y2) {
@@ -134,6 +136,7 @@ public final class TechnicalSheet {
     /** True length of a sheet dimension in model millimetres (orthographic views are true size). */
     public static double value(double[] d) {
         double dx=d[3]-d[1],dy=d[4]-d[2];int kind=(int)d[5];
+        if(kind==DIAMETER)return 2*Math.hypot(dx,dy);
         return kind==HORIZONTAL?Math.abs(dx):kind==VERTICAL?Math.abs(dy):Math.hypot(dx,dy);
     }
     /** Paper coordinates (mm) of a screen point for the area the sheet is drawn into. */
@@ -143,6 +146,8 @@ public final class TechnicalSheet {
         return new float[]{(x-(cx-297*factor/2))/factor,(y-(cy-210*factor/2))/factor};
     }
     /** Paper position (mm) of a point given in a view's coordinates. */
+    /** Paper scale (paper mm per model mm). */
+    public double scale(){return scale;}
     public float[] paperOf(int view,double x,double y){return hasView(view)?new float[]{px(view,x),py(view,y)}:null;}
     public boolean hasView(int view){return view>=0&&view<4&&Double.isFinite(bounds[view][0]);}
     /** Nearest segment end point within tolerance (paper mm): {view, x, y} in view coordinates, or null. */
@@ -159,7 +164,13 @@ public final class TechnicalSheet {
     }
     /** Whether a point is still an end point of a segment of the view (1 µm). */
     public boolean onVertex(int view,double x,double y) {
+        for(double[] c:circles())if((int)c[0]==view&&Math.abs(c[1]-x)<1e-3&&Math.abs(c[2]-y)<1e-3)return true;
         for(int i=0;i+5<segments.length;i+=6)if((int)segments[i]==view)for(int j=2;j<=4;j+=2)if(Math.abs(segments[i+j]-x)<1e-3&&Math.abs(segments[i+j+1]-y)<1e-3)return true;
+        return false;
+    }
+    /** Whether the view still has a vertex on the given circle (the dimensioned hole or arc exists). */
+    public boolean onCircle(int view,double cx,double cy,double r) {
+        int hits=0;for(int i=0;i+5<segments.length;i+=6)if((int)segments[i]==view&&Math.abs(Math.hypot(segments[i+2]-cx,segments[i+3]-cy)-r)<Math.max(1e-3,r*1e-3))if(++hits>=3)return true;
         return false;
     }
     /** Index of the user dimension whose value label is under the paper point, or −1. */
@@ -179,8 +190,69 @@ public final class TechnicalSheet {
         la=ax+nx*off;lb=ay+ny*off;lc=bx+nx*off;ld=by+ny*off;
         return new float[][]{{ax,ay,bx,by},{la,lb,lc,ld}};
     }
-    private float[] labelPoint(double[] d){float[][] g=dimensionLine(d);if(g==null)return null;return new float[]{(g[1][0]+g[1][2])/2,(g[1][1]+g[1][3])/2-1.2f};}
+    private List<double[]> circles;
+    /** Circles and arcs of all views (connected chains of visible segments on one circle): {view, cx, cy, r, closed}. */
+    public List<double[]> circles() {
+        if(circles!=null)return circles;
+        int n=segments.length/6;int[] parent=new int[n];for(int i=0;i<n;i++)parent[i]=i;
+        Map<String,Integer> owner=new HashMap<>();
+        for(int i=0;i<n;i++){if(segments[6*i+1]!=0)continue;for(int j=2;j<=4;j+=2){String key=(int)segments[6*i]+":"+Math.round(segments[6*i+j]*1e5)+":"+Math.round(segments[6*i+j+1]*1e5);Integer o=owner.putIfAbsent(key,i);if(o!=null)union(parent,o,i);}}
+        Map<Integer,List<Integer>> groups=new HashMap<>();
+        for(int i=0;i<n;i++)if(segments[6*i+1]==0)groups.computeIfAbsent(find(parent,i),k->new ArrayList<>()).add(i);
+        List<double[]> out=new ArrayList<>();
+        for(List<Integer> g:groups.values()) {
+            if(g.size()<6)continue;List<double[]> pts=new ArrayList<>();Map<String,Integer> degree=new HashMap<>();
+            for(int i:g)for(int j=2;j<=4;j+=2){pts.add(new double[]{segments[6*i+j],segments[6*i+j+1]});degree.merge(Math.round(segments[6*i+j]*1e5)+":"+Math.round(segments[6*i+j+1]*1e5),1,Integer::sum);}
+            double[] c=circle(pts.get(0),pts.get(pts.size()/3|1),pts.get((2*pts.size()/3)|1));if(c==null||c[2]<1e-3)continue;
+            boolean round=true;for(double[] p:pts)if(Math.abs(Math.hypot(p[0]-c[0],p[1]-c[1])-c[2])>Math.max(1e-3,c[2]*.005)){round=false;break;}
+            if(!round)continue;boolean closed=true;for(int d:degree.values())if(d!=2)closed=false;
+            out.add(new double[]{segments[6*g.get(0)],c[0],c[1],c[2],closed?1:0});
+        }
+        circles=out;return out;
+    }
+    private static int find(int[] p,int i){while(p[i]!=i){p[i]=p[p[i]];i=p[i];}return i;}
+    private static void union(int[] p,int a,int b){p[find(p,a)]=find(p,b);}
+    /** Circle or arc whose outline passes under the paper point, or null. */
+    public double[] circleAt(float paperX,float paperY,double tolerance) {
+        double best=tolerance;double[] hit=null;
+        for(double[] c:circles()){int v=(int)c[0];double d=Math.abs(Math.hypot(px(v,c[1])-paperX,py(v,c[2])-paperY)-c[3]*scale);if(d<best){best=d;hit=c;}}
+        return hit;
+    }
+    /** Centre of a circle near the paper point: {view, cx, cy}, or null. */
+    public double[] centreAt(float paperX,float paperY,double tolerance) {
+        double best=tolerance;double[] hit=null;
+        for(double[] c:circles()){int v=(int)c[0];double d=Math.hypot(px(v,c[1])-paperX,py(v,c[2])-paperY);if(d<best){best=d;hit=new double[]{v,c[1],c[2]};}}
+        return hit;
+    }
+    private static double[] circle(double[] a,double[] b,double[] c) {
+        double d=2*(a[0]*(b[1]-c[1])+b[0]*(c[1]-a[1])+c[0]*(a[1]-b[1]));if(Math.abs(d)<1e-12)return null;
+        double a2=a[0]*a[0]+a[1]*a[1],b2=b[0]*b[0]+b[1]*b[1],c2=c[0]*c[0]+c[1]*c[1];
+        double x=(a2*(b[1]-c[1])+b2*(c[1]-a[1])+c2*(a[1]-b[1]))/d,y=(a2*(c[0]-b[0])+b2*(a[0]-c[0])+c2*(b[0]-a[0]))/d;
+        return new double[]{x,y,Math.hypot(a[0]-x,a[1]-y)};
+    }
+    /** Record of a diameter/radius dimension: centre, a point on the circle at the leader angle. */
+    public static double[] circleDimension(int view,double cx,double cy,double r,boolean diameter,double angleDegrees) {
+        double a=Math.toRadians(angleDegrees);return new double[]{view,cx,cy,cx+r*Math.cos(a),cy+r*Math.sin(a),diameter?DIAMETER:RADIUS,angleDegrees};
+    }
+    private void circleDimensionDraw(Canvas c,double[] d,int colour) {
+        int view=(int)d[0];float cx=px(view,d[1]),cy=py(view,d[2]),ex=px(view,d[3]),ey=py(view,d[4]);
+        float dx=ex-cx,dy=ey-cy,r=(float)Math.hypot(dx,dy);if(r<.05)return;float ux=dx/r,uy=dy/r;
+        boolean diameter=(int)d[5]==DIAMETER;
+        float sx=diameter?cx-ux*r:cx,sy=diameter?cy-uy*r:cy,tx=ex+ux*7,ty=ey+uy*7;
+        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(.15f);paint.setColor(colour);c.drawLine(sx,sy,tx,ty,paint);
+        String label=(diameter?"Ø":"R")+String.format(Locale.US,"%.2f",diameter?value(d):Math.hypot(d[3]-d[1],d[4]-d[2]));
+        paint.setTextSize(2.5f);float w=paint.measureText(label);
+        float hx=tx+(ux>=0?w+2:-(w+2));c.drawLine(tx,ty,hx,ty,paint);
+        arrow(c,ex,ey,cx,cy,colour);if(diameter)arrow(c,sx,sy,cx,cy,colour);
+        paint.setStyle(Paint.Style.FILL);paint.setColor(colour);c.drawText(label,Math.min(tx,hx)+1,ty-.8f,paint);
+    }
+    private float[] labelPoint(double[] d){
+        if((int)d[5]>=DIAMETER){int view=(int)d[0];if(!hasView(view))return null;float cx=px(view,d[1]),cy=py(view,d[2]),ex=px(view,d[3]),ey=py(view,d[4]);float dx=ex-cx,dy=ey-cy,r=(float)Math.hypot(dx,dy);if(r<.05)return null;return new float[]{ex+dx/r*7+(dx>=0?5:-5),ey+dy/r*7-1.2f};}float[][] g=dimensionLine(d);if(g==null)return null;return new float[]{(g[1][0]+g[1][2])/2,(g[1][1]+g[1][3])/2-1.2f};}
     private void userDimension(Canvas c,double[] d,boolean preview) {
+        if((int)d[5]>=DIAMETER) {
+            boolean stale=!preview&&!onCircle((int)d[0],d[1],d[2],Math.hypot(d[3]-d[1],d[4]-d[2]));
+            circleDimensionDraw(c,d,preview?Color.rgb(13,148,136):stale?Color.rgb(196,64,52):Color.BLACK);return;
+        }
         float[][] g=dimensionLine(d);if(g==null)return;
         // A point that no longer lies on a view vertex (the model changed) is shown in red: re-attach or delete it.
         boolean stale=!preview&&(!onVertex((int)d[0],d[1],d[2])||!onVertex((int)d[0],d[3],d[4]));
