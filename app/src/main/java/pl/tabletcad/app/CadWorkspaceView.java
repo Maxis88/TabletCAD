@@ -1848,6 +1848,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             text(canvas,chip.label,tx,r.centerY()+dp(4.5f),12,Color.WHITE,false);
             stripRects.add(r);stripShown.add(chip);x=r.right+dp(6);
         }
+        String perfText=perfSummary();if(!perfText.isEmpty())stripHint=stripHint.isEmpty()?perfText:perfText+"   "+stripHint;
         if(!stripHint.isEmpty()){paint.setTextSize(dp(11.5f));String hint=stripHint;float room=w-dp(16)-(x+dp(12));
             while(hint.length()>4&&paint.measureText(hint)>room)hint=hint.substring(0,hint.length()-2);
             if(hint.length()<stripHint.length()&&hint.length()>4)hint=hint.substring(0,hint.length()-1)+"…";
@@ -7670,7 +7671,14 @@ if (isInsideViewport(e.getX(), e.getY())) {
         long perfStart=android.os.SystemClock.uptimeMillis();try{return commitModelChangeTimed(change);}finally{perf("commitModelChange",perfStart);}
     }
     /** Timing of model operations in logcat (tag TabletCAD-perf) to find slow steps on the device. */
-    private static void perf(String what,long start){android.util.Log.i("TabletCAD-perf",what+" "+(android.os.SystemClock.uptimeMillis()-start)+" ms");}
+    private static final java.util.Map<String,Long> PERF=new java.util.concurrent.ConcurrentHashMap<>();
+    private static void perf(String what,long start){long ms=android.os.SystemClock.uptimeMillis()-start;PERF.put(what,ms);android.util.Log.i("TabletCAD-perf",what+" "+ms+" ms");}
+    /** Last measured times, shown at the right of the options strip (diagnostics of slow steps on the device). */
+    private static String perfSummary(){
+        StringBuilder b=new StringBuilder();
+        for(String k:new String[]{"preview kernel","preview total (queue+kernel+ui)","commit kernel","commit queue+kernel","commit apply+first frame","commitModelChange"}){Long v=PERF.get(k);if(v!=null)b.append(b.length()==0?"⏱ ":" · ").append(k.replace(" (queue+kernel+ui)","").replace("queue+kernel","całość")).append(' ').append(v).append(" ms");}
+        return b.toString();
+    }
     private boolean commitModelChangeTimed(Runnable change) {
         CadProject previous = project;
         double[] previousMesh = nativeMesh, previousPrism = nativePrism;
