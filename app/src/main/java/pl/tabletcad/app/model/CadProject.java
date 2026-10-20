@@ -262,8 +262,9 @@ public final class CadProject {
         }
         JSONArray sheetDimensions=root.optJSONArray("drawingDimensions");
         if(sheetDimensions!=null)for(int i=0;i<sheetDimensions.length()&&i<500;i++){JSONArray row=sheetDimensions.getJSONArray(i);double[] d=new double[row.length()];for(int j=0;j<d.length;j++)d[j]=row.getDouble(j);
-            boolean ok=d.length==7;for(double v:d)ok&=Double.isFinite(v);
-            if(!ok||d[0]<0||d[0]>3||d[0]!=Math.rint(d[0])||d[5]<0||d[5]>4||d[5]!=Math.rint(d[5])||Math.abs(d[6])>(d[5]>=3?180:100))throw new JSONException("Niepoprawny wymiar arkusza");
+            if(d.length==7){double[] padded=new double[]{d[0],d[1],d[2],d[3],d[4],d[5],d[6],0,0,0,0,-9,-9,-9,-9};d=padded;}// 0.90/0.91 records
+            boolean ok=d.length==15;for(double v:d)ok&=Double.isFinite(v);
+            if(!ok||d[0]<0||d[0]>3||d[0]!=Math.rint(d[0])||d[5]<0||d[5]>5||d[5]!=Math.rint(d[5])||Math.abs(d[6])>(d[5]==3||d[5]==4?180:100)||d[9]<0||d[9]>100||d[10]<0||d[10]>100)throw new JSONException("Niepoprawny wymiar arkusza");
             project.drawingDimensions.add(d);}
         if(project.drawingSectionFraction<=0||project.drawingSectionFraction>=1)
             project.drawingSectionFraction=.5;

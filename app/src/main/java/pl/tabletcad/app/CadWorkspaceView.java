@@ -1483,7 +1483,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     /** Default tool contexts use the same native controls as parameter forms. */
     private void scheduleContextPanel() {
-        String key=propertyEditor!=null||!propertiesVisible()?"":mode+"|"+sketchTool+"|"+sketchPlaneChosen+"|"+project.sketchId+"|"+project.sketch.size()+"|"+project.polylineDraft.size()+"|"+project.threePointDraft.size()+"|"+arcDraft.size()+"|"+coincidenceMode+"|"+stylus.stylusSeen()+fingerDraws+"|"+sheetDimensionMode+"|"+project.drawingDimensions.size()+"|"+selectedSketchId+"|"+projectionMode+"|"+multiSelect+"|"+sketchMulti.size()+"|"+constraintKind+"|"+trimMode+"|"+dimensionMode+"|"+projectionMode+"|"+displayMode+"|"+(sectionPlane!=null);
+        String key=propertyEditor!=null||!propertiesVisible()?"":mode+"|"+sketchTool+"|"+sketchPlaneChosen+"|"+project.sketchId+"|"+project.sketch.size()+"|"+project.polylineDraft.size()+"|"+project.threePointDraft.size()+"|"+arcDraft.size()+"|"+coincidenceMode+"|"+stylus.stylusSeen()+fingerDraws+"|"+sheetDimensionMode+sheetAngleMode+"|"+project.drawingDimensions.size()+"|"+selectedSketchId+"|"+projectionMode+"|"+multiSelect+"|"+sketchMulti.size()+"|"+constraintKind+"|"+trimMode+"|"+dimensionMode+"|"+projectionMode+"|"+displayMode+"|"+(sectionPlane!=null);
         if(key.equals(contextPanelKey)||contextPanelPosted)return;
         contextPanelPosted=true;post(()->{contextPanelPosted=false;if(!isAttachedToWindow()||!(getParent() instanceof android.widget.FrameLayout))return;
             removeContextPanel();if(propertyEditor!=null||!propertiesVisible())return;
@@ -1553,12 +1553,15 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 contextAction(contents,"Rodzaj pomiaru…",false,()->showMeasurementPanel());
                 contextAction(footer,"Zakończ pomiar",true,()->{mode="Wybierz";invalidate();});
             } else if(mode.equals("Rysunek")) {
-                if(sheetDimensionMode)contextAction(contents,"Zakończ wymiarowanie",true,()->{sheetDimensionMode=false;sheetFirst=null;operationMessage="";});
-                else contextAction(contents,"Wymiaruj (dotknij dwóch punktów)",false,()->{sheetDimensionMode=true;sheetFirst=null;operationMessage="Dotknij dwóch narożników lub końców krawędzi w jednym rzucie";});
+                if(sheetDimensionMode)contextAction(contents,"Zakończ wymiarowanie",true,()->{sheetDimensionMode=sheetAngleMode=false;sheetFirst=sheetSecond=null;operationMessage="";});
+                else {
+                    contextAction(contents,"Wymiaruj (dotknij dwóch punktów)",false,()->{sheetDimensionMode=true;sheetAngleMode=false;sheetFirst=sheetSecond=null;operationMessage="Dotknij dwóch narożników, środków lub obrysu okręgu w jednym rzucie";});
+                    contextAction(contents,"Wymiaruj kąt (wierzchołek, dwa ramiona)",false,()->{sheetDimensionMode=sheetAngleMode=true;sheetFirst=sheetSecond=null;operationMessage="Dotknij wierzchołka kąta, potem końców obu ramion";});
+                }
                 if(!project.drawingDimensions.isEmpty())contextText(contents,"Wymiary arkusza: "+project.drawingDimensions.size()+" — dotknij wartości, aby ją zmienić",false);
                 contextAction(contents,"Ustawienia arkusza…",false,()->showDrawingOptions());
                 contextAction(contents,"Dane rysunkowe…",false,()->showDrawingMetadataEditor());
-                contextAction(footer,"Powrót do modelu",true,()->{mode="Wybierz";sheetDimensionMode=false;sheetFirst=null;invalidate();});
+                contextAction(footer,"Powrót do modelu",true,()->{mode="Wybierz";sheetDimensionMode=sheetAngleMode=false;sheetFirst=sheetSecond=null;invalidate();});
             }
             contextEditor=new android.widget.ScrollView(c);contextEditor.setFillViewport(true);contextEditor.addView(body);
             android.widget.FrameLayout.LayoutParams p=new android.widget.FrameLayout.LayoutParams((int)dp(PANEL_DP),Math.max(0,(int)(panelBottom()-viewTop())));
@@ -4678,13 +4681,15 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     /** Sheet dimensioning: tap two end points of the views; tap a value to change or delete it. */
-    private boolean sheetDimensionMode;private double[] sheetFirst;private final RectF sheetArea=new RectF();
+    private boolean sheetDimensionMode,sheetAngleMode;private double[] sheetFirst,sheetSecond;private final RectF sheetArea=new RectF();
     private void drawTechnicalViews(Canvas canvas, float left, float top, float right, float bottom) {
         sheetArea.set(left+dp(10),top+dp(10),right-dp(10),bottom-dp(10));
         if(technicalSheet!=null){technicalSheet.pending=null;technicalSheet.draw(canvas,sheetArea,project);
             if(sheetDimensionMode&&sheetFirst!=null){float factor=Math.min(sheetArea.width()/297,sheetArea.height()/210);
                 paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(2));paint.setColor(ACCENT);
-                float[] at=sheetScreen(sheetFirst);if(at!=null)canvas.drawCircle(at[0],at[1],dp(7),paint);paint.setStyle(Paint.Style.FILL);}}
+                float[] at=sheetScreen(sheetFirst);if(at!=null)canvas.drawCircle(at[0],at[1],dp(7),paint);
+                if(sheetSecond!=null){float[] second=sheetScreen(sheetSecond);if(second!=null&&at!=null){canvas.drawCircle(second[0],second[1],dp(5),paint);canvas.drawLine(at[0],at[1],second[0],second[1],paint);}}
+                paint.setStyle(Paint.Style.FILL);}}
         else text(canvas,"Nie można utworzyć arkusza z bieżącego modelu",left+dp(20),top+dp(50),14,INK,true);
     }
 
@@ -4702,54 +4707,91 @@ if (isInsideViewport(e.getX(), e.getY())) {
         double tolerance=dp(20)/factor;
         double[] hit=technicalSheet.snap(paper[0],paper[1],tolerance),centre=technicalSheet.centreAt(paper[0],paper[1],tolerance*.8);
         if(centre!=null)hit=centre;// circle centres (hole positions) take precedence over polyline points
-        if(sheetFirst==null&&centre==null) {
+        if(!sheetAngleMode&&sheetFirst==null&&centre==null) {
             double[] circle=technicalSheet.circleAt(paper[0],paper[1],tolerance);
             boolean onOutline=circle!=null&&(hit==null||Math.abs(Math.hypot(hit[1]-circle[1],hit[2]-circle[2])-circle[3])<1e-3);
             if(onOutline) {
                 float[] c=technicalSheet.paperOf((int)circle[0],circle[1],circle[2]);
                 double angle=Math.toDegrees(Math.atan2(-(paper[1]-c[1]),paper[0]-c[0]));
-                double[] d=TechnicalSheet.circleDimension((int)circle[0],circle[1],circle[2],circle[3],circle[4]==1,Math.rint(angle));
-                try{checkpoint();project.drawingDimensions.add(d);projectRepository.save(project);operationMessage=(circle[4]==1?"Średnica Ø":"Promień R")+formatMm(circle[4]==1?2*circle[3]:circle[3])+" dodany. Środek okręgu można też wskazać jako punkt wymiaru.";}
-                catch(RuntimeException error){project.drawingDimensions.remove(d);operationMessage="Nie zapisano wymiaru: "+error.getMessage();}
-                invalidate();return;
+                addSheetDimension(TechnicalSheet.circleDimension((int)circle[0],circle[1],circle[2],circle[3],circle[4]==1,Math.rint(angle)),"Środek okręgu można też wskazać jako punkt wymiaru.");
+                return;
             }
         }
-        if(hit==null){operationMessage="Dotknij narożnika, końca krawędzi, środka lub obrysu okręgu w rzucie";invalidate();return;}
-        if(sheetFirst==null){sheetFirst=hit;operationMessage="Wskaż drugi punkt w tym samym rzucie";invalidate();return;}
-        if((int)hit[0]!=(int)sheetFirst[0]){operationMessage="Oba punkty muszą leżeć w tym samym rzucie";sheetFirst=hit;invalidate();return;}
-        if(Math.hypot(hit[1]-sheetFirst[1],hit[2]-sheetFirst[2])<1e-6){operationMessage="Wskaż inny punkt";invalidate();return;}
+        if(hit==null){operationMessage=sheetAngleMode?"Dotknij wierzchołka kąta, potem końców obu ramion":"Dotknij narożnika, końca krawędzi, środka lub obrysu okręgu w rzucie";invalidate();return;}
+        if(sheetFirst==null){sheetFirst=hit;sheetSecond=null;operationMessage=sheetAngleMode?"Wierzchołek kąta wybrany. Wskaż koniec pierwszego ramienia":"Wskaż drugi punkt w tym samym rzucie";invalidate();return;}
+        if((int)hit[0]!=(int)sheetFirst[0]){operationMessage="Wszystkie punkty muszą leżeć w tym samym rzucie";sheetFirst=hit;sheetSecond=null;invalidate();return;}
+        if(Math.hypot(hit[1]-sheetFirst[1],hit[2]-sheetFirst[2])<1e-6||sheetSecond!=null&&Math.hypot(hit[1]-sheetSecond[1],hit[2]-sheetSecond[2])<1e-6){operationMessage="Wskaż inny punkt";invalidate();return;}
+        if(sheetAngleMode) {
+            if(sheetSecond==null){sheetSecond=hit;operationMessage="Wskaż koniec drugiego ramienia";invalidate();return;}
+            double[] d=TechnicalSheet.angle((int)hit[0],sheetFirst[1],sheetFirst[2],sheetSecond[1],sheetSecond[2],hit[1],hit[2]);
+            sheetFirst=sheetSecond=null;
+            if(!(TechnicalSheet.value(d)>0.01&&TechnicalSheet.value(d)<179.99)){operationMessage="Ramiona leżą na jednej prostej — wskaż inne punkty";invalidate();return;}
+            addSheetDimension(d,"Wskaż kolejny wierzchołek.");return;
+        }
         double[] d=TechnicalSheet.dimension((int)hit[0],sheetFirst[1],sheetFirst[2],hit[1],hit[2],TechnicalSheet.autoKind(sheetFirst[1],sheetFirst[2],hit[1],hit[2]),8);
         sheetFirst=null;
-        try{checkpoint();project.drawingDimensions.add(d);projectRepository.save(project);operationMessage="Wymiar "+formatMm(TechnicalSheet.value(d))+" dodany. Wskaż kolejną parę punktów.";}
+        addSheetDimension(d,"Wskaż kolejną parę punktów.");
+    }
+    private void addSheetDimension(double[] raw,String hint) {
+        double[] d=technicalSheet.withAnchors(raw);
+        try{checkpoint();project.drawingDimensions.add(d);projectRepository.save(project);operationMessage="Wymiar "+TechnicalSheet.label(d)+" dodany. "+hint;}
         catch(RuntimeException error){project.drawingDimensions.remove(d);operationMessage="Nie zapisano wymiaru: "+error.getMessage();}
         invalidate();
     }
+    /** Stored record of a sheet dimension, re-attached to the current model when it moved. */
+    private double[] sheetRecord(int index) {
+        double[] d=project.drawingDimensions.get(index);double[] r=technicalSheet==null?null:technicalSheet.resolve(d);
+        return r==null?d:technicalSheet.withAnchors(r);
+    }
+    private void storeSheetDimension(int index,double[] next,String message) {
+        checkpoint();
+        if(next==null)project.drawingDimensions.remove(index);else project.drawingDimensions.set(index,next);
+        try{projectRepository.save(project);operationMessage=message;}
+        catch(RuntimeException error){operationMessage="Nie zapisano: "+error.getMessage();}
+        invalidate();
+    }
+    /** Symmetric (±) or different upper/lower deviation of a sheet dimension. */
+    private void showSheetTolerance(int index) {
+        double[] d=sheetRecord(index);boolean angular=(int)d[5]==TechnicalSheet.ANGLE;
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        EditText plus=labeledCoordinate(form,angular?"Odchyłka górna [°]":"Odchyłka górna [mm]",d[9]),minus=labeledCoordinate(form,angular?"Odchyłka dolna [°]":"Odchyłka dolna [mm]",d[10]);
+        android.widget.TextView hint=new android.widget.TextView(getContext());hint.setText("Równe wartości dają zapis ±. Zero w obu polach usuwa tolerancję.");form.addView(hint);
+        new PropertyBuilder().setTitle("Tolerancja · "+TechnicalSheet.label(d)).setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(dialog,w)->{
+            try{double up=Math.abs(parseCoordinate(plus)),down=Math.abs(parseCoordinate(minus));if(!(up<=100&&down<=100))throw new IllegalArgumentException("Odchyłka do 100");
+                double[] next=d.clone();next[9]=up;next[10]=down;storeSheetDimension(index,next,"Tolerancja: "+TechnicalSheet.label(next));}
+            catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+        }).show();
+    }
     private void showSheetCircleMenu(int index) {
-        double[] d=project.drawingDimensions.get(index);double r=Math.hypot(d[3]-d[1],d[4]-d[2]);
-        String[] items={"Średnica Ø","Promień R","Obróć odnośnik o 45°","Obróć odnośnik o −45°","Usuń wymiar"};
-        new PropertyBuilder().setTitle("Wymiar okręgu · "+((int)d[5]==TechnicalSheet.DIAMETER?"Ø"+formatMm(2*r):"R"+formatMm(r))).setItems(items,(dialog,which)->{
+        double[] d=sheetRecord(index);double r=Math.hypot(d[3]-d[1],d[4]-d[2]);
+        String[] items={"Średnica Ø","Promień R","Obróć odnośnik o 45°","Obróć odnośnik o −45°","Tolerancja…","Usuń wymiar"};
+        new PropertyBuilder().setTitle("Wymiar okręgu · "+TechnicalSheet.label(d)).setItems(items,(dialog,which)->{
+            if(which==4){showSheetTolerance(index);return;}
+            if(which==5){storeSheetDimension(index,null,"Usunięto wymiar arkusza");return;}
             double angle=d[6]+(which==2?45:which==3?-45:0);if(angle>180)angle-=360;if(angle<-180)angle+=360;
-            double[] next=TechnicalSheet.circleDimension((int)d[0],d[1],d[2],r,which==0||(which>1&&(int)d[5]==TechnicalSheet.DIAMETER),angle);
-            checkpoint();
-            if(which==4)project.drawingDimensions.remove(index);else project.drawingDimensions.set(index,next);
-            try{projectRepository.save(project);operationMessage=which==4?"Usunięto wymiar arkusza":"Zmieniono wymiar okręgu";}
-            catch(RuntimeException error){operationMessage="Nie zapisano: "+error.getMessage();}
-            invalidate();
+            double[] next=technicalSheet.withAnchors(TechnicalSheet.circleDimension((int)d[0],d[1],d[2],r,which==0||(which>1&&(int)d[5]==TechnicalSheet.DIAMETER),angle));
+            next[9]=d[9];next[10]=d[10];
+            storeSheetDimension(index,next,"Zmieniono wymiar okręgu");
         }).setNegativeButton("Zamknij",null).show();
     }
     private void showSheetDimensionMenu(int index) {
-        double[] d=project.drawingDimensions.get(index);
-        if((int)d[5]>=TechnicalSheet.DIAMETER){showSheetCircleMenu(index);return;}
-        String[] items={"Poziomy","Pionowy","Równoległy do punktów","Odsuń dalej (+4 mm)","Przysuń bliżej (−4 mm)","Odwróć stronę","Usuń wymiar"};
-        new PropertyBuilder().setTitle("Wymiar arkusza · "+formatMm(TechnicalSheet.value(d))).setItems(items,(dialog,which)->{
+        double[] d=sheetRecord(index);
+        if((int)d[5]==TechnicalSheet.DIAMETER||(int)d[5]==TechnicalSheet.RADIUS){showSheetCircleMenu(index);return;}
+        if((int)d[5]==TechnicalSheet.ANGLE) {
+            new PropertyBuilder().setTitle("Kąt na arkuszu · "+TechnicalSheet.label(d)).setItems(new String[]{"Łuk dalej (+4 mm)","Łuk bliżej (−4 mm)","Tolerancja…","Usuń wymiar"},(dialog,which)->{
+                if(which==2){showSheetTolerance(index);return;}
+                if(which==3){storeSheetDimension(index,null,"Usunięto wymiar arkusza");return;}
+                double[] next=d.clone();next[6]=Math.max(3,Math.min(100,d[6]+(which==0?4:-4)));storeSheetDimension(index,next,"Zmieniono wymiar kąta");
+            }).setNegativeButton("Zamknij",null).show();return;
+        }
+        String[] items={"Poziomy","Pionowy","Równoległy do punktów","Odsuń dalej (+4 mm)","Przysuń bliżej (−4 mm)","Odwróć stronę","Tolerancja…","Usuń wymiar"};
+        new PropertyBuilder().setTitle("Wymiar arkusza · "+TechnicalSheet.label(d)).setItems(items,(dialog,which)->{
+            if(which==6){showSheetTolerance(index);return;}
+            if(which==7){storeSheetDimension(index,null,"Usunięto wymiar arkusza");return;}
             double[] next=d.clone();
             if(which<=2)next[5]=which==0?TechnicalSheet.HORIZONTAL:which==1?TechnicalSheet.VERTICAL:TechnicalSheet.ALIGNED;
             else if(which==3)next[6]=Math.min(100,d[6]+4);else if(which==4)next[6]=Math.max(-100,d[6]-4);else if(which==5)next[6]=-d[6];
-            checkpoint();
-            if(which==6)project.drawingDimensions.remove(index);else project.drawingDimensions.set(index,next);
-            try{projectRepository.save(project);operationMessage=which==6?"Usunięto wymiar arkusza":"Zmieniono wymiar: "+formatMm(TechnicalSheet.value(next));}
-            catch(RuntimeException error){operationMessage="Nie zapisano: "+error.getMessage();}
-            invalidate();
+            storeSheetDimension(index,next,"Zmieniono wymiar: "+TechnicalSheet.label(next));
         }).setNegativeButton("Zamknij",null).show();
     }
 

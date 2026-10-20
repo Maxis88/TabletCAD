@@ -116,16 +116,84 @@ public final class TechnicalSheet {
     /** Dimension being placed (preview), drawn in the accent colour. */
     public double[] pending;
     /** Kinds of user dimensions on the sheet. */
-    public static final int ALIGNED=0,HORIZONTAL=1,VERTICAL=2,DIAMETER=3,RADIUS=4;
-    /** Record of a sheet dimension: view, x1, y1, x2, y2 (view coordinates in mm), kind, offset (paper mm). */
+    public static final int ALIGNED=0,HORIZONTAL=1,VERTICAL=2,DIAMETER=3,RADIUS=4,ANGLE=5;
+    /** Record length: view, x1, y1, x2, y2, kind, offset, x3, y3, tolerance +, tolerance −, anchors u1 v1 u2 v2. */
+    public static final int LENGTH=15;
+    /** Anchor value meaning "unknown" (records from 0.90/0.91). */
+    public static final double NO_ANCHOR=-9;
+    /** Record of a sheet dimension (view coordinates in mm, offset in paper mm). */
     public static double[] dimension(int view,double x1,double y1,double x2,double y2,int kind,double offset) {
-        return new double[]{view,x1,y1,x2,y2,kind,offset};
+        return new double[]{view,x1,y1,x2,y2,kind,offset,0,0,0,0,NO_ANCHOR,NO_ANCHOR,NO_ANCHOR,NO_ANCHOR};
+    }
+    /** Angle at apex (x1,y1) between the arms to (x2,y2) and (x3,y3); offset = arc radius on paper. */
+    public static double[] angle(int view,double ax,double ay,double bx,double by,double cx,double cy) {
+        double[] d=dimension(view,ax,ay,bx,by,ANGLE,12);d[7]=cx;d[8]=cy;return d;
+    }
+    /** Pads a 7-value record of 0.90/0.91 to the current layout. */
+    public static double[] upgrade(double[] d) {
+        if(d!=null&&d.length==7){double[] r=dimension((int)d[0],d[1],d[2],d[3],d[4],(int)d[5],d[6]);return r;}
+        return d;
     }
     public static void validate(double[] d) {
-        if(d==null||d.length!=7)throw new IllegalArgumentException("Niepoprawny wymiar arkusza");
+        if(d==null||d.length!=LENGTH)throw new IllegalArgumentException("Niepoprawny wymiar arkusza");
         for(double v:d)if(!Double.isFinite(v))throw new IllegalArgumentException("Niepoprawny wymiar arkusza");
-        if(d[0]<0||d[0]>3||d[0]!=Math.rint(d[0])||d[5]<0||d[5]>4||d[5]!=Math.rint(d[5])||Math.abs(d[6])>(d[5]>=DIAMETER?180:100))throw new IllegalArgumentException("Niepoprawny wymiar arkusza");
+        if(d[0]<0||d[0]>3||d[0]!=Math.rint(d[0])||d[5]<0||d[5]>5||d[5]!=Math.rint(d[5])||Math.abs(d[6])>(d[5]==DIAMETER||d[5]==RADIUS?180:100)
+            ||d[9]<0||d[9]>100||d[10]<0||d[10]>100)throw new IllegalArgumentException("Niepoprawny wymiar arkusza");
     }
+    /** Records where each point lies within the view's extents, so the dimension can follow a changed model. */
+    public double[] withAnchors(double[] d) {
+        double[] r=d.clone();int v=(int)d[0];if(!hasView(v))return r;double[] b=bounds[v];double w=Math.max(1e-9,b[2]-b[0]),h=Math.max(1e-9,b[3]-b[1]);
+        r[11]=(d[1]-b[0])/w;r[12]=(d[2]-b[1])/h;
+        if((int)d[5]==ANGLE){r[13]=(d[3]-b[0])/w;r[14]=(d[4]-b[1])/h;}// apex and first arm; the second arm follows the apex shift
+        else if((int)d[5]==DIAMETER||(int)d[5]==RADIUS){r[13]=Math.hypot(d[3]-d[1],d[4]-d[2])/Math.hypot(w,h);r[14]=0;}
+        else{r[13]=(d[3]-b[0])/w;r[14]=(d[4]-b[1])/h;}
+        return r;
+    }
+    /**
+     * The record as it applies to the current model: unchanged while its points are still view
+     * vertices; otherwise each point is looked up near the place its anchor maps to (the views
+     * stretch with a changed size) and the nearest vertex or circle centre is taken. Returns null
+     * when the geometry cannot be found again — then the dimension is shown as stale.
+     */
+    public double[] resolve(double[] d) {
+        int v=(int)d[0],kind=(int)d[5];if(!hasView(v))return null;
+        if(current(d))return d;
+        if(d[11]==NO_ANCHOR)return null;
+        double[] b=bounds[v];double w=b[2]-b[0],h=b[3]-b[1],reach=.08*Math.hypot(w,h)+1e-6;
+        double[] r=d.clone();
+        if(kind==DIAMETER||kind==RADIUS) {
+            double ex=b[0]+d[11]*w,ey=b[1]+d[12]*h,best=reach;double[] hit=null;
+            for(double[] c:circles())if((int)c[0]==v){double dist=Math.hypot(c[1]-ex,c[2]-ey);if(dist<best){best=dist;hit=c;}}
+            if(hit==null)return null;double a=Math.toRadians(d[6]);
+            r[1]=hit[1];r[2]=hit[2];r[3]=hit[1]+hit[3]*Math.cos(a);r[4]=hit[2]+hit[3]*Math.sin(a);return r;
+        }
+        double[] p1=nearestPoint(v,b[0]+d[11]*w,b[1]+d[12]*h,reach),p2=nearestPoint(v,b[0]+d[13]*w,b[1]+d[14]*h,reach);
+        if(p1==null||p2==null)return null;
+        if(kind==ANGLE){r[7]=d[7]+(p1[0]-d[1]);r[8]=d[8]+(p1[1]-d[2]);double[] p3=nearestPoint(v,r[7],r[8],reach);if(p3==null)return null;r[7]=p3[0];r[8]=p3[1];}
+        r[1]=p1[0];r[2]=p1[1];r[3]=p2[0];r[4]=p2[1];
+        return current(r)?r:null;
+    }
+    private boolean current(double[] d) {
+        int v=(int)d[0],kind=(int)d[5];
+        if(kind==DIAMETER||kind==RADIUS)return onCircle(v,d[1],d[2],Math.hypot(d[3]-d[1],d[4]-d[2]));
+        boolean ok=onVertex(v,d[1],d[2])&&onVertex(v,d[3],d[4]);if(kind==ANGLE)ok&=onVertex(v,d[7],d[8]);return ok;
+    }
+    private double[] nearestPoint(int view,double x,double y,double reach) {
+        double best=reach;double[] hit=null;
+        for(int i=0;i+5<segments.length;i+=6)if((int)segments[i]==view)for(int j=2;j<=4;j+=2){double d=Math.hypot(segments[i+j]-x,segments[i+j+1]-y);if(d<best){best=d;hit=new double[]{segments[i+j],segments[i+j+1]};}}
+        for(double[] c:circles())if((int)c[0]==view){double d=Math.hypot(c[1]-x,c[2]-y);if(d<best){best=d;hit=new double[]{c[1],c[2]};}}
+        return hit;
+    }
+    /** Value with its tolerance, as printed. */
+    public static String label(double[] d) {
+        int kind=(int)d[5];double value=value(d);
+        String base=kind==ANGLE?String.format(Locale.US,"%.1f°",value):(kind==DIAMETER?"Ø":kind==RADIUS?"R":"")+String.format(Locale.US,"%.2f",value);
+        double plus=d.length>10?d[9]:0,minus=d.length>10?d[10]:0;
+        if(plus==0&&minus==0)return base;
+        if(Math.abs(plus-minus)<1e-12)return base+" ±"+trim(plus);
+        return base+" +"+trim(plus)+"/−"+trim(minus);
+    }
+    private static String trim(double v){String t=String.format(Locale.US,"%.3f",v);while(t.endsWith("0"))t=t.substring(0,t.length()-1);if(t.endsWith("."))t=t.substring(0,t.length()-1);return t;}
     /** Automatic kind: nearly horizontal or vertical pairs get a horizontal/vertical dimension. */
     public static int autoKind(double x1,double y1,double x2,double y2) {
         double dx=Math.abs(x2-x1),dy=Math.abs(y2-y1);
@@ -137,6 +205,8 @@ public final class TechnicalSheet {
     public static double value(double[] d) {
         double dx=d[3]-d[1],dy=d[4]-d[2];int kind=(int)d[5];
         if(kind==DIAMETER)return 2*Math.hypot(dx,dy);
+        if(kind==RADIUS)return Math.hypot(dx,dy);
+        if(kind==ANGLE){double ux=d[3]-d[1],uy=d[4]-d[2],vx=d[7]-d[1],vy=d[8]-d[2];return Math.toDegrees(Math.atan2(Math.abs(ux*vy-uy*vx),ux*vx+uy*vy));}
         return kind==HORIZONTAL?Math.abs(dx):kind==VERTICAL?Math.abs(dy):Math.hypot(dx,dy);
     }
     /** Paper coordinates (mm) of a screen point for the area the sheet is drawn into. */
@@ -232,7 +302,7 @@ public final class TechnicalSheet {
     }
     /** Record of a diameter/radius dimension: centre, a point on the circle at the leader angle. */
     public static double[] circleDimension(int view,double cx,double cy,double r,boolean diameter,double angleDegrees) {
-        double a=Math.toRadians(angleDegrees);return new double[]{view,cx,cy,cx+r*Math.cos(a),cy+r*Math.sin(a),diameter?DIAMETER:RADIUS,angleDegrees};
+        double a=Math.toRadians(angleDegrees);return dimension(view,cx,cy,cx+r*Math.cos(a),cy+r*Math.sin(a),diameter?DIAMETER:RADIUS,angleDegrees);
     }
     private void circleDimensionDraw(Canvas c,double[] d,int colour) {
         int view=(int)d[0];float cx=px(view,d[1]),cy=py(view,d[2]),ex=px(view,d[3]),ey=py(view,d[4]);
@@ -240,22 +310,24 @@ public final class TechnicalSheet {
         boolean diameter=(int)d[5]==DIAMETER;
         float sx=diameter?cx-ux*r:cx,sy=diameter?cy-uy*r:cy,tx=ex+ux*7,ty=ey+uy*7;
         paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(.15f);paint.setColor(colour);c.drawLine(sx,sy,tx,ty,paint);
-        String label=(diameter?"Ø":"R")+String.format(Locale.US,"%.2f",diameter?value(d):Math.hypot(d[3]-d[1],d[4]-d[2]));
+        String label=label(d);
         paint.setTextSize(2.5f);float w=paint.measureText(label);
         float hx=tx+(ux>=0?w+2:-(w+2));c.drawLine(tx,ty,hx,ty,paint);
         arrow(c,ex,ey,cx,cy,colour);if(diameter)arrow(c,sx,sy,cx,cy,colour);
         paint.setStyle(Paint.Style.FILL);paint.setColor(colour);c.drawText(label,Math.min(tx,hx)+1,ty-.8f,paint);
     }
-    private float[] labelPoint(double[] d){
+    private float[] labelPoint(double[] stored){
+        double[] found=resolve(stored);double[] d=found==null?stored:found;
+        if((int)d[5]==ANGLE){float[] g=angleGeometry(d);if(g==null)return null;double mid=g[2]+g[3]/2;return new float[]{g[0]+(float)Math.cos(mid)*(g[4]+3),g[1]+(float)Math.sin(mid)*(g[4]+3)};}
         if((int)d[5]>=DIAMETER){int view=(int)d[0];if(!hasView(view))return null;float cx=px(view,d[1]),cy=py(view,d[2]),ex=px(view,d[3]),ey=py(view,d[4]);float dx=ex-cx,dy=ey-cy,r=(float)Math.hypot(dx,dy);if(r<.05)return null;return new float[]{ex+dx/r*7+(dx>=0?5:-5),ey+dy/r*7-1.2f};}float[][] g=dimensionLine(d);if(g==null)return null;return new float[]{(g[1][0]+g[1][2])/2,(g[1][1]+g[1][3])/2-1.2f};}
-    private void userDimension(Canvas c,double[] d,boolean preview) {
+    private void userDimension(Canvas c,double[] stored,boolean preview) {
+        // The dimension follows the model when its points can be found again; otherwise it is shown in red.
+        double[] resolved=preview?stored:resolve(stored);boolean stale=resolved==null;double[] d=stale?stored:resolved;
+        if((int)d[5]==ANGLE){angleDraw(c,d,preview?Color.rgb(13,148,136):stale?Color.rgb(196,64,52):Color.BLACK);return;}
         if((int)d[5]>=DIAMETER) {
-            boolean stale=!preview&&!onCircle((int)d[0],d[1],d[2],Math.hypot(d[3]-d[1],d[4]-d[2]));
             circleDimensionDraw(c,d,preview?Color.rgb(13,148,136):stale?Color.rgb(196,64,52):Color.BLACK);return;
         }
         float[][] g=dimensionLine(d);if(g==null)return;
-        // A point that no longer lies on a view vertex (the model changed) is shown in red: re-attach or delete it.
-        boolean stale=!preview&&(!onVertex((int)d[0],d[1],d[2])||!onVertex((int)d[0],d[3],d[4]));
         int colour=preview?Color.rgb(13,148,136):stale?Color.rgb(196,64,52):Color.BLACK;
         float[] p=g[0],q=g[1];
         paint.setPathEffect(null);
@@ -263,10 +335,26 @@ public final class TechnicalSheet {
         ext(c,p[0],p[1],q[0],q[1],colour);ext(c,p[2],p[3],q[2],q[3],colour);
         paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(.15f);paint.setColor(colour);c.drawLine(q[0],q[1],q[2],q[3],paint);
         arrow(c,q[0],q[1],q[2],q[3],colour);arrow(c,q[2],q[3],q[0],q[1],colour);
-        String label=String.format(Locale.US,"%.2f",value(d));
+        String label=label(d);
         float angle=(float)Math.toDegrees(Math.atan2(q[3]-q[1],q[2]-q[0]));if(angle>90||angle<-90)angle+=180;
         c.save();c.translate((q[0]+q[2])/2,(q[1]+q[3])/2);c.rotate(angle);
         paint.setStyle(Paint.Style.FILL);paint.setColor(colour);paint.setTextSize(2.5f);float w=paint.measureText(label);c.drawText(label,-w/2,-.8f,paint);c.restore();
+    }
+    private float[] angleGeometry(double[] d) {
+        int view=(int)d[0];if(!hasView(view))return null;
+        float ax=px(view,d[1]),ay=py(view,d[2]),bx=px(view,d[3]),by=py(view,d[4]),cx=px(view,d[7]),cy=py(view,d[8]);
+        double a1=Math.atan2(by-ay,bx-ax),a2=Math.atan2(cy-ay,cx-ax),sweep=Math.IEEEremainder(a2-a1,2*Math.PI);
+        return new float[]{ax,ay,(float)a1,(float)sweep,(float)Math.max(3,d[6])};
+    }
+    private void angleDraw(Canvas c,double[] d,int colour) {
+        float[] g=angleGeometry(d);if(g==null)return;float ax=g[0],ay=g[1],r=g[4];double a1=g[2],sweep=g[3];
+        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(.15f);paint.setColor(colour);
+        c.drawArc(new RectF(ax-r,ay-r,ax+r,ay+r),(float)Math.toDegrees(a1),(float)Math.toDegrees(sweep),false,paint);
+        // Arms extended to the arc where they are shorter than its radius.
+        for(double a:new double[]{a1,a1+sweep})c.drawLine(ax,ay,ax+(float)Math.cos(a)*(r+1.5f),ay+(float)Math.sin(a)*(r+1.5f),paint);
+        double mid=a1+sweep/2;String label=label(d);paint.setTextSize(2.5f);float w=paint.measureText(label);
+        float lx=ax+(float)Math.cos(mid)*(r+3)-w/2,ly=ay+(float)Math.sin(mid)*(r+3)+1;
+        paint.setStyle(Paint.Style.FILL);paint.setColor(colour);c.drawText(label,lx,ly,paint);
     }
     private void ext(Canvas c,float x0,float y0,float x1,float y1,int colour) {
         float dx=x1-x0,dy=y1-y0,l=(float)Math.hypot(dx,dy);if(l<.01)return;float ux=dx/l,uy=dy/l;

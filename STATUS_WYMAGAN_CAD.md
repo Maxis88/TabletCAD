@@ -219,10 +219,10 @@ DXF wymaga zakończenia aktywnego szkicu. Audyt: docs/AUDIT-0.47.md.
    współosiowość), kolizje i lista części są od 0.80/0.82. Od 0.85 dosunięcie płaskich
    ścian i współosiowość walców zwykłych brył są trwałymi wiązaniami przeliczanymi
    po zmianie geometrii; dosunięcie wystąpień złożenia zapisuje położenie.
-4. Dokumentacja: arkusz z rzutami i przekrojem; od 0.90 własne wymiary liniowe arkusza
-   (poziome, pionowe, równoległe), od 0.91 średnice/promienie i wymiary od środków otworów,
-   zapisywane w dokumencie i w PDF. Brak kątów na arkuszu, tolerancji oraz tabliczek w wielu formatach; wymiary nie
-   podążają za zmianą modelu (nieaktualne są oznaczane na czerwono).
+4. Dokumentacja: arkusz z rzutami i przekrojem; wymiary arkusza dotykiem — liniowe (0.90),
+   średnice/promienie i środki otworów (0.91), kąty i tolerancje (0.94); wymiary podążają za
+   zmianą rozmiaru modelu (0.94), a niemożliwe do odnalezienia są oznaczane na czerwono.
+   Brak tolerancji geometrycznych (GD&T), chropowatości i arkuszy w formatach innych niż A4.
 5. Formaty: brak IGES; 3MF tylko eksport; weryfikacja w zewnętrznych CAD do wykonania.
 6. Powierzchnie, blachy i rozwinięcia: poza obecnym zakresem.
 7. Wydajność: zatwierdzanie szkicu, podglądy i eksport działają w tle (0.87/0.90), wyniki jądra
