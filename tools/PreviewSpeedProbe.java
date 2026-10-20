@@ -15,6 +15,11 @@ public final class PreviewSpeedProbe {
             f=EdgeRepairKernelProbe.packed(p);long a=System.nanoTime();NativeCadEngine.evaluateModel(p.width,p.height,p.depth,0,p.featureBase,f,null);long b=System.nanoTime();
             System.out.println("drag step ms="+(b-a)/1e6);
         }
+        // Face offset of the boss top (z=30) dragged: the user's slow case.
+        HistoryKernelProbe.add(p,FaceOffset.create(5,new double[]{90,55,20},new double[]{0,0,1},-1),"",1);
+        f=EdgeRepairKernelProbe.packed(p);long a0=System.nanoTime();double[] fm=NativeCadEngine.evaluateModel(p.width,p.height,p.depth,0,p.featureBase,f,null);System.out.println("face offset first ms="+(System.nanoTime()-a0)/1e6+" ok="+(fm.length>0)+" "+(fm.length==0?NativeCadEngine.lastFailure().getMessage():""));
+        for(int k=1;k<=4;k++){p.committedFeatures.set(7,FaceOffset.create(5+k,new double[]{90,55,20},new double[]{0,0,1},-1));f=EdgeRepairKernelProbe.packed(p);
+            long a1=System.nanoTime();double[] m2=NativeCadEngine.evaluateModel(p.width,p.height,p.depth,0,p.featureBase,f,null);System.out.println("face offset drag ms="+(System.nanoTime()-a1)/1e6+" ok="+(m2.length>0));}
         long a=System.nanoTime();double[] props=NativeCadEngine.bodyProperties(p.width,p.height,p.depth,0,p.featureBase,f,null);System.out.println("props ms="+(System.nanoTime()-a)/1e6);
     }
 }

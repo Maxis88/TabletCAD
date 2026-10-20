@@ -516,12 +516,14 @@ public final class CadWorkspaceView extends View {
             propertyEditor.addView(body);propertyEditor.setElevation(dp(6));
             if(compact) {
                 compactEditor=true;int w=(int)dp(COMPACT_DP);
+                // Small cards carry only values and buttons: long descriptions would scroll inside the card.
+                hideDescriptions(contents);
                 android.graphics.drawable.GradientDrawable card=new android.graphics.drawable.GradientDrawable();card.setColor(PANEL);card.setCornerRadius(dp(14));card.setStroke((int)dp(1),DIVIDER);
                 body.setBackground(card);propertyEditor.setBackground(null);propertyEditor.setClipToOutline(true);propertyEditor.setElevation(dp(10));
                 body.measure(View.MeasureSpec.makeMeasureSpec(w,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
                 int h=(int)Math.min(body.getMeasuredHeight()+dp(36),panelBottom()-viewTop()-dp(16));// room for a status line that appears later
                 float ax=Float.isNaN(anchorX)?lastTouchX:anchorX,ay=Float.isNaN(anchorY)?lastTouchY:anchorY;if(!(ay>viewTop()&&ax>leftWidth())){ax=ay=Float.NaN;}
-                float[] at=CompactPlacement.place(ax,ay,w,h,leftWidth(),viewTop(),getWidth(),panelBottom(),dp(8),dp(28));
+                float[] at=CompactPlacement.place(ax,ay,w,h,leftWidth(),viewTop(),getWidth(),panelBottom(),dp(8),dp(110));// far enough from the touched face to keep it and its arrow visible
                 android.widget.FrameLayout.LayoutParams card2=new android.widget.FrameLayout.LayoutParams(w,h);
                 card2.gravity=android.view.Gravity.TOP|android.view.Gravity.LEFT;card2.leftMargin=(int)at[0];card2.topMargin=(int)at[1];
                 ((android.widget.FrameLayout)getParent()).addView(propertyEditor,card2);
@@ -535,6 +537,16 @@ public final class CadWorkspaceView extends View {
             ((android.widget.FrameLayout)getParent()).addView(propertyEditor,layout);
             panelDismiss=close;
         }
+    }
+    /** Hides explanatory text (long plain labels and status lines) inside a compact card; keeps fields, buttons and short labels. */
+    private static void hideDescriptions(View view) {
+        if(view instanceof EditText||view instanceof android.widget.Button||view instanceof android.widget.CompoundButton)return;
+        if(view instanceof android.widget.TextView){android.widget.TextView t=(android.widget.TextView)view;
+            if(t.getText().length()>40)t.setVisibility(View.GONE);
+            // Status lines set later (preview messages) stay hidden when they grow long.
+            t.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence c,int a,int b,int d){}public void onTextChanged(CharSequence c,int a,int b,int d){}
+                public void afterTextChanged(android.text.Editable e){t.setVisibility(e.length()>40?View.GONE:View.VISIBLE);}});return;}
+        if(view instanceof android.view.ViewGroup){android.view.ViewGroup g=(android.view.ViewGroup)view;for(int i=0;i<g.getChildCount();i++)hideDescriptions(g.getChildAt(i));}
     }
     /** Dismiss action of the open panel (✕, Anuluj or the system back gesture). */
     private Runnable panelDismiss;
@@ -4398,7 +4410,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(owner==null||propertyEditor!=owner||previewViewDetached)return;
         lastPreviewQuery=query;lastPreviewDisplay=display;
         LinearLayout contents=owner.findViewWithTag("panel-content");
-        if(contents!=null&&contents.findViewWithTag("preview-controls")==null&&(project.hasSolid()||mode.equals("Profile wyciągnięcia")))addPreviewControls(contents);
+        if(!compactEditor&&contents!=null&&contents.findViewWithTag("preview-controls")==null&&(project.hasSolid()||mode.equals("Profile wyciągnięcia")))addPreviewControls(contents);
         if(geometryPreviewWorker==null) {
             android.os.Handler ui=new android.os.Handler(android.os.Looper.getMainLooper());
             geometryPreviewWorker=new GeometryPreviewWorker(task->ui.post(task));
