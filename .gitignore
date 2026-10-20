@@ -52,3 +52,4 @@ google-services.json
 *.dex
 *.so
 *.o
+third_party/jdk/

@@ -2,6 +2,12 @@
     [string]$Sdk = $(if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }),
     [string]$Jdk = 'C:\Program Files\Android\Android Studio\jbr'
 )
+# Android Studio may be missing or ship a runtime without javac/jar: fall back to the portable JDK in third_party\jdk.
+if (-not (Test-Path (Join-Path $Jdk 'bin\javac.exe'))) {
+    $Portable = Get-ChildItem (Join-Path (Split-Path -Parent $PSScriptRoot) 'third_party\jdk') -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName 'bin\javac.exe') } | Select-Object -First 1
+    if ($Portable) { $Jdk = $Portable.FullName; Write-Host "Using portable JDK $Jdk" } else { throw "No JDK with javac.exe: $Jdk (and none in third_party\jdk)" }
+}
+
 $ErrorActionPreference='Stop'
 $Root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Build=Join-Path $Root 'build\ui-tests'
