@@ -290,6 +290,9 @@ public final class CadWorkspaceView extends View {
     private PointF extrusionHandle;
     private final RectF extrusionValueBounds=new RectF();
     private final RectF extrusionFlipBounds=new RectF(),extrusionSymBounds=new RectF();
+    /** Operation of the open extrusion form (Auto/Nowa/Połącz/Wytnij/Wspólna), switchable at the arrow. */
+    private android.widget.Spinner extrusionOperation;private final RectF[] extrusionOpBounds={new RectF(),new RectF(),new RectF(),new RectF(),new RectF()};
+    private static final String[] EXTRUSION_OPS={"Auto","Nowa","Połącz","Wytnij","Wspólna"};
     private Runnable extrusionPreview;
     private boolean extrusionTouch,extrusionCancelled,extrusionPreviewScheduled;
     private double extrusionStartParameter,extrusionStartDepth;
@@ -399,7 +402,7 @@ public final class CadWorkspaceView extends View {
         showExtrusionSketch=false;extrusionSelectionChanged=null;extrusionFacePick=null;
         invalidateGeometryPreview();
         removeCallbacks(extrusionPreviewTask);extrusionPreviewScheduled=false;
-        extrusionDimension=null;extrusionReverse=extrusionSymmetric=null;
+        extrusionDimension=null;extrusionReverse=extrusionSymmetric=null;extrusionOperation=null;
         extrusionOrigin=extrusionAxis=null;extrusionHandle=null;extrusionPreview=null;
         extrusionTouch=false;extrusionValueBounds.setEmpty();
         featurePreview=null;featurePreviewDocument=null;sketchGhost.clear();datumGhost=null;datumFaceListener=null;
@@ -4497,7 +4500,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private void drawExtrusionManipulator(Canvas canvas,float left,float top,float right,float bottom) {
-        extrusionHandle=null;extrusionValueBounds.setEmpty();extrusionFlipBounds.setEmpty();extrusionSymBounds.setEmpty();
+        extrusionHandle=null;extrusionValueBounds.setEmpty();extrusionFlipBounds.setEmpty();extrusionSymBounds.setEmpty();for(RectF b:extrusionOpBounds)b.setEmpty();
         if(extrusionDimension==null)return;
         try {
             double depth=extrusionSignedDepth(),factor=(extrusionSymmetric.isChecked()?.5:1)*extrusionWorldScale;
@@ -4521,7 +4524,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             android.graphics.Path head=new android.graphics.Path();head.moveTo(hx,hy);
             head.lineTo((float)(hx-ux*dp(17)-uy*dp(9)),(float)(hy-uy*dp(17)+ux*dp(9)));
             head.lineTo((float)(hx-ux*dp(17)+uy*dp(9)),(float)(hy-uy*dp(17)-ux*dp(9)));head.close();canvas.drawPath(head,paint);
-            float x=Math.max(left+dp(8),Math.min(right-dp(126),hx+dp(18))),y=Math.max(top+dp(8),Math.min(bottom-dp(96),hy-dp(48)));
+            float x=Math.max(left+dp(8),Math.min(right-dp(126),hx+dp(18))),y=Math.max(top+dp(8),Math.min(bottom-dp(128),hy-dp(48)));
             extrusionValueBounds.set(x,y,x+dp(116),y+dp(40));
             paint.setColor(PANEL);canvas.drawRoundRect(extrusionValueBounds,dp(8),dp(8),paint);
             text(canvas,formatMm(depth),x+dp(58),y+dp(26),13,ACCENT,true,Paint.Align.CENTER);
@@ -4531,6 +4534,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
             text(canvas,"⇅ Odwróć",extrusionFlipBounds.centerX(),extrusionFlipBounds.centerY()+dp(4),10,Color.WHITE,false,Paint.Align.CENTER);
             paint.setColor(extrusionSymmetric.isChecked()?ACCENT:PANEL);canvas.drawRoundRect(extrusionSymBounds,dp(8),dp(8),paint);
             text(canvas,"↕ Symetr.",extrusionSymBounds.centerX(),extrusionSymBounds.centerY()+dp(4),10,Color.WHITE,false,Paint.Align.CENTER);
+            if(extrusionOperation!=null&&extrusionOperation.getCount()==EXTRUSION_OPS.length) {
+                float ox=Math.min(x,right-dp(8)-5*dp(48));int chosen=extrusionOperation.getSelectedItemPosition();
+                for(int k=0;k<EXTRUSION_OPS.length;k++){RectF ob=extrusionOpBounds[k];ob.set(ox+k*dp(48),y+dp(78),ox+k*dp(48)+dp(45),y+dp(106));
+                    paint.setColor(k==chosen?(k==3?Color.rgb(176,64,52):ACCENT):PANEL);canvas.drawRoundRect(ob,dp(8),dp(8),paint);
+                    text(canvas,EXTRUSION_OPS[k],ob.centerX(),ob.centerY()+dp(4),9.5f,Color.WHITE,false,Paint.Align.CENTER);}
+            }
         }catch(IllegalArgumentException ignored){ /* Invalid typed values keep the model unchanged. */ }
     }
 
@@ -4612,6 +4621,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 try{extrusionStartDepth=extrusionSignedDepth();}catch(IllegalArgumentException error){return true;}
                 extrusionStartParameter=parameter;extrusionTouch=true;extrusionCancelled=false;return true;
             }
+            if(extrusionOperation!=null)for(int k=0;k<extrusionOpBounds.length;k++)if(extrusionOpBounds[k].contains(event.getX(),event.getY())){extrusionOperation.setSelection(k);performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);invalidate();return true;}
             if(extrusionReverse!=null&&extrusionReverse.isEnabled()&&extrusionFlipBounds.contains(event.getX(),event.getY())){extrusionReverse.setChecked(!extrusionReverse.isChecked());performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);invalidate();return true;}
             if(extrusionSymmetric!=null&&extrusionSymmetric.isEnabled()&&extrusionSymBounds.contains(event.getX(),event.getY())){extrusionSymmetric.setChecked(!extrusionSymmetric.isChecked());performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);invalidate();return true;}
             if(extrusionValueBounds.contains(event.getX(),event.getY())) {
@@ -5868,7 +5878,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 // Principal XZ base extrusions follow native +Y, whereas placed features follow U×V.
                 if(!project.hasSolid()&&project.sketchPlane.equals("XZ"))sign=-sign;
                 double[] axis={sign*(project.sketchUy*project.sketchVz-project.sketchUz*project.sketchVy),sign*(project.sketchUz*project.sketchVx-project.sketchUx*project.sketchVz),sign*(project.sketchUx*project.sketchVy-project.sketchUy*project.sketchVx)};
-                if(extrusionDimension!=first)bindExtrusionManipulator(first,reverse,symmetric,origin,axis,extrusionSelectionChanged);
+                if(extrusionDimension!=first){bindExtrusionManipulator(first,reverse,symmetric,origin,axis,extrusionSelectionChanged);extrusionOperation=operation;}
                 else {extrusionOrigin=origin;extrusionAxis=axis;}
                 break;
             }

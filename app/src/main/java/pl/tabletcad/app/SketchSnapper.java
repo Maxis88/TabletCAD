@@ -93,6 +93,13 @@ public final class SketchSnapper {
             if(t>=0&&t<=1&&u>=0&&u<=1) points.add(new double[]{a[0]+t*ax,a[1]+t*ay});
         }
         for(double[] line:nearby)for(double[] arc:arcs)points.addAll(SketchCurves.lineHits(line,arc));
+        // Circle–circle and arc–arc intersections.
+        for(int i=0;i<arcs.size();i++)for(int j=i+1;j<arcs.size();j++)points.addAll(arcHits(SketchCurves.arc(arcs.get(i),0),SketchCurves.arc(arcs.get(j),0)));
+        if(startX!=null&&startY!=null) {
+            // Tangent from the stroke start to a circle or arc, and the perpendicular foot on a line.
+            for(double[] arc:arcs){SketchCurves.Arc c=SketchCurves.arc(arc,0);for(double[] t:tangentPoints(startX,startY,c.x,c.y,c.r))if(c.contains(t[0],t[1]))points.add(t);}
+            for(double[] l:lines){double[] f=perpendicularFoot(startX,startY,l);if(f!=null&&Math.hypot(f[0]-startX,f[1]-startY)>1e-9)points.add(f);}
+        }
         for(double[] p:points) {
             double d=Math.hypot(x-p[0],y-p[1]);
             if(d<best) {best=d;result=p;}
@@ -116,5 +123,34 @@ public final class SketchSnapper {
         if(Math.abs(x-referenceX)<tolerance) result[0]=referenceX;
         if(Math.abs(y-referenceY)<tolerance) result[1]=referenceY;
         return result;
+    }
+    /** Points where a line from (sx,sy) touches the circle (centre cx,cy, radius r); empty when the point is inside. */
+    public static java.util.List<double[]> tangentPoints(double sx,double sy,double cx,double cy,double r) {
+        java.util.List<double[]> out=new java.util.ArrayList<>();double d=Math.hypot(sx-cx,sy-cy);
+        if(r<=0||d<=r*(1+1e-12))return out;
+        double theta=Math.atan2(sy-cy,sx-cx),beta=Math.acos(r/d);
+        out.add(new double[]{cx+r*Math.cos(theta+beta),cy+r*Math.sin(theta+beta)});
+        out.add(new double[]{cx+r*Math.cos(theta-beta),cy+r*Math.sin(theta-beta)});
+        return out;
+    }
+    /** Foot of the perpendicular from (sx,sy) on the segment, or null when it lies outside the segment. */
+    public static double[] perpendicularFoot(double sx,double sy,double[] l) {
+        double dx=l[2]-l[0],dy=l[3]-l[1],len=dx*dx+dy*dy;if(len<1e-12)return null;
+        double t=((sx-l[0])*dx+(sy-l[1])*dy)/len;if(t<0||t>1)return null;
+        return new double[]{l[0]+t*dx,l[1]+t*dy};
+    }
+    /** Intersections of two arcs (or full circles) lying on both. */
+    static java.util.List<double[]> arcHits(SketchCurves.Arc a,SketchCurves.Arc b) {
+        java.util.List<double[]> out=new java.util.ArrayList<>();
+        for(double[] p:circleHits(a.x,a.y,a.r,b.x,b.y,b.r))if(a.contains(p[0],p[1])&&b.contains(p[0],p[1]))out.add(p);
+        return out;
+    }
+    public static java.util.List<double[]> circleHits(double x1,double y1,double r1,double x2,double y2,double r2) {
+        java.util.List<double[]> out=new java.util.ArrayList<>();double d=Math.hypot(x2-x1,y2-y1);
+        if(d<1e-12||d>r1+r2+1e-12||d<Math.abs(r1-r2)-1e-12)return out;
+        double a=(r1*r1-r2*r2+d*d)/(2*d),h=Math.sqrt(Math.max(0,r1*r1-a*a));
+        double mx=x1+a*(x2-x1)/d,my=y1+a*(y2-y1)/d,ox=-h*(y2-y1)/d,oy=h*(x2-x1)/d;
+        out.add(new double[]{mx+ox,my+oy});if(h>1e-12)out.add(new double[]{mx-ox,my-oy});
+        return out;
     }
 }

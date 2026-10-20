@@ -39,3 +39,9 @@ operacja zostaje bez zmian i jądro zgłasza błąd przebudowy jak dotąd. Obró
 - Tablet: NIEPRZEPROWADZONE (zgodnie z ustaleniem — testy po zakończeniu prac). Do sprawdzenia:
   pasek opcji w każdym trybie, położenie małych okienek przy klawiaturze, przesunięcie występu
   z kieszenią/otworem/gwintem/fazą narysowaną na jego ścianie.
+
+## 1.0.0-rc3
+
+- Przy strzałce wyciągnięcia: rodzaj operacji Auto / Nowa / Połącz / Wytnij / Wspólna (to samo pole co w panelu).
+- Przyciąganie szkicu: przecięcia okrąg–okrąg i łuk–łuk, punkt styczności z początku rysowanej linii, spodek prostopadłej na linii (SketchSnapHostTest).
+- Tablet: NIEPRZEPROWADZONE.
