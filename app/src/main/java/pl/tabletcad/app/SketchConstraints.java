@@ -38,7 +38,7 @@ public final class SketchConstraints {
         try{validate(geometry,result);}catch(IllegalArgumentException error){throw new JSONException(error.getMessage());}
         return result;
     }
-    public static int anchorCount(SketchPrimitive p){return p.isPoint()?1:p.curves!=null?0:p.vertices!=null?p.vertices.length/2:p.type.equals("Okrąg")?1:p.type.equals("Prostokąt")?4:2;}
+    public static int anchorCount(SketchPrimitive p){return p.isPoint()?1:p.curves!=null||p.isText()||p.isEllipseArc()?0:p.vertices!=null?p.vertices.length/2:p.type.equals("Okrąg")?1:p.type.equals("Prostokąt")?4:2;}
     private static int[] indices(SketchPrimitive p,int anchor) {
         if(anchor<0||anchor>=anchorCount(p))throw new IllegalArgumentException("Niepoprawny punkt więzu");
         if(p.vertices!=null)return new int[]{2*anchor,2*anchor+1};

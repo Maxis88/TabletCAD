@@ -14,7 +14,7 @@ public final class CurveTrimmer {
         else if(p.type.equals("Okrąg")) {
             double x=p.x1,y=p.y1,r=Math.hypot(p.x2-x,p.y2-y);
             result.add(SketchCurves.arc(x+r,y,x,y+r,x-r,y));result.add(SketchCurves.arc(x-r,y,x,y-r,x+r,y));
-        }else if(p.isEllipse()||SketchSpline.is(p)){for(double[] e:SketchTrimmer.curvePolyline(p))result.add(line(e[0],e[1],e[2],e[3]));}
+        }else if(p.isEllipse()||p.isEllipseArc()||SketchSpline.is(p)){for(double[] e:SketchTrimmer.curvePolyline(p))result.add(line(e[0],e[1],e[2],e[3]));}
         else for(double[] e:SketchTrimmer.edges(p))result.add(line(e[0],e[1],e[2],e[3]));
         return result;
     }
@@ -43,7 +43,7 @@ public final class CurveTrimmer {
         else {double[] mid=point(segment,(from+to)/2);result.add(new SketchPrimitive(id,SketchCurves.arc(a[0],a[1],mid[0],mid[1],b[0],b[1]),false));}
     }
     public static List<SketchPrimitive> trim(List<SketchPrimitive> geometry,SketchPrimitive target,double x,double y) {
-        if(target!=null&&target.isEllipse())throw new IllegalArgumentException("Przycinanie elipsy nie jest jeszcze obsługiwane");
+        if(target!=null&&(target.isEllipse()||target.isEllipseArc()))return SketchTrimmer.trimEllipse(geometry,target,x,y);
         if(!Double.isFinite(x)||!Double.isFinite(y))throw new IllegalArgumentException("Niepoprawny punkt przycinania");
         if(target.driving!=null)throw new IllegalArgumentException("Odblokuj wymiary przed przycinaniem elementu");
         boolean circle=target.type.equals("Okrąg");List<double[]> outline=segments(target);

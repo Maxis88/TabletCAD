@@ -15,7 +15,7 @@ public final class SketchExtend {
     public enum End { START, END, AUTO }
 
     public static SketchPrimitive extend(SketchPrimitive line,List<SketchPrimitive> sketch,End end) {
-        if(line!=null&&line.isEllipse())throw new IllegalArgumentException("Przedłużać można linie, nie elipsy");
+        if(line!=null&&(line.isEllipse()||line.isEllipseArc()))throw new IllegalArgumentException("Przedłużać można linie, nie elipsy");
         if(line==null||!(line.type.equals("Linia")||line.type.equals("Pomocnicza")))throw new IllegalArgumentException("Przedłużać można tylko linie");
         if(line.driving!=null)throw new IllegalArgumentException("Linia ma zablokowany wymiar długości — odblokuj go przed przedłużeniem");
         double length=Math.hypot(line.x2-line.x1,line.y2-line.y1);if(length<.01)throw new IllegalArgumentException("Zerowa linia");
@@ -57,6 +57,7 @@ public final class SketchExtend {
             return best;
         }
         if(SketchSpline.is(p))return spline(p.vertices,px,py,ux,uy);
+        if(p.isEllipse()||p.isEllipseArc()){for(double[] e:SketchTrimmer.curvePolyline(p))best=Math.min(best,segment(px,py,ux,uy,e[0],e[1],e[2],e[3]));return best;}
         if(p.vertices!=null) {
             int n=p.vertices.length/2;double[] v=p.vertices;
             for(int i=0;i<n;i++){int j=(i+1)%n;best=Math.min(best,segment(px,py,ux,uy,v[2*i],v[2*i+1],v[2*j],v[2*j+1]));}

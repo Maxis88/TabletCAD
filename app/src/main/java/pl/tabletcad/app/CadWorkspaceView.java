@@ -2314,7 +2314,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         paint.setColor(selected ? Color.rgb(245, 145, 20) : Color.rgb(30, 105, 210));
         if(entity.construction) paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(8),dp(5)},0));
         if(ghostDrawing){paint.setColor(Color.rgb(46,160,90));paint.setStrokeWidth(dp(2.2f));paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(6),dp(4)},0));}
-        if(entity.isText()) {for(double[] l:SketchText.loops(entity.textLoops())){int n=l.length;for(int i=0;i<n;i+=2){int j=(i+2)%n;drawSketchSegment(canvas,l[i],l[i+1],l[j],l[j+1]);}}}
+        if(entity.isEllipseArc()) {double[] e=EllipseArc.sample(entity.ellipseArc(),96);for(int i=0;i+3<e.length;i+=2)drawSketchSegment(canvas,e[i],e[i+1],e[i+2],e[i+3]);}
+        else if(entity.isText()) {for(double[] l:SketchText.loops(entity.textLoops())){int n=l.length;for(int i=0;i<n;i+=2){int j=(i+2)%n;drawSketchSegment(canvas,l[i],l[i+1],l[j],l[j+1]);}}}
         else if(SketchSpline.is(entity)) {double[] points=SketchSpline.sample(entity.vertices,24);for(int i=0;i<points.length-2;i+=2)drawSketchSegment(canvas,points[i],points[i+1],points[i+2],points[i+3]);}
         else if(entity.curves!=null)drawCurves(canvas,entity.curves);
         else if(entity.vertices!=null) {
@@ -2378,6 +2379,23 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return r;
     }
     /** Exact numeric ellipse: centre, semi-axes and rotation of the major axis. */
+    /** Elliptic arc: the ellipse (centre, semi-axes, rotation) and the start and end angles of the run. */
+    private void showEllipseArcEditor(SketchPrimitive entity) {
+        double[] d=entity.ellipseArc();double a=Math.hypot(d[2]-d[0],d[3]-d[1]);
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        EditText cx=labeledCoordinate(form,"Środek X [mm]",d[0]),cy=labeledCoordinate(form,"Środek Y [mm]",d[1]);
+        EditText major=labeledCoordinate(form,"Półoś wielka a [mm]",a),minor=labeledCoordinate(form,"Półoś mała b [mm]",d[4]);
+        EditText angle=labeledCoordinate(form,"Obrót osi wielkiej [°]",Math.toDegrees(Math.atan2(d[3]-d[1],d[2]-d[0])));
+        EditText from=labeledCoordinate(form,"Parametr początku t₀ [°]",Math.toDegrees(d[5])),to=labeledCoordinate(form,"Parametr końca t₁ [°]",Math.toDegrees(d[6]));
+        new PropertyBuilder().setTitle("Łuk eliptyczny").setView(form).setNeutralButton("Usuń element",(dl,w)->deleteSketchEntity(entity.id)).setNegativeButton("Anuluj",null)
+            .setPositiveButton("Zastosuj",(dl,w)->{
+                try {
+                    double x=parseCoordinate(cx),y=parseCoordinate(cy),A=parseCoordinate(major),t=Math.toRadians(parseCoordinate(angle)),t0=Math.toRadians(parseCoordinate(from)),t1=Math.toRadians(parseCoordinate(to));
+                    while(t1<=t0)t1+=2*Math.PI;
+                    replaceSketchEntity(entity,SketchPrimitive.ellipseArc(entity.id,x,y,x+A*Math.cos(t),y+A*Math.sin(t),parseCoordinate(minor),t0,t1).withConstruction(entity.construction),true);
+                }catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+            }).show();
+    }
     private void showEllipseEditor(SketchPrimitive entity) {
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         EditText cx=labeledCoordinate(form,"Środek X [mm]",entity.x1),cy=labeledCoordinate(form,"Środek Y [mm]",entity.y1);
@@ -2925,6 +2943,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             if(points!=null)for(int i=0;i<points.length;i+=2){int j=(i+2)%points.length;drawEditableDimension(canvas,entity,"side",i/2,projectSketchPoint(points[i],points[i+1]),projectSketchPoint(points[j],points[j+1]),null,formatMm(Math.hypot(points[j]-points[i],points[j+1]-points[i+1])));}
             return;
         }
+        if(entity.isText()||entity.isEllipseArc())return;
         if(entity.curves!=null) {
             for(int i=0;i<entity.curves.length;i+=7)if(entity.curves[i]==1){SketchCurves.Arc arc=SketchCurves.arc(entity.curves,i);double[] mid=arc.point(.5);drawEditableDimension(canvas,entity,"arcRadius",i/7,projectSketchPoint(arc.x,arc.y),projectSketchPoint(mid[0],mid[1]),null,"R "+formatMm(arc.r));}
             return;
@@ -3294,7 +3313,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
             PointF second = projectSketchPoint(entity.x2, entity.y2);
             float x1 = first.x, y1 = first.y, x2 = second.x, y2 = second.y;
             double distance;
-            if(entity.isText()) {
+            if(entity.isEllipseArc()) {
+                double[] e=EllipseArc.sample(entity.ellipseArc(),96);distance=Double.POSITIVE_INFINITY;
+                for(int i=0;i+3<e.length;i+=2)distance=Math.min(distance,sketchSegmentDistance(sx,sy,e[i],e[i+1],e[i+2],e[i+3]));
+            } else if(entity.isText()) {
                 // Anywhere over the text (its bounding box) picks it.
                 distance=sx>=Math.min(entity.x1,entity.x2)&&sx<=Math.max(entity.x1,entity.x2)&&sy>=Math.min(entity.y1,entity.y2)&&sy<=Math.max(entity.y1,entity.y2)?0:Double.POSITIVE_INFINITY;
             } else if(SketchSpline.is(entity)) {
@@ -3352,6 +3374,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(entity.isText()){showTextEditor(entity,entity.textParams()[0],entity.textParams()[1]);return;}
         if(entity.isPoint()){showSketchPosition(entity.id,0,null,0);return;}
         if(entity.isEllipse()){showEllipseEditor(entity);return;}
+        if(entity.isEllipseArc()){showEllipseArcEditor(entity);return;}
         if(entity.curves!=null){showCurveEditor(entity);return;}
         if(entity.vertices!=null) {
             android.widget.TextView instructions=new android.widget.TextView(getContext());
@@ -6787,7 +6810,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     private void showSweepDialog() {
         List<SweepLoft.Placed> all=SweepLoft.elements(project),profiles=new ArrayList<>(),paths=new ArrayList<>();
-        for(SweepLoft.Placed e:all){if(e.shape.closedProfile())profiles.add(e);if(!e.shape.isEllipse()&&!SketchSpline.is(e.shape)&&!e.shape.type.equals("Okrąg")&&!e.shape.type.equals("Prostokąt"))paths.add(e);}
+        for(SweepLoft.Placed e:all){if(e.shape.isText()||e.shape.isEllipseArc()||e.shape.isPoint())continue;if(e.shape.closedProfile())profiles.add(e);if(!e.shape.isEllipse()&&!SketchSpline.is(e.shape)&&!e.shape.type.equals("Okrąg")&&!e.shape.type.equals("Prostokąt"))paths.add(e);}
         if(profiles.isEmpty()||paths.isEmpty()){operationMessage="Przeciągnięcie: potrzebny zamknięty profil i ścieżka z linii/łuków (zwykle w szkicu prostopadłym do profilu).";invalidate();return;}
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         android.widget.TextView t1=new android.widget.TextView(getContext());t1.setText("Profil");form.addView(t1);
@@ -7531,6 +7554,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         List<double[]> points = new ArrayList<>();
         if (project.sketch.isEmpty() || (!inSketch() && project.hasSolid())) return points;
         for (SketchPrimitive p : project.sketch) {
+            if (p.isEllipseArc()) {double[] e=EllipseArc.sample(p.ellipseArc(),16);for(int i=0;i<e.length;i+=2)points.add(new double[]{e[i],e[i+1]});continue;}
             if (p.isEllipse()) {
                 double r = p.major();points.add(new double[]{p.x1 - r, p.y1 - r}); points.add(new double[]{p.x1 + r, p.y1 + r});
             } else if (p.type.equals("Okrąg")) {
@@ -8040,6 +8064,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         writer.write("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1015\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
         for (SketchPrimitive primitive : project.sketch) {
             if(primitive.isPoint()){writer.write("0\nPOINT\n8\nSKETCH\n10\n"+primitive.x1+"\n20\n"+primitive.y1+"\n30\n0\n");continue;}
+            if(primitive.isEllipseArc()){EllipseArc.writeDxf(writer,primitive.ellipseArc());continue;}
             if(primitive.isText()){for(double[] l:SketchText.loops(primitive.textLoops())){writer.write("0\nLWPOLYLINE\n8\nSKETCH\n100\nAcDbEntity\n100\nAcDbPolyline\n90\n"+l.length/2+"\n70\n1\n");for(int i=0;i<l.length;i+=2)writer.write("10\n"+l[i]+"\n20\n"+l[i+1]+"\n");}continue;}
             if(SketchSpline.is(primitive))SketchSpline.writeDxf(writer,primitive.vertices);
             else if(primitive.curves!=null)SketchCurves.writeDxf(writer,primitive.curves);

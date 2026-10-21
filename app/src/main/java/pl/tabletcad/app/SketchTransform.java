@@ -14,17 +14,20 @@ public final class SketchTransform {
     }
     public static SketchPrimitive move(SketchPrimitive source,double dx,double dy) {
         if(source.isText())return text(source,0,0,0,1,dx,dy);
+        if(source.isEllipseArc())return EllipseArc.map(source,source.id,0,0,0,1,dx,dy);
         return finish(source,SketchPattern.transform(source,source.id,0,0,0,dx,dy),1,0);
     }
     public static SketchPrimitive rotate(SketchPrimitive source,double degrees,double cx,double cy) {
         if(!Double.isFinite(degrees)||Math.abs(degrees)>36000)throw new IllegalArgumentException("Kąt obrotu: ±36000°");
         if(source.isText())return text(source,cx,cy,Math.toRadians(degrees),1,0,0);
+        if(source.isEllipseArc())return EllipseArc.map(source,source.id,cx,cy,Math.toRadians(degrees),1,0,0);
         return finish(source,SketchPattern.transform(source,source.id,cx,cy,Math.toRadians(degrees),0,0),1,degrees);
     }
     public static SketchPrimitive scale(SketchPrimitive source,double factor,double cx,double cy) {
         if(!Double.isFinite(factor)||factor<.001||factor>1000)throw new IllegalArgumentException("Skala: 0,001–1000");
         if(!Double.isFinite(cx)||!Double.isFinite(cy)||Math.abs(cx)>5000||Math.abs(cy)>5000)throw new IllegalArgumentException("Niepoprawny środek skali");
         if(source.isText())return text(source,cx,cy,0,factor,0,0);
+        if(source.isEllipseArc())return EllipseArc.map(source,source.id,cx,cy,0,factor,0,0);
         SketchPrimitive result;
         if(source.isEllipse())result=SketchPrimitive.ellipse(source.id,cx+(source.x1-cx)*factor,cy+(source.y1-cy)*factor,cx+(source.x2-cx)*factor,cy+(source.y2-cy)*factor,source.minor*factor);
         else if(source.curves!=null) {

@@ -19,6 +19,7 @@ public final class SketchPosition {
         List<String> names=new ArrayList<>();
         if(p.isPoint()){names.add("Punkt");return names;}
         if(p.type.equals("Okrąg")&&p.vertices==null&&p.curves==null){names.add("Środek okręgu");return names;}
+        if(p.isEllipseArc()){names.add("Środek elipsy");return names;}
         if(p.isEllipse()){names.add("Środek elipsy");names.add("Koniec osi wielkiej");return names;}
         if(p.type.equals("Prostokąt")&&p.vertices==null){names.add("Środek prostokąta");names.add("Narożnik (x1, y1)");names.add("Narożnik (x2, y1)");names.add("Narożnik (x2, y2)");names.add("Narożnik (x1, y2)");return names;}
         if(p.curves!=null||SketchConstraints.anchorCount(p)==0){names.add("Środek obrysu");return names;}
@@ -123,6 +124,7 @@ public final class SketchPosition {
         }
     }
     static double[] centre(SketchPrimitive p,double[] b) {
+        if(p.isEllipseArc()){double[] d=p.ellipseArc();return new double[]{d[0],d[1]};}
         if((p.type.equals("Okrąg")||p.isEllipse())&&p.vertices==null&&p.curves==null)return new double[]{p.x1,p.y1};
         return new double[]{(b[0]+b[2])/2,(b[1]+b[3])/2};
     }

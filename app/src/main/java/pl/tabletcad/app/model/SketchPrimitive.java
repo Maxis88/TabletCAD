@@ -35,6 +35,17 @@ public final class SketchPrimitive {
         pl.tabletcad.app.SketchText.validate(t.textParams,t.textLoops);return t;
     }
     public boolean isPoint(){return POINT.equals(type);}
+    /** Elliptic arc ("Łuk eliptyczny", e.g. a trimmed ellipse): x1/y1 start, x2/y2 end; data in {@link #ellipseArc()}. */
+    public static final String ELLIPSE_ARC="Łuk eliptyczny";
+    private double[] arc;
+    public boolean isEllipseArc(){return ELLIPSE_ARC.equals(type);}
+    /** {cx, cy, ax, ay (end of the semi-major axis), minor, t0, t1}; counter-clockwise from t0 to t1 (t0 &lt; t1 &lt; t0 + 2π). */
+    public double[] ellipseArc(){return arc==null?null:arc.clone();}
+    public static SketchPrimitive ellipseArc(String id,double cx,double cy,double ax,double ay,double minor,double t0,double t1) {
+        double[] d={cx,cy,ax,ay,minor,t0,t1};pl.tabletcad.app.EllipseArc.validate(d);
+        double[] a=pl.tabletcad.app.EllipseArc.point(d,t0),b=pl.tabletcad.app.EllipseArc.point(d,t1);
+        SketchPrimitive r=new SketchPrimitive(id,ELLIPSE_ARC,a[0],a[1],b[0],b[1]);r.arc=d;return r;
+    }
 
     public SketchPrimitive(String id, String type, double x1, double y1, double x2, double y2) {
         this(id,type,x1,y1,x2,y2,null);
@@ -43,6 +54,7 @@ public final class SketchPrimitive {
     public SketchPrimitive(String id,String type,double x1,double y1,double x2,double y2,double[] driving) {
         if(type.equals("Łuk")||type.equals("Kontur krzywy"))throw new IllegalArgumentException("Krzywa wymaga danych analitycznych");
         if(type.equals(ELLIPSE))throw new IllegalArgumentException("Elipsa wymaga półosi małej");
+        if(type.equals(ELLIPSE_ARC)&&driving!=null)throw new IllegalArgumentException("Łuk eliptyczny nie ma wymiarów elementu");
         this.minor=0;
         this.id = id;
         this.type = type;
@@ -93,6 +105,7 @@ public final class SketchPrimitive {
         x1=source.x1;y1=source.y1;x2=source.x2;y2=source.y2;
         vertices=source.vertices==null?null:source.vertices.clone();curves=source.curves==null?null:source.curves.clone();
         driving=source.driving==null?null:source.driving.clone();construction=auxiliary||POINT.equals(source.type);minor=source.minor;
+        arc=source.arc==null?null:source.arc.clone();
     }
     private SketchPrimitive(String id,double cx,double cy,double ax,double ay,double minor) {
         this.id=id;type=ELLIPSE;x1=cx;y1=cy;x2=ax;y2=ay;this.minor=minor;vertices=null;curves=null;driving=null;construction=false;
@@ -111,6 +124,7 @@ public final class SketchPrimitive {
         // A text is never stretched by a handle: it moves with whichever corner was dragged.
         if(isText()){double dx=ax!=x1||ay!=y1?ax-x1:bx-x2,dy=ax!=x1||ay!=y1?ay-y1:by-y2;return pl.tabletcad.app.SketchTransform.move(this,dx,dy);}
         if(isEllipse())return ellipse(id,ax,ay,bx,by,minor).withConstruction(construction);
+        if(isEllipseArc()){double dx=ax!=x1||ay!=y1?ax-x1:bx-x2,dy=ax!=x1||ay!=y1?ay-y1:by-y2;return pl.tabletcad.app.SketchTransform.move(this,dx,dy);}
         return new SketchPrimitive(id,type,ax,ay,bx,by,lock);
     }
     public double major(){return Math.hypot(x2-x1,y2-y1);}
@@ -119,6 +133,7 @@ public final class SketchPrimitive {
     public boolean closedProfile(){return !construction&&closedGeometry();}
     public double featureType() {
         if(isText())throw new IllegalArgumentException("Napis można tylko wyciągnąć (dodać lub wyciąć) – ta operacja nie obsługuje napisów");
+        if(isEllipseArc())throw new IllegalArgumentException("Łuk eliptyczny jest otwarty – zamknij go liniami lub łukami i użyj Połącz kontur");
         if(type.equals("Splajn")&&!construction&&pl.tabletcad.app.SketchSpline.closed(vertices))return 1000+vertices.length/2-1;
         if(construction||type.equals("Splajn"))throw new IllegalArgumentException("Wyciąganie wymaga zamkniętej geometrii zwykłej (otwarty splajn: zakończ go w pierwszym punkcie)");return isEllipse()?2000:curves!=null?1000+curves.length/7:vertices==null?(type.equals("Okrąg")?1:0):2+vertices.length/2;}
     public double[] appendVertices(double[] prefix) {
@@ -147,6 +162,7 @@ public final class SketchPrimitive {
         result.put("construction",construction);
         if(isText()){result.put("text",text);org.json.JSONArray a=new org.json.JSONArray();for(double v:textParams)a.put(v);result.put("textParams",a);org.json.JSONArray l=new org.json.JSONArray();for(double v:textLoops)l.put(v);result.put("textLoops",l);}
         if(isEllipse())result.put("minor",minor);
+        if(isEllipseArc()){org.json.JSONArray a=new org.json.JSONArray();for(double v:arc)a.put(v);result.put("ellipseArc",a);}
         if(vertices!=null) {org.json.JSONArray points=new org.json.JSONArray();for(double v:vertices) points.put(v);result.put("vertices",points);}
         if(curves!=null){org.json.JSONArray segments=new org.json.JSONArray();for(double v:curves)segments.put(v);result.put("curves",segments);}
         if(driving!=null) {org.json.JSONArray values=new org.json.JSONArray();for(double v:driving)values.put(v);result.put("driving",values);}
@@ -161,6 +177,10 @@ public final class SketchPrimitive {
             org.json.JSONArray a=json.getJSONArray("textParams"),l=json.getJSONArray("textLoops");double[] params=new double[a.length()],loops=new double[l.length()];
             for(int i=0;i<params.length;i++)params[i]=a.getDouble(i);for(int i=0;i<loops.length;i++)loops[i]=l.getDouble(i);
             try{return text(json.getString("id"),json.getString("text"),params,loops);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
+        }
+        if(ELLIPSE_ARC.equals(json.optString("type"))) {
+            org.json.JSONArray a=json.getJSONArray("ellipseArc");if(a.length()!=7)throw new JSONException("Niepoprawny łuk eliptyczny");double[] d=new double[7];for(int i=0;i<7;i++)d[i]=a.getDouble(i);
+            try{return ellipseArc(json.getString("id"),d[0],d[1],d[2],d[3],d[4],d[5],d[6]);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
         }
         if(ELLIPSE.equals(json.optString("type"))) {
             try{return ellipse(json.getString("id"),json.getDouble("x1"),json.getDouble("y1"),json.getDouble("x2"),json.getDouble("y2"),json.getDouble("minor"));}

@@ -245,28 +245,86 @@ public final class CadExchange {
                 } else result.add(new SketchPrimitive(UUID.randomUUID().toString(),"Linia",x,y,
                     number(values.getOrDefault("11","0"))*scale,number(values.getOrDefault("21","0"))*scale));
             } else if(type.equals("LWPOLYLINE")) {
+                // Vertices with bulges (code 42 belongs to the vertex before it): bulge = tan(sweep/4), positive counter-clockwise.
                 List<double[]> points=new ArrayList<>(); double[] point=null;
                 for(int j=i+1;j<end;j++) {
                     String[] v=pairs.get(j);
-                    if(v[0].equals("42")&&Math.abs(number(v[1]))>1e-10) throw new IOException("Łukowe polilinie DXF nie są jeszcze obsługiwane");
                     if(v[0].equals("38")&&Math.abs(number(v[1]))>1e-8) throw new IOException("DXF musi być płaski");
-                    if(v[0].equals("10")) {point=new double[]{number(v[1])*scale,0};points.add(point);}
+                    if(v[0].equals("10")) {point=new double[]{number(v[1])*scale,0,0};points.add(point);}
                     if(v[0].equals("20")&&point!=null) point[1]=number(v[1])*scale;
+                    if(v[0].equals("42")&&point!=null) point[2]=number(v[1]);
                 }
-                boolean closed=(((int)number(values.getOrDefault("70","0")))&1)!=0;
-                if(closed&&points.size()==4&&axisRectangle(points)) {
+                if(Math.abs(number(values.getOrDefault("230","1"))-1)>1e-8)throw new IOException("LWPOLYLINE: obsługiwany jest układ XY bez odwróconej osi Z");
+                boolean closed=(((int)number(values.getOrDefault("70","0")))&1)!=0,bulged=false;
+                for(int j=0;j<points.size()-(closed?0:1);j++)if(Math.abs(points.get(j)[2])>1e-10)bulged=true;
+                if(closed&&points.size()==4&&!bulged&&axisRectangle(points)) {
                     result.add(new SketchPrimitive(UUID.randomUUID().toString(),"Prostokąt",
                         points.get(0)[0],points.get(0)[1],points.get(2)[0],points.get(2)[1]));
                 } else for(int j=1;j<points.size()+(closed?1:0);j++) {
                     double[] a=points.get(j-1),b=points.get(j%points.size());
-                    result.add(new SketchPrimitive(UUID.randomUUID().toString(),"Linia",a[0],a[1],b[0],b[1]));
+                    if(Math.abs(a[2])<=1e-10){result.add(new SketchPrimitive(UUID.randomUUID().toString(),"Linia",a[0],a[1],b[0],b[1]));continue;}
+                    double cx=b[0]-a[0],cy=b[1]-a[1],c=Math.hypot(cx,cy);if(c<1e-9)continue;
+                    double sag=a[2]*c/2,mx=(a[0]+b[0])/2+cy/c*sag,my=(a[1]+b[1])/2-cx/c*sag;
+                    try{result.add(new SketchPrimitive(UUID.randomUUID().toString(),SketchCurves.arc(a[0],a[1],mx,my,b[0],b[1]),false));}
+                    catch(IllegalArgumentException error){throw new IOException("LWPOLYLINE: "+error.getMessage(),error);}
                 }
+            } else if(type.equals("POINT")) {
+                if(Math.abs(number(values.getOrDefault("30","0")))>1e-8)throw new IOException("DXF musi zawierać szkic 2D w płaszczyźnie XY");
+                result.add(SketchPrimitive.point(UUID.randomUUID().toString(),number(values.getOrDefault("10","0"))*scale,number(values.getOrDefault("20","0"))*scale));
+            } else if(type.equals("ELLIPSE")) {
+                if(Math.abs(number(values.getOrDefault("230","1"))-1)>1e-8||Math.abs(number(values.getOrDefault("30","0")))>1e-8||Math.abs(number(values.getOrDefault("31","0")))>1e-8)throw new IOException("ELLIPSE: obsługiwany jest układ XY");
+                double x=number(values.getOrDefault("10","0"))*scale,y=number(values.getOrDefault("20","0"))*scale,ax=number(values.getOrDefault("11","0"))*scale,ay=number(values.getOrDefault("21","0"))*scale;
+                double ratio=number(values.getOrDefault("40","1")),t0=number(values.getOrDefault("41","0")),t1=number(values.getOrDefault("42",String.valueOf(2*Math.PI))),a=Math.hypot(ax,ay);
+                try {
+                    double sweep=t1-t0;while(sweep<=0)sweep+=2*Math.PI;
+                    if(Math.abs(sweep-2*Math.PI)<1e-9)result.add(SketchPrimitive.ellipse(UUID.randomUUID().toString(),x,y,x+ax,y+ay,a*ratio));
+                    else result.add(SketchPrimitive.ellipseArc(UUID.randomUUID().toString(),x,y,x+ax,y+ay,a*ratio,t0,t0+sweep));
+                }catch(IllegalArgumentException error){throw new IOException("ELLIPSE: "+error.getMessage(),error);}
+            } else if(type.equals("SPLINE")) {
+                result.add(dxfSpline(pairs,i+1,end,scale));
             } else if(!type.equals("SEQEND")) throw new IOException("Nieobsługiwana encja DXF: "+type);
             if(result.size()>50000) throw new IOException("DXF: limit 50000 elementów");
             i=end;
         }
         if(result.isEmpty()) throw new IOException("Brak obsługiwanych elementów DXF");
         return result;
+    }
+    /**
+     * SPLINE: fit points (11/21) when present; otherwise the B-spline (degree, knots 40, control
+     * points 10/20) is evaluated. A cubic in Bezier form (TabletCAD export) gives back its
+     * interpolation points exactly; other splines are re-interpolated through up to 128 points.
+     */
+    static SketchPrimitive dxfSpline(List<String[]> pairs,int from,int to,double scale) throws IOException {
+        List<double[]> fit=new ArrayList<>(),control=new ArrayList<>();List<Double> knots=new ArrayList<>();int degree=3,flags=0;double[] f=null,c=null;
+        for(int j=from;j<to;j++){String[] v=pairs.get(j);
+            switch(v[0]){case "70":flags=(int)number(v[1]);break;case "71":degree=(int)number(v[1]);break;case "40":knots.add(number(v[1]));break;
+                case "10":c=new double[]{number(v[1])*scale,0};control.add(c);break;case "20":if(c!=null)c[1]=number(v[1])*scale;break;
+                case "11":f=new double[]{number(v[1])*scale,0};fit.add(f);break;case "21":if(f!=null)f[1]=number(v[1])*scale;break;
+                case "30":case "31":if(Math.abs(number(v[1]))>1e-8)throw new IOException("SPLINE musi leżeć w płaszczyźnie XY");break;default:}}
+        if((flags&4)!=0)throw new IOException("SPLINE wymierny (NURBS z wagami) nie jest obsługiwany");
+        List<double[]> through=new ArrayList<>();
+        if(fit.size()>=3)through.addAll(fit);
+        else {
+            int n=control.size();if(n<degree+1||knots.size()!=n+degree+1||degree<1||degree>5)throw new IOException("Niepoprawny SPLINE w DXF");
+            boolean bezier=degree==3&&(n-1)%3==0;
+            int spans=(n-1)/3;if(bezier)for(int k=0;k+1<spans;k++){int at=4+3*k;if(Math.abs(knots.get(at)-knots.get(at+1))>1e-12||Math.abs(knots.get(at+1)-knots.get(at+2))>1e-12){bezier=false;break;}}
+            if(bezier){for(int k=0;k<n;k+=3)through.add(control.get(k));}
+            else {double lo=knots.get(degree),hi=knots.get(n);int m=Math.min(128,Math.max(8,n*4));
+                for(int k=0;k<m;k++)through.add(deBoor(degree,knots,control,lo+(hi-lo)*k/(m-1)));}
+        }
+        boolean closed=(flags&1)!=0||Math.hypot(through.get(0)[0]-through.get(through.size()-1)[0],through.get(0)[1]-through.get(through.size()-1)[1])<1e-6;
+        List<double[]> clean=new ArrayList<>();for(double[] p:through)if(clean.isEmpty()||Math.hypot(p[0]-clean.get(clean.size()-1)[0],p[1]-clean.get(clean.size()-1)[1])>=.01)clean.add(p);
+        if(closed&&Math.hypot(clean.get(0)[0]-clean.get(clean.size()-1)[0],clean.get(0)[1]-clean.get(clean.size()-1)[1])>1e-9)clean.add(clean.get(0).clone());
+        if(closed){double[] l=clean.get(clean.size()-1);l[0]=clean.get(0)[0];l[1]=clean.get(0)[1];}
+        while(clean.size()>128){List<double[]> half=new ArrayList<>();for(int k=0;k<clean.size();k+=2)half.add(clean.get(k));if(!Arrays.equals(half.get(half.size()-1),clean.get(clean.size()-1)))half.add(clean.get(clean.size()-1));clean=half;}
+        double[] pts=new double[clean.size()*2];for(int k=0;k<clean.size();k++){pts[2*k]=clean.get(k)[0];pts[2*k+1]=clean.get(k)[1];}
+        try{return new SketchPrimitive(UUID.randomUUID().toString(),pts,"Splajn");}catch(IllegalArgumentException e){throw new IOException("SPLINE: "+e.getMessage(),e);}
+    }
+    private static double[] deBoor(int p,List<Double> u,List<double[]> c,double t) {
+        int n=c.size(),k=p;while(k<n-1&&t>=u.get(k+1))k++;
+        double[][] d=new double[p+1][];for(int j=0;j<=p;j++)d[j]=c.get(j+k-p).clone();
+        for(int r=1;r<=p;r++)for(int j=p;j>=r;j--){double den=u.get(j+1+k-r)-u.get(j+k-p);double a=den<1e-15?0:(t-u.get(j+k-p))/den;d[j][0]=(1-a)*d[j-1][0]+a*d[j][0];d[j][1]=(1-a)*d[j-1][1]+a*d[j][1];}
+        return d[p];
     }
     private static boolean axisRectangle(List<double[]> p) {
         for(int i=0;i<4;i++) {

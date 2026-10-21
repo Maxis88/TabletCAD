@@ -20,7 +20,7 @@ public final class TrimCurvesHostTest {
         SketchPrimitive circle=new SketchPrimitive("c","Okrąg",0,0,8,0);
         List<SketchPrimitive> c=CurveTrimmer.trim(new ArrayList<>(Arrays.asList(circle,SketchPrimitive.ellipse("e2",0,0,12,0,4))),circle,0,8);
         check(!c.isEmpty()&&c.get(0).curves!=null,"circle trimmed at an ellipse becomes an arc");
-        try{SketchTrimmer.trim(new ArrayList<>(Arrays.asList(line,e)),e,0,5);check(false,"ellipse trim");}catch(IllegalArgumentException x){check(true,"trimming the ellipse itself is reported as not supported");}
+        try{List<SketchPrimitive> t=SketchTrimmer.trim(new ArrayList<>(Arrays.asList(line,e)),e,0,5);check(t.size()==1&&t.get(0).isEllipseArc(),"ellipse trimmed between two intersections becomes an elliptic arc");}catch(IllegalArgumentException x){check(x.getMessage().contains("dwoma przecięciami"),"ellipse with fewer than two intersections: "+x.getMessage());}
         System.out.println("PASS TrimCurvesHostTest: "+checks+" checks");
     }
 }

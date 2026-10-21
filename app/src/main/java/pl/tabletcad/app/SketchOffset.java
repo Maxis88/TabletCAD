@@ -16,6 +16,7 @@ public final class SketchOffset {
         if(!Double.isFinite(distance)||Math.abs(distance)<.001||Math.abs(distance)>5000)throw new IllegalArgumentException("Odległość odsunięcia: 0,001–5000 mm");
         SketchPrimitive result;
         if(source.isText())throw new IllegalArgumentException("Napis: zmień wysokość liter albo pogrubienie czcionki zamiast odsunięcia");
+        if(source.isEllipseArc())return EllipseArc.offset(source,id,distance);
         if(source.isEllipse())result=ellipse(source,id,distance);
         else if(SketchSpline.is(source))result=spline(source,id,distance);
         else if(source.curves!=null)result=source.closedGeometry()?curved(source.curves,id,distance):arc(source.curves,id,distance);

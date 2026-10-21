@@ -66,3 +66,18 @@
   — ponowienie z obróconym początkiem gwintu i weryfikacja usuniętej objętości (ThreadVariantsProbe).
 - **Wiązanie kątowe** ścian płaskich (MateKernelProbe).
 - Host: 46 zestawów PASS. Tablet: NIEPRZEPROWADZONE (AndroidTextProbe — czcionki urządzenia — tylko na tablecie).
+
+## 1.0.0-rc6 (seria)
+
+- **Przycinanie elipsy**: elipsa przecięta w ≥2 miejscach → łuk eliptyczny (nowy element „Łuk eliptyczny”);
+  łuk dalej przycinany (także na dwie części), przedłużanie linii do elipsy/łuku, przesuwanie, obrót, skala,
+  szyki, lustro, obrys (splajn), edycja liczbowa (środek, półosie, obrót, t₀, t₁), zapis w projekcie.
+- **Profil z łukiem eliptycznym**: Połącz kontur łączy łuk eliptyczny z liniami i łukami; w profilu łuk jest
+  zastępowany łukami kołowymi z odchyłką ≤ 0,0001 mm (objętość wyciągnięcia ≤ 0,01 % od dokładnej).
+- **DXF – import**: ELLIPSE (pełna i łuk), POINT, SPLINE (punkty dopasowania, postać Béziera z eksportu
+  TabletCAD dokładnie, inne B-splajny przez interpolację), LWPOLYLINE z wybrzuszeniami (łuki).
+  Eksport łuku eliptycznego jako ELLIPSE z parametrami.
+- **Obrys** całego zamkniętego łańcucha linii/łuków z jednego elementu; zastąpienie oryginału.
+- **Napis**: strzałka głębokości na modelu, domyślnie grawer (wycięcie z bryły).
+- **Suwaki** bez sztywnych limitów (zakres z rozmiaru modelu, rozszerzanie przy końcu).
+- Host: 49 zestawów PASS (EllipseArcKernelProbe, SliderRangeHostTest, SketchOffsetCurvesHostTest).

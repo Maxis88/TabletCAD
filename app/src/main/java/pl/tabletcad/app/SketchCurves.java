@@ -146,7 +146,7 @@ public final class SketchCurves {
     }
     public static SketchContours.Result join(List<SketchPrimitive> geometry,String selected) {
         List<SketchPrimitive> edges=new ArrayList<>();boolean curved=false;
-        for(SketchPrimitive p:geometry)if(!p.construction&&(p.type.equals("Linia")||p.type.equals("Łuk"))){edges.add(p);curved|=p.curves!=null;}
+        for(SketchPrimitive p:geometry)if(!p.construction&&(p.type.equals("Linia")||p.type.equals("Łuk")||p.isEllipseArc())){edges.add(p);curved|=p.curves!=null||p.isEllipseArc();}
         if(!curved)return null;
         SketchPrimitive first=edges.get(0);for(SketchPrimitive p:edges)if(p.id.equals(selected))first=p;
         List<double[]> chain=new ArrayList<>();Set<String> consumed=new HashSet<>();
@@ -154,9 +154,11 @@ public final class SketchCurves {
         int degreeAtStart=0;for(SketchPrimitive p:edges)if(Math.hypot(sx-p.x1,sy-p.y1)<=.01||Math.hypot(sx-p.x2,sy-p.y2)<=.01)degreeAtStart++;
         if(degreeAtStart!=2)throw new IllegalArgumentException("Początek konturu nie jest zamknięty lub ma rozgałęzienie");
         while(true) {
-            if(chain.size()>=128)throw new IllegalArgumentException("Kontur przekracza 128 segmentów");
-            chain.add(current);consumed.add(first.id);double x=current[5],y=current[6];
-            if(Math.hypot(x-sx,y-sy)<=.01){current[5]=sx;current[6]=sy;break;}
+            consumed.add(first.id);int last=current.length-7;
+            for(int k=0;k<current.length;k+=7)chain.add(Arrays.copyOfRange(current,k,k+7));
+            if(chain.size()>128)throw new IllegalArgumentException("Kontur przekracza 128 segmentów");
+            double x=current[last+5],y=current[last+6];
+            if(Math.hypot(x-sx,y-sy)<=.01){double[] tail=chain.get(chain.size()-1);tail[5]=sx;tail[6]=sy;break;}
             SketchPrimitive next=null;int degree=0;
             for(SketchPrimitive p:edges)if(Math.hypot(x-p.x1,y-p.y1)<=.01||Math.hypot(x-p.x2,y-p.y2)<=.01) {
                 degree++;if(!consumed.contains(p.id)){if(next!=null)throw new IllegalArgumentException("Rozgałęziony kontur");next=p;}
@@ -170,5 +172,9 @@ public final class SketchCurves {
         validate(values,true);return new SketchContours.Result(new SketchPrimitive(chainId(geometry,consumed,selected),values,true),consumed);
     }
     private static String chainId(List<SketchPrimitive> geometry,Set<String> ids,String selected){if(selected!=null&&ids.contains(selected))return selected;for(SketchPrimitive p:geometry)if(ids.contains(p.id))return p.id;throw new IllegalArgumentException("Pusty kontur");}
-    private static double[] segment(SketchPrimitive p){return p.curves!=null?p.curves.clone():new double[]{0,p.x1,p.y1,(p.x1+p.x2)/2,(p.y1+p.y2)/2,p.x2,p.y2};}
+    /** Segments of one element; an elliptic arc becomes circular arcs within EllipseArc.PROFILE_TOLERANCE. */
+    private static double[] segment(SketchPrimitive p) {
+        if(p.isEllipseArc()){List<double[]> arcs=EllipseArc.circularArcs(p.ellipseArc());double[] r=new double[arcs.size()*7];for(int i=0;i<arcs.size();i++)System.arraycopy(arcs.get(i),0,r,7*i,7);return r;}
+        return p.curves!=null?p.curves.clone():new double[]{0,p.x1,p.y1,(p.x1+p.x2)/2,(p.y1+p.y2)/2,p.x2,p.y2};
+    }
 }
