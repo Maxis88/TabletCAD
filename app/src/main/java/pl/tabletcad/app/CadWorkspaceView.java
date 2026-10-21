@@ -203,8 +203,8 @@ public final class CadWorkspaceView extends View {
     boolean projectionMode;double[] projectionEdges=new double[0],projectionProperties=new double[0];
     private boolean cornerFilletPicking;private String cornerFirst;
     private boolean dimensionMode;
-    private boolean coincidenceMode;
-    private String coincidenceFirst;
+    boolean coincidenceMode;
+    String coincidenceFirst;
     /** "Punkt": a reference point at the (snapped) tapped position; tap it later to type exact coordinates. */
     private void pointTap(float x,float y) {
         double[] p=snappedSketchPoint(x,y,null,null,null);
@@ -240,8 +240,8 @@ public final class CadWorkspaceView extends View {
         operationMessage="Przesuń palec, aby przenieść element. Puść bez ruchu, aby edytować wartości.";
         invalidate();
     };
-    private int coincidenceAnchor;
-    private String constraintKind="coincident";
+    int coincidenceAnchor;
+    String constraintKind="coincident";
     private boolean dragConstraintRejected;
     private boolean polylineTouch;
     private double[] polylinePreview;
@@ -715,12 +715,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     if(pathPatternSource!=null&&inSketch()){sketchPositionTools.pathPatternTap(e.getX(),e.getY());return true;}
                     if (mode.equals("Edytuj szkic")) {
                         if(cornerFilletPicking){cornerFilletTap(e.getX(),e.getY());return true;}
-                        if(coincidenceMode){coincidenceTap(e.getX(),e.getY());return true;}
+                        if(coincidenceMode){sketchConstraintTools.coincidenceTap(e.getX(),e.getY());return true;}
                         if(trimMode) {trimSketchAt(e.getX(),e.getY());return true;}
                         if(projectionMode){projectionTap(e.getX(),e.getY());return true;}
                         if(dimensionMode) {
                             SketchPrimitive entity=findSketchAt(e.getX(),e.getY());
-                            if(entity!=null){selectedSketchId=entity.id;showSketchDimensionEditor(entity);}
+                            if(entity!=null){selectedSketchId=entity.id;sketchConstraintTools.showSketchDimensionEditor(entity);}
                             else operationMessage="Dotknij linii, prostokąta lub okręgu do wymiarowania";
                             invalidate();return true;
                         }
@@ -2273,7 +2273,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             }).show();
     }
 
-    private void showCurveEditor(SketchPrimitive entity) {
+    void showCurveEditor(SketchPrimitive entity) {
         if(!entity.closedGeometry()){showCurveSegmentEditor(entity,0);return;}
         String[] items=new String[entity.curves.length/7];
         for(int i=0;i<items.length;i++)items[i]="Segment "+(i+1)+" · "+(entity.curves[i*7]==1?"łuk":"linia");
@@ -2625,7 +2625,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     /** Driving angle between two lines: new (index −1) or edit of a stored relation; live ghost. */
-    private void showAngleEditor(int index,SketchPrimitive a,SketchPrimitive b) {
+    void showAngleEditor(int index,SketchPrimitive a,SketchPrimitive b) {
         beginSketchWork();mode="Edytuj szkic";
         double current=Math.abs(NonlinearConstraints.angle(a,b));if(current<=0.001||current>=179.999)current=90;
         final SketchConstraints.Link existing=index>=0&&index<project.coincidences.size()?project.coincidences.get(index):null;
@@ -2653,7 +2653,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         watchFields(input,()->{sketchGhost.clear();try{showSolvedGhost(solve.apply(parseCoordinate(input)));}catch(IllegalArgumentException ignored){}invalidate();});
     }
     /** Driving distance (new: index −1 with a template link whose value is measured now; or a stored one). */
-    private void showDistanceEditor(int index,SketchConstraints.Link template) {
+    void showDistanceEditor(int index,SketchConstraints.Link template) {
         beginSketchWork();mode="Edytuj szkic";
         double current;try{current=NonlinearConstraints.distance(project.sketch,template);}catch(IllegalArgumentException e){operationMessage=e.getMessage();invalidate();return;}
         if(index>=0)current=template.x;
@@ -2849,7 +2849,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return new PointF((float)projected[0],(float)projected[1]);
     }
 
-    private boolean sketchPointVisible(double u,double v) {
+    boolean sketchPointVisible(double u,double v) {
         if(!showSolid||inSketch()||showExtrusionSketch)return true;
         double[] p=projectSketchDepth(u,v);
         return HiddenLineVisibility.visible(p[0],p[1],p[2],depthSurfaces);
@@ -2860,7 +2860,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         PointF p=projectSketchPoint(u,v);canvas.drawCircle(p.x,p.y,dp(5),paint);
     }
 
-    private double sketchSegmentDistance(float x,float y,double u1,double v1,double u2,double v2) {
+    double sketchSegmentDistance(float x,float y,double u1,double v1,double u2,double v2) {
         double[] a=projectSketchDepth(u1,v1),b=projectSketchDepth(u2,v2);
         return HiddenLineVisibility.distanceToVisibleSegment(x,y,a,b,showSolid&&!inSketch()&&!showExtrusionSketch?depthSurfaces:java.util.Collections.emptyList());
     }
@@ -2960,7 +2960,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         SketchPrimitive created=SketchShapes.drag(UUID.randomUUID().toString(),type,x1,y1,x2,y2,project.polygonSides).withConstruction(project.drawingConstruction);
         project.sketch.add(created);
         selectedSketchId=created.id;
-        if(type.equals("Linia"))post(()->showSketchDimensionEditor(created));
+        if(type.equals("Linia"))post(()->sketchConstraintTools.showSketchDimensionEditor(created));
         else operationMessage="Narysowano: "+sketchPositionTools.sketchEntityName(created)+". Przytrzymaj go i przeciągnij, aby przesunąć; Położenie ustawi dokładne odległości.";
         project.featureProfileId = null;
         project.sketchExtruded = false;
@@ -3191,7 +3191,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
     }
 
-    private void showSketchEntityEditor(SketchPrimitive entity) {
+    void showSketchEntityEditor(SketchPrimitive entity) {
         if(entity.isText()){showTextEditor(entity,entity.textParams()[0],entity.textParams()[1]);return;}
         if(entity.isPoint()){sketchPositionTools.showSketchPosition(entity.id,0,null,0);return;}
         if(entity.isEllipse()){showEllipseEditor(entity);return;}
@@ -3204,7 +3204,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 .setView(instructions).setNeutralButton("Usuń kontur",(d,w)->deleteSketchEntity(entity.id))
                 .setNegativeButton("Zamknij",null).show();return;
         }
-        showSketchDimensionEditor(entity);
+        sketchConstraintTools.showSketchDimensionEditor(entity);
     }
 
     /** Sheet format, section position and title block of the technical drawing. */
@@ -3426,7 +3426,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         List<Runnable> actions=new ArrayList<>();
         if(project.hasCoincidence(source.id)) {
             labels.add("Zarządzaj więzami tego elementu");
-            actions.add(()->showEntityConstraints(source));
+            actions.add(()->sketchConstraintTools.showEntityConstraints(source));
         }
         {
             labels.add(source.construction?"Użyj jako zwykła geometria":"Ustaw jako geometrię pomocniczą");
@@ -3465,231 +3465,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
             .setNegativeButton("Zamknij",null).show();
     }
 
-    private void coincidenceTap(float x,float y) {
-        if(NonlinearConstraints.relation(constraintKind)){relationTap(x,y);return;}
-        if(constraintKind.equals("horizontal")||constraintKind.equals("vertical")) {axisConstraintTap(x,y);return;}
-        SketchPrimitive picked=null;int anchor=-1;double best=dp(18);
-        for(SketchPrimitive p:project.sketch)for(int i=0;i<SketchConstraints.anchorCount(p);i++) {
-            if(p.id.equals(coincidenceFirst))continue;
-            double[] a=SketchConstraints.anchor(p,i);if(!sketchPointVisible(a[0],a[1]))continue;
-            PointF point=projectSketchPoint(a[0],a[1]);double distance=Math.hypot(x-point.x,y-point.y);
-            if(distance<best){best=distance;picked=p;anchor=i;}
-        }
-        if(SketchConstraints.position(constraintKind)&&(picked!=null||coincidenceFirst!=null)){positionDimensionTap(x,y,picked,anchor);return;}
-        if(picked==null){operationMessage="Dotknij punktu innego elementu; punkty są oznaczone kółkami";invalidate();return;}
-        if(constraintKind.equals("fixed")) {
-            addSketchConstraint(SketchConstraints.Link.fixed(picked,anchor));return;
-        }
-        if(coincidenceFirst==null) {
-            coincidenceFirst=picked.id;coincidenceAnchor=anchor;
-            operationMessage="Wybrano pierwszy punkt. Dotknij punktu drugiego elementu — zostanie dołączony do pierwszego.";
-        } else {
-            try {
-                SketchConstraints.Link link=new SketchConstraints.Link(coincidenceFirst,coincidenceAnchor,picked.id,anchor);
-                List<SketchPrimitive> solved=SketchConstraints.connect(project.sketch,project.coincidences,link);
-                List<SketchConstraints.Link> links=new ArrayList<>(project.coincidences);links.add(link);
-                if(applySolvedSketch(solved,links))operationMessage="Połączono punkty. Wybierz kolejną parę lub Edytuj, aby przesuwać.";
-            }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
-            coincidenceFirst=null;
-        }
-        invalidate();
-    }
-
-    /** Position dimension picking: first point, then a second point or the sketch origin. */
-    private void positionDimensionTap(float x,float y,SketchPrimitive picked,int anchor) {
-        PointF origin=projectSketchPoint(0,0);boolean nearOrigin=Math.hypot(x-origin.x,y-origin.y)<dp(18);
-        int axis=constraintKind.equals("dimX")?0:1;
-        if(coincidenceFirst==null) {
-            coincidenceFirst=picked.id;coincidenceAnchor=anchor;selectedSketchId=picked.id;
-            operationMessage="Wskaż drugi punkt albo początek układu szkicu (przecięcie osi)";invalidate();return;
-        }
-        if(picked==null&&!nearOrigin){operationMessage="Wskaż punkt innego elementu albo początek układu szkicu";invalidate();return;}
-        SketchPrimitive first=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(coincidenceFirst))first=p;
-        String firstId=coincidenceFirst;int firstAnchor=coincidenceAnchor;coincidenceFirst=null;
-        if(first==null){invalidate();return;}
-        SketchConstraints.Link link;
-        if(nearOrigin||picked==null||(picked.id.equals(firstId)&&anchor==firstAnchor))link=new SketchConstraints.Link(constraintKind,firstId,firstAnchor,firstId,firstAnchor,SketchConstraints.anchor(first,firstAnchor)[axis],0);
-        else link=new SketchConstraints.Link(constraintKind,firstId,firstAnchor,picked.id,anchor,SketchConstraints.anchor(picked,anchor)[axis]-SketchConstraints.anchor(first,firstAnchor)[axis],0);
-        addSketchConstraint(link);
-        if(project.coincidences.contains(link))operationMessage="Dodano wymiar położenia. Dwukrotnie dotknij wartości, aby ją zmienić.";
-    }
-
-    private void addSketchConstraint(SketchConstraints.Link rule) {
-        try {
-            List<SketchPrimitive> solved=SketchConstraints.connect(project.sketch,project.coincidences,rule);
-            List<SketchConstraints.Link> links=new ArrayList<>(project.coincidences);links.add(rule);
-            if(applySolvedSketch(solved,links))operationMessage=NonlinearConstraints.relation(rule.kind)?"Zapisano relację "+NonlinearConstraints.symbol(rule.kind):rule.kind.equals("fixed")?"Punkt unieruchomiony. Aby odblokować: Geometria → Usuń więzy.":"Zapisano kierunek odcinka. Edytuj pozwala zmienić długość bez zmiany kierunku.";
-        }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
-        invalidate();
-    }
-
-    private void axisConstraintTap(float x,float y) {
-        SketchPrimitive p=findSketchAt(x,y);
-        if(p==null){operationMessage="Dotknij odcinka szkicu";invalidate();return;}
-        int first=0,second=1;
-        if(p.vertices!=null) {
-            double best=Double.POSITIVE_INFINITY;
-            for(int i=0;i<p.vertices.length;i+=2) {
-                int j=(i+2)%p.vertices.length;
-                double d=sketchSegmentDistance(x,y,p.vertices[i],p.vertices[i+1],p.vertices[j],p.vertices[j+1]);
-                if(d<best){best=d;first=i/2;second=j/2;}
-            }
-        } else if(!p.type.equals("Linia")&&!p.type.equals("Pomocnicza")) {
-            operationMessage="Wybierz linię lub bok polilinii. Prostokąt ma już boki poziome i pionowe.";invalidate();return;
-        }
-        addSketchConstraint(SketchConstraints.Link.axis(p.id,first,second,constraintKind.equals("horizontal")));
-    }
-
-    private void relationTap(float x,float y) {
-        SketchPrimitive picked=findSketchAt(x,y);int anchor=0;
-        if(constraintKind.equals("distance")&&coincidenceFirst!=null) {
-            // Second pick: a point of another element (point–point) or a line (perpendicular distance).
-            SketchPrimitive first=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(coincidenceFirst))first=p;
-            SketchPrimitive other=null;int otherAnchor=-1;double best=dp(18);
-            for(SketchPrimitive p:project.sketch){if(p.id.equals(coincidenceFirst))continue;for(int i=0;i<SketchConstraints.anchorCount(p);i++){double[] point=SketchConstraints.anchor(p,i);PointF screen=projectSketchPoint(point[0],point[1]);double distance=Math.hypot(screen.x-x,screen.y-y);if(distance<best){best=distance;other=p;otherAnchor=i;}}}
-            String firstId=coincidenceFirst;int firstAnchor=coincidenceAnchor;
-            if(first==null){coincidenceFirst=null;invalidate();return;}
-            if(other!=null){coincidenceFirst=null;showDistanceEditor(-1,new SketchConstraints.Link("distance",firstId,firstAnchor,other.id,otherAnchor,0,1));return;}
-            SketchPrimitive line=findSketchAt(x,y);
-            if(line!=null&&!line.id.equals(firstId)&&(line.type.equals("Linia")||line.type.equals("Pomocnicza"))){coincidenceFirst=null;showDistanceEditor(-1,new SketchConstraints.Link("distance",firstId,firstAnchor,line.id,0,0,0));return;}
-            operationMessage="Wskaż punkt innego elementu albo linię";invalidate();return;
-        }
-        if((constraintKind.equals("pointOn")||constraintKind.equals("distance"))&&coincidenceFirst==null) {
-            double best=dp(18);picked=null;
-            for(SketchPrimitive p:project.sketch)for(int i=0;i<SketchConstraints.anchorCount(p);i++){double[] point=SketchConstraints.anchor(p,i);PointF screen=projectSketchPoint(point[0],point[1]);double distance=Math.hypot(screen.x-x,screen.y-y);if(distance<best){best=distance;picked=p;anchor=i;}}
-        }
-        if(picked==null){operationMessage="Wskaż geometrię szkicu; przy Punkcie na obiekcie najpierw wskaż punkt";invalidate();return;}
-        if(coincidenceFirst==null){coincidenceFirst=picked.id;coincidenceAnchor=anchor;selectedSketchId=picked.id;operationMessage="Wskaż drugi element relacji "+NonlinearConstraints.symbol(constraintKind);invalidate();return;}
-        if(coincidenceFirst.equals(picked.id)){operationMessage="Wybierz drugi, różny element";invalidate();return;}
-        SketchPrimitive first=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(coincidenceFirst))first=p;
-        if(first==null){coincidenceFirst=null;return;}final SketchPrimitive a=first,b=picked;final int ai=coincidenceAnchor;final String kind=constraintKind;coincidenceFirst=null;
-        if(kind.equals("symmetric")) {
-            List<String> axes=new ArrayList<>(),labels=new ArrayList<>();axes.add("@X");labels.add("Oś X szkicu");axes.add("@Y");labels.add("Oś Y szkicu");
-            for(SketchPrimitive p:project.sketch)if((p.type.equals("Linia")||p.type.equals("Pomocnicza"))&&!p.id.equals(a.id)&&!p.id.equals(b.id)){axes.add(p.id);labels.add("Linia osi · "+p.id.substring(0,Math.min(6,p.id.length())));}
-            new PropertyBuilder().setTitle("Oś symetrii dwóch linii").setItems(labels.toArray(new String[0]),(d,w)->addSketchConstraint(new SketchConstraints.Link(kind,a.id,0,b.id,0,0,0,axes.get(w)))).setNegativeButton("Anuluj",null).show();
-        } else if(kind.equals("angle")) {
-            if(!(a.type.equals("Linia")||a.type.equals("Pomocnicza"))||!(b.type.equals("Linia")||b.type.equals("Pomocnicza"))){operationMessage="Kąt wymaga dwóch pojedynczych linii (rozbij kontur, aby użyć jego boku)";invalidate();return;}
-            showAngleEditor(-1,a,b);
-        } else if(kind.equals("tangent")&&a.type.equals("Okrąg")&&b.type.equals("Okrąg")) {
-            new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle("Styczność okręgów").setItems(new String[]{"Zewnętrzna","Wewnętrzna"},(d,w)->addSketchConstraint(new SketchConstraints.Link(kind,a.id,0,b.id,0,w==0?1:-1,0))).setNegativeButton("Anuluj",null).show();
-        } else {
-            double side=1;
-            if(kind.equals("tangent")){SketchPrimitive circle=a.type.equals("Okrąg")?a:b,line=a.type.equals("Okrąg")?b:a;side=Math.copySign(1,(circle.x1-line.x1)*(line.y2-line.y1)-(circle.y1-line.y1)*(line.x2-line.x1));}
-            addSketchConstraint(new SketchConstraints.Link(kind,a.id,ai,b.id,0,side,0));
-        }
-        invalidate();
-    }
-    private void showConstraintMenu() {
-        new PropertyBuilder().setTitle("Więzy szkicu")
-            .setItems(new String[]{"Połącz dwa punkty","Odcinek poziomy (H)","Odcinek pionowy (V)","Unieruchom punkt","Równoległość ∥","Prostopadłość ⊥","Równa długość / promień =","Styczność T","Współśrodkowość ◎","Symetria względem osi ↔︎","Punkt na obiekcie","Wymiar położenia X ↔︎","Wymiar położenia Y ↕︎","Współliniowość ⫽","Kąt między liniami ∠","Odległość punkt–linia / punkt–punkt ↦"},(d,which)-> {
-                constraintKind=new String[]{"coincident","horizontal","vertical","fixed","parallel","perpendicular","equal","tangent","concentric","symmetric","pointOn","dimX","dimY","collinear","angle","distance"}[which];
-                coincidenceMode=true;coincidenceFirst=null;
-                operationMessage=NonlinearConstraints.relation(constraintKind)?"Wskaż dwa elementy relacji "+NonlinearConstraints.symbol(constraintKind):which==0?"Wskaż dwa punkty różnych elementów":which==3?"Dotknij punktu, który ma pozostać na miejscu":"Dotknij odcinka lub boku konturu";
-                invalidate();
-            }).setNegativeButton("Zamknij",null).show();
-    }
-
-    private void showEntityConstraints(SketchPrimitive source) {
-        List<SketchConstraints.Link> rules=new ArrayList<>();List<String> labels=new ArrayList<>();
-        for(SketchConstraints.Link rule:project.coincidences)if(rule.uses(source.id)) {
-            rules.add(rule);
-            String label=NonlinearConstraints.relation(rule.kind)?"Relacja "+NonlinearConstraints.symbol(rule.kind):rule.kind.equals("fixed")?"Punkt stały "+(rule.ai+1):rule.kind.equals("horizontal")?"Poziomo H · "+(rule.ai+1)+"–"+(rule.bi+1)
-                :rule.kind.equals("vertical")?"Pionowo V · "+(rule.ai+1)+"–"+(rule.bi+1):"Połączenie punktu "+(rule.a.equals(source.id)?rule.ai+1:rule.bi+1);
-            labels.add("Usuń: "+label);
-        }
-        labels.add("Usuń wszystkie więzy tego elementu");
-        new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle("Więzy · "+source.type+" · "+rules.size())
-            .setItems(labels.toArray(new String[0]),(d,which)-> {
-                checkpoint();
-                if(which==rules.size())project.coincidences.removeIf(rule->rule.uses(source.id));
-                else project.coincidences.remove(rules.get(which));
-                projectRepository.save(project);operationMessage="Usunięto wybrany więz. Położenie geometrii nie zmieniło się.";invalidate();
-            }).setNegativeButton("Zamknij",null).show();
-    }
-
-    private void showSketchCoordinateEditor(SketchPrimitive entity) {
-        if(entity.curves!=null){showCurveEditor(entity);return;}
-        if(entity.driving!=null) {operationMessage="Najpierw odblokuj wymiary elementu";invalidate();return;}
-        LinearLayout form = new LinearLayout(getContext());
-        form.setOrientation(LinearLayout.VERTICAL);
-        int padding = (int)dp(18);
-        form.setPadding(padding, 0, padding, 0);
-        EditText x1 = coordinateInput("X1 [mm]", entity.x1);
-        EditText y1 = coordinateInput("Y1 [mm]", entity.y1);
-        EditText x2 = coordinateInput(entity.type.equals("Okrąg") ? "X na promieniu [mm]" : "X2 [mm]", entity.x2);
-        EditText y2 = coordinateInput(entity.type.equals("Okrąg") ? "Y na promieniu [mm]" : "Y2 [mm]", entity.y2);
-        for(EditText input:new EditText[]{x1,y1,x2,y2}) {
-            android.widget.TextView label=new android.widget.TextView(getContext());
-            label.setText(input.getHint());label.setTextSize(12);form.addView(label);form.addView(input);
-        }
-        new PropertyBuilder()
-            .setTitle("Edytuj: " + entity.type)
-            .setView(form)
-            .setNeutralButton("Usuń", (dialog, which) -> deleteSketchEntity(entity.id))
-            .setNegativeButton("Anuluj", null)
-            .setPositiveButton("Zastosuj", (dialog, which) -> {
-                try {
-                    SketchPrimitive changed = new SketchPrimitive(entity.id, entity.type,
-                        parseCoordinate(x1), parseCoordinate(y1), parseCoordinate(x2), parseCoordinate(y2));
-                    replaceSketchEntity(entity, changed);
-                } catch (NumberFormatException ignored) {
-                    operationMessage = "Niepoprawne współrzędne szkicu";
-                    invalidate();
-                }
-            }).show();
-    }
-
-    private void showSketchDimensionEditor(SketchPrimitive entity) {
-        if(entity.isText()){showTextEditor(entity,entity.textParams()[0],entity.textParams()[1]);return;}
-        if(entity.isPoint()){sketchPositionTools.showSketchPosition(entity.id,0,null,0);return;}
-        if(entity.curves!=null){showCurveEditor(entity);return;}
-        if(entity.vertices!=null){showSketchEntityEditor(entity);return;}
-        boolean rectangle=entity.type.equals("Prostokąt"),circle=entity.type.equals("Okrąg");
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        form.setPadding((int)dp(8),0,(int)dp(8),0);
-        android.widget.TextView firstLabel=new android.widget.TextView(getContext());
-        firstLabel.setText(rectangle?"Szerokość [mm]":circle?"Promień R [mm]":"Długość [mm]");form.addView(firstLabel);
-        EditText first=coordinateInput(firstLabel.getText().toString(),rectangle?Math.abs(entity.x2-entity.x1):SketchDimensions.length(entity));form.addView(first);
-        EditText second=coordinateInput(rectangle?"Wysokość [mm]":"Kąt do osi X [°]",rectangle?Math.abs(entity.y2-entity.y1):SketchDimensions.angle(entity));
-        if(!circle) {
-            android.widget.TextView label=new android.widget.TextView(getContext());label.setText(second.getHint());form.addView(label);form.addView(second);
-        }
-        android.widget.CheckBox diameter=new android.widget.CheckBox(getContext());
-        if(circle) {
-            diameter.setText("Podawaj średnicę Ø");form.addView(diameter);
-            diameter.setOnCheckedChangeListener((button,checked)-> {
-                try{double value=parseCoordinate(first);setLengthText(first,checked?value*2:value/2);}
-                catch(NumberFormatException ignored){}
-                firstLabel.setText(checked?"Średnica Ø [mm]":"Promień R [mm]");
-            });
-        }
-        android.widget.CheckBox construction=new android.widget.CheckBox(getContext());
-        construction.setText("Geometria pomocnicza");construction.setChecked(entity.construction);form.addView(construction);
-        android.widget.CheckBox lock=new android.widget.CheckBox(getContext());
-        lock.setText("Zablokuj wymiary");lock.setChecked(true);form.addView(lock);
-        android.widget.TextView hint=new android.widget.TextView(getContext());
-        hint.setText("Początek elementu pozostaje na miejscu. Blokada zachowuje rozmiar przy przesuwaniu. Zakończ zatwierdza szkic i przebudowuje powiązaną bryłę.");form.addView(hint);
-        PropertyBuilder builder=new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle("Wymiary · "+entity.type).setView(form);
-        if(entity.type.equals("Linia")||entity.type.equals("Pomocnicza"))builder.setNeutralButton("Kąt do innej linii…",(d,w)->{
-            mode="Edytuj szkic";coincidenceMode=true;constraintKind="angle";coincidenceFirst=entity.id;coincidenceAnchor=0;selectedSketchId=entity.id;
-            operationMessage="Dotknij drugiej linii — kąt zostanie zwymiarowany od tej linii";invalidate();});
-        builder.setNeutralButton("Położenie…",(d,w)->sketchPositionTools.showSketchPosition(entity.id,0,null,0));
-        builder
-            .setNeutralButton(entity.driving==null?"Pozycja (opcjonalnie)":"Odblokuj",(d,w)-> {
-                if(entity.driving!=null)replaceSketchEntity(entity,SketchDimensions.unlocked(entity));
-                else showSketchCoordinateEditor(entity);
-            }).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)-> {
-                try {
-                    double a=parseCoordinate(first);if(circle&&diameter.isChecked())a/=2;
-                    SketchPrimitive changed=SketchDimensions.apply(entity,a,circle?0:parseCoordinate(second),lock.isChecked()).withConstruction(construction.isChecked());
-                    replaceSketchEntity(entity,changed,true);
-                }catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-            }).show();
-        watchFields(form,()->{sketchGhost.clear();try{double a=parseCoordinate(first);if(circle&&diameter.isChecked())a/=2;
-            showSolvedGhost(SketchConstraints.edit(project.sketch,project.coincidences,entity.id,SketchDimensions.apply(entity,a,circle?0:parseCoordinate(second),lock.isChecked())));}catch(IllegalArgumentException ignored){}invalidate();});
-    }
-
     private final java.util.Map<EditText,java.lang.ref.WeakReference<android.widget.TextView>> fieldLabels=new java.util.WeakHashMap<>();
+    /** Sketch relations and constraints, position dimensions and the coordinate / dimension editors */
+    final SketchConstraintTools sketchConstraintTools=new SketchConstraintTools(this);
     android.widget.TextView fieldLabel(EditText input){java.lang.ref.WeakReference<android.widget.TextView> ref=fieldLabels.get(input);return ref==null?null:ref.get();}
     void fieldVisible(EditText input,boolean visible) {
         input.setVisibility(visible?View.VISIBLE:View.GONE);input.setEnabled(visible);
@@ -5038,7 +4816,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     /** Sketch text tools (insert, edit, emboss/engrave) live in {@link TextTools}. */
     private final TextTools textTools=new TextTools(this);
     SketchText.Font textFont(){return textTools.font();}
-    private void showTextEditor(SketchPrimitive existing,double x,double y){textTools.showEditor(existing,x,y);}
+    void showTextEditor(SketchPrimitive existing,double x,double y){textTools.showEditor(existing,x,y);}
     private void showTextExtrusion(SketchPrimitive text){textTools.showExtrusion(text);}
     private void extrudeSketchProfile() {
         if(project.importedMeshSource!=null){operationMessage="Wyciąganie wymaga bryły B-Rep albo pustego dokumentu";invalidate();return;}
@@ -6606,7 +6384,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(tool.equals("Edytuj profil źródłowy")){editSourceProfile(selectedSourceProfile());return;}
 
         if(tool.equals("Więzy")) {
-            mode="Edytuj szkic";showConstraintMenu();
+            mode="Edytuj szkic";sketchConstraintTools.showConstraintMenu();
             invalidate();return;
         }
         if(tool.equals("Geometria")) {
