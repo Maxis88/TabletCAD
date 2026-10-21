@@ -19,8 +19,10 @@ public final class AndroidTextFont implements SketchText.Font {
 
     private Paint paint(int font) {
         if(paints[font]==null) {
-            Typeface face=font==1?Typeface.create(Typeface.SANS_SERIF,Typeface.BOLD):font==2?Typeface.SERIF:font==3?Typeface.MONOSPACE:Typeface.SANS_SERIF;
-            Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setTypeface(face);p.setTextSize(SIZE);
+            // Bold is a real weight-700 outline (variable system font), never synthetic emboldening,
+            // whose stroked outlines overlap themselves and cannot become solids.
+            Typeface face=font==1?Typeface.create(Typeface.SANS_SERIF,700,false):font==2?Typeface.SERIF:font==3?Typeface.MONOSPACE:Typeface.SANS_SERIF;
+            Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setTypeface(face);p.setFakeBoldText(false);p.setTextSize(SIZE);
             Rect r=new Rect();p.getTextBounds("H",0,1,r);cap[font]=Math.max(1,r.height());paints[font]=p;
         }
         return paints[font];
