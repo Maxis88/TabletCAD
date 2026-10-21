@@ -42,6 +42,8 @@ import pl.tabletcad.app.storage.ProjectRepository;
  * Touch-first CAD viewport backed by tessellated Open CASCADE B-Rep geometry.
  */
 public final class CadWorkspaceView extends View {
+    /** Sketch mirror (about lines and axes) and the geometry tool menu */
+    final SketchMirrorTools sketchMirrorTools=new SketchMirrorTools(this);
     private int bottomSystemInset;
     private int keyboardInset;
 
@@ -225,7 +227,7 @@ public final class CadWorkspaceView extends View {
     private final Runnable editMenu=()->{
         SketchPrimitive target=this.draggedSketch;if(target==null||!this.mode.equals("Edytuj szkic")||this.dragPreview!=null||this.groupDrag!=null)return;
         this.draggedSketch=null;this.dragSolvedPreview=null;this.selectedSketchId=target.id;
-        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);showSketchGeometryTools();invalidate();
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);sketchMirrorTools.showSketchGeometryTools();invalidate();
     };
     /** Entity under the finger when drawing started; a long press grabs it instead of drawing. */
     private SketchPrimitive drawGrabTarget;
@@ -1630,7 +1632,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                         contextText(contents,"Przeciągnij element (także za wnętrze), aby go przesunąć.",false);
                         contextAction(contents,"Położenie i wyrównanie…",false,()->sketchPositionTools.showSketchPosition(chosen.id,0,null,0));
                         contextAction(contents,"Wartości i kształt…",false,()->{mode="Edytuj szkic";showSketchEntityEditor(chosen);});
-                        contextAction(contents,"Więcej (więzy, pomocnicza…)",false,()->{mode="Edytuj szkic";showSketchGeometryTools();});
+                        contextAction(contents,"Więcej (więzy, pomocnicza…)",false,()->{mode="Edytuj szkic";sketchMirrorTools.showSketchGeometryTools();});
                     }
                     if(project.hasSolid()&&project.importedMeshSource==null) {
                         if(projectionMode)contextAction(contents,"Zakończ rzutowanie",false,()->{projectionMode=false;operationMessage="Zakończono rzutowanie";});
@@ -1816,7 +1818,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 final SketchPrimitive chosen=picked;stripHint="Zaznaczony: "+sketchPositionTools.sketchEntityName(chosen);
                 out.add(new StripChip("Położenie…","Położenie",false,false,()->sketchPositionTools.showSketchPosition(chosen.id,0,null,0)));
                 out.add(new StripChip("Wartości…","Wymiar",false,false,()->{mode="Edytuj szkic";showSketchEntityEditor(chosen);}));
-                out.add(new StripChip("Więcej…","Więzy",false,false,()->{mode="Edytuj szkic";showSketchGeometryTools();}));
+                out.add(new StripChip("Więcej…","Więzy",false,false,()->{mode="Edytuj szkic";sketchMirrorTools.showSketchGeometryTools();}));
             }
             if(project.hasSolid()&&project.importedMeshSource==null) {
                 if(projectionMode)out.add(new StripChip("Zakończ rzutowanie","Rzutuj",true,false,()->{projectionMode=false;operationMessage="Zakończono rzutowanie";}));
@@ -2592,7 +2594,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     /** Adds driving X and Y position dimensions of the element's first point from the sketch origin. */
-    private void addOriginPositionDimensions(SketchPrimitive source) {
+    void addOriginPositionDimensions(SketchPrimitive source) {
         if(SketchConstraints.anchorCount(source)==0){operationMessage="Ten element nie ma punktu do zwymiarowania";invalidate();return;}
         double[] point=SketchConstraints.anchor(source,0);int added=0;
         for(String kind:new String[]{"dimX","dimY"}) {
@@ -3091,7 +3093,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private String snapKind="";
-    private boolean isProfileUsed(String id) {
+    boolean isProfileUsed(String id) {
         return id.equals(project.featureProfileId)||id.equals(project.featureBaseProfileId)
             ||project.committedProfileIds.contains(id);
     }
@@ -3369,102 +3371,6 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         return linked;
     }
-    private void showSketchMirror() {
-        List<SketchPrimitive> sources=new ArrayList<>();List<String> labels=new ArrayList<>();
-        for(SketchPrimitive entity:project.sketch) {
-            if(entity.id.equals(selectedSketchId)){showSketchMirrorAxes(entity);return;}
-            sources.add(entity);labels.add("Element "+sources.size()+" · "+entity.type);
-        }
-        if(sources.isEmpty()){operationMessage="Najpierw narysuj element szkicu do odbicia";invalidate();return;}
-        if(sources.size()==1){showSketchMirrorAxes(sources.get(0));return;}
-        new PropertyBuilder().setTitle("Lustro · wybierz element do skopiowania")
-            .setItems(labels.toArray(new String[0]),(d,w)->showSketchMirrorAxes(sources.get(w)))
-            .setNegativeButton("Anuluj",null).show();
-    }
-
-    private void showSketchMirrorAxes(SketchPrimitive source) {
-        List<double[]> axes=new ArrayList<>();List<String> labels=new ArrayList<>();
-        axes.add(new double[]{0,0,1,0});labels.add("Oś X szkicu");
-        axes.add(new double[]{0,0,0,1});labels.add("Oś Y szkicu");
-        final List<String> axisIds=new ArrayList<>(java.util.Arrays.asList("@X","@Y"));
-        for(SketchPrimitive p:project.sketch)if((p.type.equals("Pomocnicza")||p.type.equals("Linia"))&&!p.id.equals(source.id)) {
-            axes.add(new double[]{p.x1,p.y1,p.x2,p.y2});labels.add("Oś z linii "+(axes.size()-2));axisIds.add(p.id);
-        }
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.Spinner axisChoice=datumTools.choice(form,"Oś odbicia",labels,0);
-        android.widget.TextView hint=new android.widget.TextView(getContext());hint.setText("Podgląd kopii (zielona, przerywana) zmienia się razem z wyborem osi.");form.addView(hint);
-        new PropertyBuilder().setTitle("Kopia lustrzana · "+source.type).setView(form).setNegativeButton("Anuluj",null)
-            .setPositiveButton("Zastosuj",(d,button)-> {int w=axisChoice.getSelectedItemPosition();
-                try {
-                    double[] axis=axes.get(w);
-                    SketchPrimitive copy=SketchMirror.copy(source,UUID.randomUUID().toString(),axis[0],axis[1],axis[2],axis[3]);
-                    checkpoint();project.sketch.add(copy);selectedSketchId=copy.id;mode="Edytuj szkic";
-                    // Lines and circles: symmetry relation to the axis entity (follows a moved axis line); other geometry: fixed mirror transform.
-                    int linked=0;
-                    if(source.type.equals("Linia")||source.type.equals("Okrąg")) {
-                        for(int order=0;order<2&&linked==0;order++)try{SketchConstraints.Link rel=new SketchConstraints.Link("symmetric",source.id,0,copy.id,order,0,0,axisIds.get(w));NonlinearConstraints.validate(project.sketch,rel);project.coincidences.add(rel);linked=1;}catch(IllegalArgumentException ignored){linked=0;}
-                    }
-                    if(linked==0)linked=linkCopies(source,java.util.Collections.singletonList(copy),c->NonlinearConstraints.withGroup(NonlinearConstraints.mirror(axis[0],axis[1],axis[2],axis[3]),UUID.randomUUID().toString(),"M,0,0,0,0"));
-                    projectRepository.save(project);
-                    operationMessage=linked>0?(source.type.equals("Linia")||source.type.equals("Okrąg")?"Utworzono kopię lustrzaną z więzem symetrii ↔︎ – podąża za źródłem i za osią. Zakończ zatwierdza szkic.":"Utworzono powiązaną kopię lustrzaną ⧉ – zmiana źródła zmienia kopię (oś stała). Zakończ zatwierdza szkic."):"Utworzono niezależną kopię lustrzaną (tego typu geometrii nie można powiązać). Zakończ zatwierdza szkic.";
-                }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
-                invalidate();
-            }).show();
-        Runnable ghost=()->{sketchGhost.clear();try{double[] a=axes.get(axisChoice.getSelectedItemPosition());sketchGhost.add(SketchMirror.copy(source,"ghost",a[0],a[1],a[2],a[3]));}catch(IllegalArgumentException ignored){}invalidate();};
-        watchFields(form,ghost);ghost.run();
-    }
-
-    private void showSketchGeometryTools() {
-        SketchPrimitive selected=null;
-        for(SketchPrimitive p:project.sketch)if(p.id.equals(selectedSketchId))selected=p;
-        if(selected==null) {
-            operationMessage="Zaznacz element szkicu, a następnie wybierz Geometria";
-            invalidate();return;
-        }
-        SketchPrimitive source=selected;
-        List<String> labels=new ArrayList<>();
-        List<Runnable> actions=new ArrayList<>();
-        if(project.hasCoincidence(source.id)) {
-            labels.add("Zarządzaj więzami tego elementu");
-            actions.add(()->sketchConstraintTools.showEntityConstraints(source));
-        }
-        {
-            labels.add(source.construction?"Użyj jako zwykła geometria":"Ustaw jako geometrię pomocniczą");
-            actions.add(()->{
-                if(isProfileUsed(source.id)&&!SketchTransactions.active(project)){operationMessage="Element jest używany przez bryłę";invalidate();return;}
-                replaceSketchEntity(source,SketchEditing.toggleConstruction(source),true);
-            });
-        }
-        if(source.vertices!=null||source.type.equals("Prostokąt")||source.type.equals("Kontur krzywy")) {
-            labels.add("Rozbij na osobne odcinki");
-            actions.add(()->{
-                if(project.hasCoincidence(source.id)){operationMessage="Najpierw usuń połączenia punktów tej figury";invalidate();return;}
-                if(isProfileUsed(source.id)&&!SketchTransactions.active(project)) {
-                    operationMessage="Profil jest używany przez bryłę — edytuj jego wierzchołki zamiast rozbijać";
-                    invalidate();return;
-                }
-                try {
-                    List<SketchPrimitive> edges=SketchEditing.explode(source);
-                    int index=project.sketch.indexOf(source);if(index<0)return;
-                    checkpoint();SketchTransactions.replace(project,source.id,edges);
-                    project.sketch.remove(index);project.sketch.addAll(index,edges);
-                    project.coincidences.removeIf(l->l.kind.equals("rigid")&&l.uses(source.id));project.pruneCoincidences();
-                    selectedSketchId=edges.get(0).id;
-                    projectRepository.save(project);
-                    operationMessage="Rozbito figurę: "+edges.size()+" odcinków. Możesz je edytować, przycinać i usuwać.";
-                    invalidate();
-                }catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-            });
-        }
-        labels.add(0,"Położenie (odległość / wyrównanie)…");actions.add(0,()->sketchPositionTools.showSketchPosition(source.id,0,null,0));
-        labels.add("Edytuj wymiary / kształt");actions.add(()->showSketchEntityEditor(source));
-        if(SketchConstraints.anchorCount(source)>0){labels.add(source.type.equals("Okrąg")?"Wymiaruj położenie środka (X/Y od początku)":"Wymiaruj położenie punktu 1 (X/Y od początku)");actions.add(()->addOriginPositionDimensions(source));}
-        labels.add("Usuń element");actions.add(()->deleteSketchEntity(source.id));
-        new PropertyBuilder().setTitle("Geometria · "+source.type)
-            .setItems(labels.toArray(new String[0]),(dialog,which)->actions.get(which).run())
-            .setNegativeButton("Zamknij",null).show();
-    }
-
     private final java.util.Map<EditText,java.lang.ref.WeakReference<android.widget.TextView>> fieldLabels=new java.util.WeakHashMap<>();
     /** Sketch relations and constraints, position dimensions and the coordinate / dimension editors */
     final SketchConstraintTools sketchConstraintTools=new SketchConstraintTools(this);
@@ -6388,10 +6294,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
             invalidate();return;
         }
         if(tool.equals("Geometria")) {
-            mode="Edytuj szkic";showSketchGeometryTools();invalidate();return;
+            mode="Edytuj szkic";sketchMirrorTools.showSketchGeometryTools();invalidate();return;
         }
         if(tool.equals("Zaokrąglij szkic")){showSketchFillet();return;}
-        if(tool.equals("Lustro")){mode="Edytuj szkic";showSketchMirror();invalidate();return;}
+        if(tool.equals("Lustro")){mode="Edytuj szkic";sketchMirrorTools.showSketchMirror();invalidate();return;}
         if(tool.equals("Odsunięcie")){mode="Edytuj szkic";showSketchOffset();invalidate();return;}
         if(tool.equals("Rzutuj")){if(!hadSketchPlane)operationMessage="Najpierw wybierz płaszczyznę szkicu";else {mode="Edytuj szkic";showEdgeProjection();}invalidate();return;}
         if(tool.equals("Przedłuż")){mode="Edytuj szkic";extendSelectedLine();invalidate();return;}
