@@ -1180,6 +1180,12 @@ TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
         if(result.IsNull()||countShapes(result,TopAbs_SOLID)!=countShapes(shape,TopAbs_SOLID))continue;
         GProp_GProps after;BRepGProp::VolumeProperties(result,after);lap("aftervol");
         if(baseVolume-std::abs(after.Mass())<.2*toolVolume){kernelReason("Gwint usunął zbyt mało materiału");continue;}
+        // Completeness: OCCT sometimes drops part of the groove. When less than the tool volume is
+        // removed (normal only where the tool leaves the material), the real overlap is measured.
+        {const double removed=baseVolume-std::abs(after.Mass());
+         if(removed<.9*toolVolume){BRepAlgoAPI_Common overlap(shape,tool);overlap.Build();
+            if(overlap.IsDone()){GProp_GProps o;BRepGProp::VolumeProperties(overlap.Shape(),o);const double expected=std::abs(o.Mass());
+                if(expected>1e-9&&removed<.97*expected){kernelReason("Gwint nie został wycięty w całości");continue;}}}}
         if(std::getenv("TABLETCAD_PERF"))std::fprintf(stderr,"perf thread done at %.1f ms (faces %d)\n",std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-threadT0).count(),countShapes(result,TopAbs_FACE));
         return result;
     }
