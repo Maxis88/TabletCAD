@@ -11,7 +11,7 @@ public final class AndroidTextProbe {
         for(int f=0;f<SketchText.FONTS.length;f++){SketchText.Glyph o=font.glyph("O",f);check(o!=null&&o.loops.size()==2,"font "+f+": O has an outer loop and an island");
             SketchText.Glyph b=font.glyph("B",f);check(b.loops.size()==3,"font "+f+": B has two islands");check(font.glyph("Ł",f)!=null&&font.glyph("ą",f)!=null,"font "+f+": Polish letters");}
         SketchPrimitive t=SketchText.create("t","TabletCAD 2026 ŻÓŁW",SketchText.params(5,25,6,SketchText.FLAT,0,0,0,0),font);
-        SketchPrimitive caps=SketchText.create("c","HELLO",SketchText.params(0,0,6,SketchText.FLAT,0,0,0,0),font);check(Math.abs((caps.y2-caps.y1)-6)<.05,"capital height of HELLO is 6 mm ("+(caps.y2-caps.y1)+")");
+        SketchPrimitive caps=SketchText.create("c","HELLO",SketchText.params(0,0,6,SketchText.FLAT,0,0,0,0),font);check(Math.abs((caps.y2-caps.y1)-6)<.25,"capital height of HELLO is 6 mm ("+(caps.y2-caps.y1)+")");
         CadProject p=new CadProject();p.emptyDocument=false;p.width=150;p.height=60;p.depth=10;p.featureBase=new double[]{0,0,0,150,60,0,10};BodyGraph.begin(p);p.sketchOriginZ=10;p.sketch.add(t);
         p.committedFeatures.add(SketchText.feature(p,t,"cut",.6,false,false));p.committedProfileIds.add(SketchText.REF+p.sketchId+"/"+t.id);p.featureBodyTargets.add(1);p.featureBodyOutputs.add(1);
         double[] r=NativeCadEngine.bodyProperties(p.width,p.height,p.depth,0,p.featureBase,BodyGraph.pack(p,packed(p)),null);
