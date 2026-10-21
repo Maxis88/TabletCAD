@@ -42,6 +42,8 @@ import pl.tabletcad.app.storage.ProjectRepository;
  * Touch-first CAD viewport backed by tessellated Open CASCADE B-Rep geometry.
  */
 public final class CadWorkspaceView extends View {
+    /** Project files and settings: rename, project browser, copies, trash, parameters, units, drawing metadata */
+    final ProjectFileTools projectFileTools=new ProjectFileTools(this);
     interface DocumentChange{void apply(CadProject next);}
     /** Sketch mirror (about lines and axes) and the geometry tool menu */
     final SketchMirrorTools sketchMirrorTools=new SketchMirrorTools(this);
@@ -76,7 +78,7 @@ public final class CadWorkspaceView extends View {
     private static final float STRIP_DP = 44f, TOP_BAR_DP = 64f, TOOLBAR_X_DP = 224f, PANEL_DP = 272f;
     private boolean treeCollapsed;
     private float topBar() { return dp(TOP_BAR_DP); }
-    private String appVersion;
+    String appVersion;
     /** Installed application version, e.g. "0.64.0" (shown in the top bar and project menu). */
     String appVersion() {
         if (appVersion == null) {
@@ -102,15 +104,15 @@ public final class CadWorkspaceView extends View {
     private final ScaleGestureDetector scaleGestures;
 
     float density;
-    private float zoom = 1f;
-    private float panX;
-    private float panY;
+    float zoom = 1f;
+    float panX;
+    float panY;
     float cameraYaw = -28f;
     float cameraPitch = 22f;
     String mode = "Wybierz";
     private final String kernelStatus;
-    private double[] nativePrism = new double[0];
-    private double[] nativeMesh = new double[0];
+    double[] nativePrism = new double[0];
+    double[] nativeMesh = new double[0];
     java.util.Map<Integer,Integer> faceBodies=new java.util.HashMap<>(),faceFeatures=new java.util.HashMap<>();
     int highlightBody,highlightFeature=Integer.MIN_VALUE;
     List<HoleThread.Cylinder> holeCylinders=new ArrayList<>();
@@ -127,7 +129,7 @@ public final class CadWorkspaceView extends View {
     String selectedTreeKey="";private float treeScroll;
     long treeLastTap;
     TechnicalSheet technicalSheet;
-    private String modelInfo = "Nie można odtworzyć geometrii dokumentu";
+    String modelInfo = "Nie można odtworzyć geometrii dokumentu";
     String operationMessage = "";
     private final String stepStatus;
     double modelWidth = 80.0;
@@ -138,13 +140,13 @@ public final class CadWorkspaceView extends View {
     double meshCenterY;
     double meshCenterZ;
     double modelCenterX,modelCenterY,modelCenterZ;
-    private boolean cameraAnchorSet;
-    private RectF sketchRect;
+    boolean cameraAnchorSet;
+    RectF sketchRect;
     private float sketchStartX;
     private float sketchStartY;
     private float sketchEndX, sketchEndY;
-    private PointF snapMarker;
-    private boolean sketching;
+    PointF snapMarker;
+    boolean sketching;
     private String sketchTool = "Prostokąt";
     final ProjectRepository projectRepository;
     CadProject project;
@@ -152,7 +154,7 @@ public final class CadWorkspaceView extends View {
     final Deque<String> redoStack = new ArrayDeque<>();
     final FileRequestListener fileRequestListener;
     boolean sketchPlaneChosen;
-    private String sketchPlane = "Nie wybrano";
+    String sketchPlane = "Nie wybrano";
     int selectedFace = -1;
     double selectedNormalX;
     double selectedNormalY;
@@ -179,33 +181,33 @@ public final class CadWorkspaceView extends View {
     private final List<ProjectedTriangle> projectionPool=new ArrayList<>();
     private float[] surfaceVertices=new float[0];
     private int[] surfaceColors=new int[0];
-    private MeasurePoint measureA;
-    private MeasurePoint measureB;
+    MeasurePoint measureA;
+    MeasurePoint measureB;
     private double[] measureEdges=new double[0],measureProperties=new double[0],measuredCurve;
     private boolean measurePointMode;
     /** 0 edge/point measurement, 1 angle between two faces/edges, 2 face area and surface type. */
     private int measureFaceMode;private double[] measureFaces=new double[0];private final List<GeometryMeasure.Direction> measureDirections=new ArrayList<>();private double[] measuredFace;private int measuredFaceIndex=-1;
     private android.widget.TextView measurementOutput;
-    private String measuredEdgeText = "";
+    String measuredEdgeText = "";
     private float touchDownX;
     private float touchDownY;
     private float workCenterX;
     private float workCenterY;
     String selectedSketchId;
-    private int editingSketchBody;
-    private double[] editingSketchPlacement=SketchPlacement.identity();
+    int editingSketchBody;
+    double[] editingSketchPlacement=SketchPlacement.identity();
     private boolean displayingTreeSketch;
-    private SketchPrimitive draggedSketch, dragPreview;
-    private List<SketchPrimitive> dragSolvedPreview;
+    SketchPrimitive draggedSketch, dragPreview;
+    List<SketchPrimitive> dragSolvedPreview;
     private double dragStartU, dragStartV;
     private int dragHandle;
     private boolean dragWasSelected;
     String treeSelection = "Model";
-    private boolean showSolid = true;
-    private boolean trimMode;
+    boolean showSolid = true;
+    boolean trimMode;
     boolean projectionMode;double[] projectionEdges=new double[0],projectionProperties=new double[0];
     private boolean cornerFilletPicking;private String cornerFirst;
-    private boolean dimensionMode;
+    boolean dimensionMode;
     boolean coincidenceMode;
     String coincidenceFirst;
     /** "Punkt": a reference point at the (snapped) tapped position; tap it later to type exact coordinates. */
@@ -246,13 +248,13 @@ public final class CadWorkspaceView extends View {
     int coincidenceAnchor;
     String constraintKind="coincident";
     private boolean dragConstraintRejected;
-    private boolean polylineTouch;
-    private double[] polylinePreview;
+    boolean polylineTouch;
+    double[] polylinePreview;
     android.widget.ScrollView propertyEditor;
     private android.widget.ScrollView contextEditor;
     private String contextPanelKey="";
     private boolean contextPanelPosted;
-    private android.app.AlertDialog projectChooser;
+    android.app.AlertDialog projectChooser;
     private double[] featurePreview;
     private CadProject featurePreviewDocument;
     double[] filletEdges=new double[0];
@@ -264,11 +266,11 @@ public final class CadWorkspaceView extends View {
     private boolean toolbarUpdatePosted;
     private float timelineScroll;
     private boolean showSketchDimensions = true;
-    private int selectedTimelineIndex = -1;
+    int selectedTimelineIndex = -1;
     private long lastTimelineTap;
     private long lastSketchTreeTap;
     boolean highlightSketch;
-    private boolean sketchVisible = true;
+    boolean sketchVisible = true;
     boolean showExtrusionSketch;
     private final java.util.Set<String> extrusionSelections=new java.util.LinkedHashSet<>();
     private Runnable extrusionSelectionChanged;
@@ -352,8 +354,8 @@ public final class CadWorkspaceView extends View {
     private float maxTimelineScroll() {
         return Math.max(0, dp(116) + CadTimeline.entries(project).size() * dp(64) - (getWidth()-dp(10)));
     }
-    private final List<double[]> arcDraft=new ArrayList<>();
-    private SketchPrimitive threePointPreview;
+    final List<double[]> arcDraft=new ArrayList<>();
+    SketchPrimitive threePointPreview;
     private double[] arcPreview;
     private List<SketchPrimitive> modelSnapGeometry;
 
@@ -675,11 +677,11 @@ public final class CadWorkspaceView extends View {
                     return true;
                 }
                 if (e.getY() <= topBar() && e.getX() >= getWidth() - dp(330)) {
-                    showFileMenu();
+                    projectFileTools.showFileMenu();
                     return true;
                 }
                 if(e.getY()<=topBar()&&e.getX()<toolbarX()) {
-                    showProjectMenu();return true;
+                    projectFileTools.showProjectMenu();return true;
                 }
                 if (e.getY() >= dp(8) && e.getY() <= dp(56)
                         && e.getX() >= toolbarX() && e.getX() <= toolbarX()+topToolWidth()*ToolbarCatalog.groups(inSketch()).length) {
@@ -1292,7 +1294,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         operationMessage=where+": błąd ("+error.getClass().getSimpleName()+(error.getMessage()==null?"":": "+error.getMessage())+"). Dane projektu nie zostały utracone.";
         invalidate();
     }
-    private void dismissToolPopup() {if(toolbarPopup!=null){toolbarPopup.dismiss();toolbarPopup=null;}}
+    void dismissToolPopup() {if(toolbarPopup!=null){toolbarPopup.dismiss();toolbarPopup=null;}}
 
     private void openToolGroup(ToolbarCatalog.Group group,float anchorX) {
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
@@ -1658,7 +1660,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 }
                 if(!project.drawingDimensions.isEmpty())contextText(contents,"Wymiary arkusza: "+project.drawingDimensions.size()+" — dotknij wartości, aby ją zmienić",false);
                 contextAction(contents,"Ustawienia arkusza…",false,()->showSheetSettings());
-                contextAction(contents,"Dane rysunkowe…",false,()->showDrawingMetadataEditor());
+                contextAction(contents,"Dane rysunkowe…",false,()->projectFileTools.showDrawingMetadataEditor());
                 contextAction(footer,"Powrót do modelu",true,()->{mode="Wybierz";sheetDimensionMode=sheetAngleMode=false;sheetFirst=sheetSecond=null;invalidate();});
             }
             contextEditor=new android.widget.ScrollView(c);contextEditor.setFillViewport(true);contextEditor.addView(body);
@@ -1771,7 +1773,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 out.add(new StripChip("Kąt","Zmierz kąt",false,false,()->{sheetDimensionMode=sheetAngleMode=true;sheetFirst=sheetSecond=null;operationMessage="Dotknij wierzchołka kąta, potem końców obu ramion";}));
             }
             out.add(new StripChip("Arkusz…","Ustawienia",false,false,()->showSheetSettings()));
-            out.add(new StripChip("Dane rysunkowe…","Właściwości bryły",false,false,()->showDrawingMetadataEditor()));
+            out.add(new StripChip("Dane rysunkowe…","Właściwości bryły",false,false,()->projectFileTools.showDrawingMetadataEditor()));
             out.add(new StripChip("Powrót do modelu","Wybierz",false,true,()->{mode="Wybierz";sheetDimensionMode=sheetAngleMode=false;sheetFirst=sheetSecond=null;}));
             stripHint=project.drawingDimensions.isEmpty()?"":"Wymiary: "+project.drawingDimensions.size()+" · dotknij wartości, aby ją zmienić";
             return out;
@@ -3219,7 +3221,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         EditText section=labeledCoordinate(form,"Położenie przekroju A–A (X) [%]",project.drawingSectionFraction*100);
         if(technicalSheet!=null){android.widget.TextView scale=new android.widget.TextView(getContext());scale.setText("Skala rzutów: "+technicalSheet.scaleLabel()+" (dobierana do formatu)");form.addView(scale);}
         new PropertyBuilder().setTitle("Ustawienia arkusza").setView(form).setNegativeButton("Anuluj",null)
-            .setNeutralButton("Tabliczka rysunkowa…",(d,w)->showDrawingMetadataEditor())
+            .setNeutralButton("Tabliczka rysunkowa…",(d,w)->projectFileTools.showDrawingMetadataEditor())
             .setPositiveButton("Zastosuj",(d,w)->{
                 try {
                     double fraction=parseCoordinate(section)/100;if(!(fraction>0&&fraction<1))throw new IllegalArgumentException("Podaj położenie przekroju pomiędzy 0 a 100%");
@@ -4431,7 +4433,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             && y >= viewTop() && y <= getHeight() - dp(68) - bottomSystemInset;
     }
 
-    private boolean updateNativeModel() {
+    boolean updateNativeModel() {
         if(SketchTransactions.active(project)) {
             CadProject draft=project;double w=modelWidth,h=modelHeight,d=modelDepth;
             try{project=SketchTransactions.baseline(draft);modelWidth=project.width;modelHeight=project.height;modelDepth=project.depth;return updateNativeModel();}
@@ -5407,7 +5409,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
      * Perspective camera distance in model millimetres. 420 mm keeps the familiar look of small
      * parts; larger models move the camera back so no vertex can reach or pass the eye point.
      */
-    private double cameraDistance = 420.0;
+    double cameraDistance = 420.0;
     private boolean orthographicView;
     private static final double ORTHOGRAPHIC_DISTANCE = 1.0e6;
     double modelRadius;
@@ -5525,7 +5527,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return points;
     }
 
-    private void updateMeshCenter() {
+    void updateMeshCenter() {
         if (nativeMesh.length < 13) {
             modelCenterX=modelCenterY=modelCenterZ=0;modelRadius=0;
             if(!cameraAnchorSet){meshCenterX=meshCenterY=meshCenterZ=0;cameraDistance=420.0;cameraAnchorSet=true;}
@@ -5569,7 +5571,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }).show();
     }
 
-    private void showExportPicker() {
+    void showExportPicker() {
         String[] formats = {"STEP — precyzyjna bryła", "STL — siatka binarna", "STL — tekst ASCII", "DXF — szkic 2D", "PDF — arkusz techniczny A4", "OBJ — siatka, jednostki mm", "3MF — druk 3D, bryły jako obiekty", "Jakość siatki eksportu…", "IGES — bryła B-Rep (starsze systemy CAD)"};
         new PropertyBuilder()
             .setTitle("Eksportuj projekt")
@@ -6481,7 +6483,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 EditText value=coordinateInput("Położenie przekroju X [%]",project.drawingSectionFraction*100);
                 new PropertyBuilder().setTitle("Przekrój A–A · położenie X [%]")
                     .setView(value).setNegativeButton("Anuluj",null)
-                    .setNeutralButton("Tabliczka",(dialog,which)->showDrawingMetadataEditor())
+                    .setNeutralButton("Tabliczka",(dialog,which)->projectFileTools.showDrawingMetadataEditor())
                     .setPositiveButton("Zastosuj",(dialog,which)-> {
                         try {
                             double fraction=parseCoordinate(value)/100;
@@ -6500,294 +6502,16 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
 
-    private String currentSketchName() {return project.sketchName;}
-
-    private void showRenameSketch() {
-        EditText name=new EditText(getContext());name.setSingleLine(true);name.setText(currentSketchName());
-        name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(48)});
-        new android.app.AlertDialog.Builder(getContext()).setTitle("Nazwa szkicu").setView(name)
-            .setNegativeButton("Anuluj",null).setPositiveButton("Zapisz",(d,w)->{
-                String value=name.getText().toString().trim();if(value.isEmpty())return;
-                try {checkpoint();project.sketchName=value;project.archiveCurrentSketch();
-                    for(org.json.JSONObject snapshot:project.savedSketches)if(project.sketchId.equals(snapshot.optString("id")))snapshot.put("name",value);
-                    projectRepository.save(project);invalidate();
-                }catch(org.json.JSONException|RuntimeException error){operationMessage="Nie można zapisać nazwy szkicu";}
-            }).show();
-    }
-
-    private android.app.AlertDialog libraryProgress;
-    private boolean libraryFileOperationPending;
-
-    public void showStartupProjects() {
-        if(projectChooser!=null&&projectChooser.isShowing())return;
-        openProjectBrowser(true,null);
-    }
-
-    private void openProjectBrowser(boolean startup,CadProject snapshot) {
-        closePropertyEditor();
-        if(projectChooser!=null){projectChooser.dismiss();projectChooser=null;}
-        ProjectLibraryBrowser browser=new ProjectLibraryBrowser(getContext(),projectRepository,project.id,new ProjectLibraryBrowser.Actions(){
-            public void open(CadProject next){if(!activateProject(next))post(CadWorkspaceView.this::showStartupProjects);}
-            public void create(){showNewProject();}
-            public void trash(){showProjectTrash();}
-            public void delete(CadProject target){confirmDeleteProject(target);}
-        });
-        projectChooser=browser.show(startup,snapshot);
-    }
-
-    private void confirmDeleteProject(CadProject target) {
-        if(target.id.equals(project.id)){android.widget.Toast.makeText(getContext(),"Nie można usunąć otwartego projektu — najpierw otwórz inny",android.widget.Toast.LENGTH_LONG).show();return;}
-        new android.app.AlertDialog.Builder(getContext()).setTitle("Usunąć projekt „"+target.name+"”?")
-            .setMessage("Projekt zniknie z listy. Pliki zostaną przeniesione do kosza aplikacji, skąd można je przywrócić.")
-            .setNegativeButton("Anuluj",null).setPositiveButton("Usuń",(d,w)->{
-                if(projectChooser!=null){projectChooser.dismiss();projectChooser=null;}
-                final String activeId=project.id;
-                runProjectLibraryTask("Przenoszenie projektu do kosza",()->{projectRepository.deleteProject(target.id,activeId);return target;},"Przeniesiono do kosza: ");
-            }).show();
-    }
-
-    /** File menu (top bar): open/import, export, projects, copies and the trash. */
-    private void showFileMenu() {
-        closePropertyEditor();dismissToolPopup();
-        new PropertyBuilder().setTitle("Plik")
-            .setItems(new String[]{"Importuj plik (STEP, IGES, STL, OBJ, 3MF, DXF)…","Eksportuj…","Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt"},(d,which)-> {
-                if(which==0){if(fileRequestListener!=null)fileRequestListener.requestOpenStep();}
-                else if(which==1)showExportPicker();else if(which==2)showNewProject();else if(which==3)showProjectLibrary();else if(which==4)showProjectCopy();else showProjectTrash();
-            }).setNegativeButton("Zamknij",null).show();
-    }
-    private void showProjectMenu() {
-        closePropertyEditor();
-        new PropertyBuilder().setTitle("Projekt · "+project.name+" · TabletCAD v"+appVersion())
-            .setItems(new String[]{"Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt","Dane i nazwa dokumentu","Jednostki i dokładność","Parametry"},(d,which)-> {
-                if(which==0)showNewProject();else if(which==1)showProjectLibrary();else if(which==2)showProjectCopy();else if(which==3)showProjectTrash();else if(which==4)showDrawingMetadataEditor();else if(which==5)showUnitSettings();else showParameters();
-            }).setNegativeButton("Zamknij",null).show();
-    }
-
-    /** User parameters: list with current values, add/edit/delete; bound values are recomputed on change. */
-    private void showParameters() {
-        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
-        if(SketchTransactions.active(project)){operationMessage="Najpierw zakończ lub anuluj aktywną edycję szkicu";invalidate();return;}
-        java.util.Map<String,double[]> values;
-        try{values=UserParameters.evaluate(project);}catch(IllegalArgumentException error){values=new java.util.HashMap<>();operationMessage=error.getMessage();}
-        List<String> rows=new ArrayList<>();
-        for(UserParameters.Parameter x:project.parameters){double[] v=values.get(x.name);rows.add(x.name+" = "+x.expression+(v==null?"":"  →  "+(x.length?formatMm(v[0]):String.format(java.util.Locale.US,"%.6g",v[0]))));}
-        rows.add("+ Dodaj parametr");
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView info=new android.widget.TextView(getContext());
-        info.setText("Wpisz nazwę parametru w polu głębokości lub wymiaru (np. grubosc/2), aby nim sterować. Powiązań: "+project.parameterBindings.size()+".");form.addView(info);
-        new PropertyBuilder().setTitle("Parametry").setView(form).setItems(rows.toArray(new String[0]),(d,which)->showParameterEditor(which<project.parameters.size()?which:-1)).setNegativeButton("Zamknij",null).show();
-    }
-    private void showParameterEditor(int index) {
-        UserParameters.Parameter original=index>=0?project.parameters.get(index):null;
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView l1=new android.widget.TextView(getContext());l1.setText("Nazwa");form.addView(l1);
-        EditText name=new EditText(getContext());name.setSingleLine(true);name.setText(original!=null?original.name:"p"+(project.parameters.size()+1));form.addView(name);
-        android.widget.TextView l2=new android.widget.TextView(getContext());l2.setText("Wyrażenie (liczby, jednostki, + − * / ( ), inne parametry)");form.addView(l2);
-        EditText expression=new EditText(getContext());expression.setSingleLine(true);expression.setText(original!=null?original.expression:"10");form.addView(expression);
-        android.widget.CheckBox length=new android.widget.CheckBox(getContext());length.setText("Długość (w jednostce projektu: "+project.units+")");length.setChecked(original==null||original.length);form.addView(length);
-        PropertyBuilder builder=new PropertyBuilder().setTitle(original!=null?"Parametr "+original.name:"Nowy parametr").setView(form).setNegativeButton("Anuluj",null);
-        if(original!=null)builder.setNeutralButton("Usuń",(d,w)->changeParameters(next->{
-            for(String expr:next.parameterBindings.values())if(UserParameters.names(expr).contains(original.name))throw new IllegalArgumentException("Parametr jest używany w powiązaniach – najpierw je zmień");
-            next.parameters.remove(index);
-        },"Usunięto parametr "+original.name));
-        builder.setPositiveButton("Zapisz",(d,w)->changeParameters(next->{
-            String n=name.getText().toString().trim();UserParameters.validateName(n);
-            UserParameters.Parameter value=new UserParameters.Parameter(n,expression.getText().toString().trim(),length.isChecked());
-            if(index>=0){
-                String old=next.parameters.get(index).name;next.parameters.set(index,value);
-                if(!old.equals(n))for(java.util.Map.Entry<String,String> e:next.parameterBindings.entrySet())if(UserParameters.names(e.getValue()).contains(old))throw new IllegalArgumentException("Zmiana nazwy używanego parametru – najpierw zmień powiązania");
-            }else next.parameters.add(value);
-        },"Zapisano parametr")).show();
-    }
-    private void changeParameters(DocumentChange change,String success) {
-        try {
-            String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));
-            change.apply(next);UserParameters.evaluate(next);UserParameters.apply(next);
-            commitProjectAsync(next,baseline,success);
-        }catch(org.json.JSONException|IllegalArgumentException error){operationMessage="Parametry: "+error.getMessage();invalidate();}
-    }
-
-    /** Project units and display precision; the B-Rep and all stored values stay in millimetres. */
-    private void showUnitSettings() {
-        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
-        if(SketchTransactions.active(project)){operationMessage="Najpierw zakończ lub anuluj aktywną edycję szkicu";invalidate();return;}
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView info=new android.widget.TextView(getContext());
-        info.setText("Geometria jest zapisywana dokładnie w milimetrach. Jednostka zmienia wyświetlanie i interpretację wpisywanych liczb bez jednostki. W polach można wpisywać wyrażenia, np. 100/3, 2*(10+2,5), 1in+2mm.");form.addView(info);
-        android.widget.Spinner unit=new android.widget.Spinner(getContext());unit.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,Units.NAMES));
-        for(int i=0;i<Units.CODES.length;i++)if(Units.CODES[i].equals(project.units))unit.setSelection(i);form.addView(unit);
-        android.widget.TextView decimalsLabel=new android.widget.TextView(getContext());decimalsLabel.setText("Miejsca po przecinku na rysunku (0–6)");form.addView(decimalsLabel);
-        android.widget.Spinner decimals=new android.widget.Spinner(getContext());decimals.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,new String[]{"0","1","2","3","4","5","6"}));
-        decimals.setSelection(project.displayDecimals);form.addView(decimals);
-        new PropertyBuilder().setTitle("Jednostki i dokładność").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zapisz",(d,w)->{
-            try {
-                String code=Units.CODES[unit.getSelectedItemPosition()];int places=decimals.getSelectedItemPosition();
-                if(code.equals(project.units)&&places==project.displayDecimals)return;
-                String baseline=project.toJson().toString();CadProject candidate=CadProject.fromJson(new org.json.JSONObject(baseline));
-                candidate.units=code;candidate.displayDecimals=places;projectRepository.save(candidate);
-                project=candidate;undoStack.push(baseline);while(undoStack.size()>50)undoStack.removeLast();redoStack.clear();
-                operationMessage="Jednostki projektu: "+code+", dokładność "+places+" miejsc. Geometria bez zmian.";
-            }catch(Exception error){operationMessage="Nie zapisano ustawień jednostek: "+error.getMessage();}
-            invalidate();
-        }).show();
-    }
-
-    private void showProjectCopy() {
-        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
-        if(SketchTransactions.active(project)){operationMessage="Najpierw zakończ lub anuluj aktywną edycję szkicu";invalidate();return;}
-        EditText name=new EditText(getContext());name.setSingleLine(true);name.setText(project.name+" — kopia");name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(80)});
-        new android.app.AlertDialog.Builder(getContext()).setTitle("Kopia projektu").setView(name).setNegativeButton("Anuluj",null).setPositiveButton("Utwórz kopię",(d,w)->{
-            try{CadProject snapshot=CadProject.fromJson(project.toJson());String title=name.getText().toString();runProjectLibraryTask("Tworzenie kopii projektu",()->{projectRepository.save(snapshot);return projectRepository.duplicateProject(snapshot.id,title);},"Utworzono kopię: ");}
-            catch(org.json.JSONException|RuntimeException error){operationMessage="Nie utworzono kopii: "+error.getMessage();invalidate();}
-        }).show();
-    }
-
-    private void showProjectTrash() {
-        closePropertyEditor();if(projectChooser!=null){projectChooser.dismiss();projectChooser=null;}
-        LinearLayout body=new LinearLayout(getContext());body.setOrientation(LinearLayout.VERTICAL);body.setPadding((int)dp(16),0,(int)dp(16),0);
-        android.widget.TextView status=new android.widget.TextView(getContext());body.addView(status);
-        android.widget.ProgressBar progress=new android.widget.ProgressBar(getContext());body.addView(progress);
-        android.widget.Button retry=new android.widget.Button(getContext());retry.setText("Odśwież kosz");body.addView(retry);
-        android.widget.ListView list=new android.widget.ListView(getContext());body.addView(list,new LinearLayout.LayoutParams(-1,(int)dp(240)));
-        android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(getContext()).setTitle("Kosz")
-            .setView(body).setNegativeButton("Wróć do projektów",(d,w)->{d.dismiss();showStartupProjects();})
-            .setOnCancelListener(d->post(this::showStartupProjects)).create();
-        android.os.Handler ui=new android.os.Handler(android.os.Looper.getMainLooper());
-        LatestTaskRunner reader=new LatestTaskRunner(command->ui.post(command));
-        dialog.setOnDismissListener(d->{reader.close();if(projectChooser==dialog)projectChooser=null;});
-        Runnable refresh=()->{
-            retry.setEnabled(false);list.setEnabled(false);progress.setVisibility(View.VISIBLE);status.setText("Odczytywanie kosza…");
-            reader.submit(()->{
-                List<pl.tabletcad.app.storage.ProjectLibraryFiles.TrashEntry> entries=projectRepository.listDeletedProjects();
-                java.text.DateFormat date=java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM,java.text.DateFormat.SHORT);
-                String[] names=new String[entries.size()];
-                for(int i=0;i<names.length;i++){pl.tabletcad.app.storage.ProjectLibraryFiles.TrashEntry e=entries.get(i);names[i]=e.name+"\n"+date.format(new java.util.Date(e.deletedAt))+(e.backup?" · kopia odzyskiwania":"")+(projectRepository.hasProjectFiles(e.id)?" · już w bibliotece":"");}
-                return new TrashListing(entries,names);
-            },result->{
-                if(!dialog.isShowing())return;
-                progress.setVisibility(View.GONE);retry.setEnabled(true);list.setEnabled(true);
-                status.setText(result.entries.isEmpty()?"Brak projektów możliwych do przywrócenia. Nieczytelne zapisy pozostają zachowane w koszu.":"Projektów do przywrócenia: "+result.entries.size());
-                list.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_list_item_1,result.labels));
-                list.setOnItemClickListener((parent,view,index,id)->{dialog.dismiss();confirmRestoreProject(result.entries.get(index));});
-            },error->{if(!dialog.isShowing())return;progress.setVisibility(View.GONE);retry.setEnabled(true);status.setText("Nie można odczytać kosza: "+error.getMessage()+". Użyj Odśwież kosz, aby ponowić.");});
-        };
-        retry.setOnClickListener(v->refresh.run());projectChooser=dialog;dialog.show();refresh.run();
-    }
-    static final class TrashListing {
-        final List<pl.tabletcad.app.storage.ProjectLibraryFiles.TrashEntry> entries;final String[] labels;
-        TrashListing(List<pl.tabletcad.app.storage.ProjectLibraryFiles.TrashEntry> entries,String[] labels){this.entries=entries;this.labels=labels;}
-    }
-    private void confirmRestoreProject(pl.tabletcad.app.storage.ProjectLibraryFiles.TrashEntry entry) {
-        boolean conflict=projectRepository.hasProjectFiles(entry.id);
-        android.app.AlertDialog.Builder dialog=new android.app.AlertDialog.Builder(getContext()).setTitle(entry.name)
-            .setMessage(conflict?"Ten projekt jest już w bibliotece. Możesz odzyskać zapis z kosza jako osobną kopię.":"Przywrócić projekt do biblioteki?")
-            .setNegativeButton("Wróć",(d,w)->showProjectTrash()).setOnCancelListener(d->showProjectTrash());
-        if(!conflict)dialog.setPositiveButton("Przywróć",(d,w)->restoreProjectEntry(entry,false,null));
-        dialog.setNeutralButton("Przywróć jako kopię",(d,w)->{
-            EditText name=new EditText(getContext());name.setSingleLine(true);name.setText(entry.name+" — odzyskany");name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(80)});
-            new android.app.AlertDialog.Builder(getContext()).setTitle("Nazwa odzyskanego projektu").setView(name).setNegativeButton("Wróć",(a,b)->showProjectTrash()).setOnCancelListener(a->showProjectTrash())
-                .setPositiveButton("Przywróć kopię",(a,b)->restoreProjectEntry(entry,true,name.getText().toString())).show();
-        }).show();
-    }
-    private void restoreProjectEntry(pl.tabletcad.app.storage.ProjectLibraryFiles.TrashEntry entry,boolean asCopy,String name) {
-        runProjectLibraryTask("Przywracanie projektu",()->projectRepository.restoreProject(entry.token,asCopy,name),"Przywrócono projekt: ");
-    }
-    private void runProjectLibraryTask(String title,java.util.concurrent.Callable<CadProject> action,String success) {
-        if(libraryFileOperationPending)return;libraryFileOperationPending=true;
-        android.app.AlertDialog progress=new android.app.AlertDialog.Builder(getContext()).setTitle(title).setMessage("Proszę czekać…").setView(new android.widget.ProgressBar(getContext())).setCancelable(false).show();libraryProgress=progress;
-        android.os.Handler ui=new android.os.Handler(android.os.Looper.getMainLooper());
-        new Thread(()->{
-            String result;try{result=success+action.call().name;}catch(Exception error){result="Operacja nie powiodła się: "+error.getMessage();}final String message=result;
-            ui.post(()->{libraryFileOperationPending=false;if(libraryProgress==progress){progress.dismiss();libraryProgress=null;}if(!isAttachedToWindow())return;
-                operationMessage=message;android.widget.Toast.makeText(getContext(),message,android.widget.Toast.LENGTH_LONG).show();showStartupProjects();invalidate();});
-        },"TabletCAD-library-files").start();
-    }
-
-    private void showNewProject() {
-        createNewProject("Nowy projekt");
-    }
-
-    private void createNewProject(String title) {
-        try {
-            projectRepository.save(project);
-            CadProject next=CadProject.blank();next.name=title;if(!activateProject(next))post(this::showStartupProjects);
-        }catch(RuntimeException error){operationMessage="Nie można utworzyć projektu; poprzedni dokument zachowano";post(this::showStartupProjects);invalidate();}
-    }
-
-    private void showProjectLibrary() {
-        try {openProjectBrowser(false,CadProject.fromJson(project.toJson()));}
-        catch(org.json.JSONException|RuntimeException error){operationMessage="Nie można przygotować biblioteki; bieżący dokument zachowano";invalidate();}
-    }
-
-    private boolean activateProject(CadProject next) {
-        CadProject previous=project;String previousMode=mode;
-        double[] previousMesh=nativeMesh,previousPrism=nativePrism;
-        java.util.Map<Integer,Integer> previousFaceBodies=faceBodies,previousFaceFeatures=faceFeatures;
-        List<HoleThread.Cylinder> previousHoles=holeCylinders;
-        String previousInfo=modelInfo;TechnicalSheet previousSheet=technicalSheet;
-        double w=modelWidth,h=modelHeight,d=modelDepth;
-        double[] previousCamera={meshCenterX,meshCenterY,meshCenterZ,cameraDistance};boolean previousAnchor=cameraAnchorSet;
-        int previousSketchBody=editingSketchBody;double[] previousPlacement=editingSketchPlacement;
-        try {
-            cameraAnchorSet=false;editingSketchBody=0;editingSketchPlacement=SketchPlacement.identity();
-            project=next;mode="Wybierz";
-            modelWidth=next.width;modelHeight=next.height;modelDepth=next.depth;
-            if(!updateNativeModel())throw new IllegalStateException("Nie można odtworzyć geometrii lub źródła projektu");
-            projectRepository.save(next);
-        }catch(RuntimeException error) {
-            meshCenterX=previousCamera[0];meshCenterY=previousCamera[1];meshCenterZ=previousCamera[2];cameraDistance=previousCamera[3];cameraAnchorSet=previousAnchor;
-            editingSketchBody=previousSketchBody;editingSketchPlacement=previousPlacement;
-            project=previous;mode=previousMode;modelWidth=w;modelHeight=h;modelDepth=d;
-            nativeMesh=previousMesh;nativePrism=previousPrism;faceBodies=previousFaceBodies;faceFeatures=previousFaceFeatures;holeCylinders=previousHoles;modelInfo=previousInfo;technicalSheet=previousSheet;updateMeshCenter();
-            operationMessage="Nie można otworzyć projektu. Bieżący dokument pozostaje aktywny.";invalidate();return false;
-        }
-        closePropertyEditor();undoStack.clear();redoStack.clear();highlightSketch=false;selectedTimelineIndex=-1;sketchVisible=true;
-        sketchPlane=next.sketchPlane;sketchPlaneChosen=false;
-        sketching=false;sketchRect=null;draggedSketch=dragPreview=null;dragSolvedPreview=null;
-        selectedFace=-1;selectedSketchId=null;measureA=measureB=null;measuredEdgeText="";
-        coincidenceMode=trimMode=dimensionMode=false;coincidenceFirst=null;snapMarker=null;
-        polylineTouch=false;polylinePreview=null;
-        cameraYaw=-28;cameraPitch=22;zoom=1;panX=panY=0;showSolid=true;treeSelection="Model";
-        operationMessage="Otwarto projekt: "+next.name;
-        arcDraft.clear();threePointPreview=null;resumeSketchWork();
-        invalidate();return true;
-    }
-
-    private void showDrawingMetadataEditor() {
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        form.setPadding((int)dp(16),0,(int)dp(16),0);
-        String[] labels={"Nazwa dokumentu", "Numer rysunku", "Autor", "Materiał", "Rewizja"};
-        String[] values={project.name,project.drawingNumber,project.drawingAuthor,project.drawingMaterial,project.drawingRevision};
-        int[] limits={48,32,32,32,8};EditText[] inputs=new EditText[5];
-        for(int i=0;i<inputs.length;i++) {
-            android.widget.TextView label=new android.widget.TextView(getContext());
-            label.setText(labels[i]);form.addView(label);
-            EditText input=new EditText(getContext());input.setSingleLine(true);
-            input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(limits[i])});
-            input.setText(values[i]);input.setSelectAllOnFocus(true);form.addView(input);inputs[i]=input;
-        }
-        android.widget.ScrollView scroll=new android.widget.ScrollView(getContext());scroll.addView(form);
-        new PropertyBuilder().setTitle("Dane tabliczki rysunkowej")
-            .setView(scroll).setNegativeButton("Anuluj",null)
-            .setPositiveButton("Zapisz",(dialog,which)-> {
-                String name=inputs[0].getText().toString().trim();
-                if(name.isEmpty()) {operationMessage="Nazwa dokumentu nie może być pusta";invalidate();return;}
-                checkpoint();project.name=name;
-                project.drawingNumber=inputs[1].getText().toString().trim();
-                project.drawingAuthor=inputs[2].getText().toString().trim();
-                project.drawingMaterial=inputs[3].getText().toString().trim();
-                project.drawingRevision=inputs[4].getText().toString().trim();
-                projectRepository.save(project);operationMessage="Gotowe: zapisano dane tabliczki";invalidate();
-            }).show();
-    }
-
+    android.app.AlertDialog libraryProgress;
+    boolean libraryFileOperationPending;
+    public void showStartupProjects() {projectFileTools.showStartupProjects();}
     void beginSketchWork() {
         if(SketchTransactions.active(project))return;
         preserveExtrudedBase();commitActiveFeature();
         SketchTransactions.begin(project);projectRepository.save(project);
     }
 
-    private void resumeSketchWork() {
+    void resumeSketchWork() {
         if(!SketchTransactions.active(project)&&project.polylineDraft.isEmpty()&&project.threePointDraft.isEmpty())return;
         beginSketchWork();mode=project.polylineDraft.isEmpty()?"Edytuj szkic":"Szkic";
         if(!project.polylineDraft.isEmpty())sketchTool=project.splineDraft?"Splajn":"Polilinia";
