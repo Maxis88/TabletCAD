@@ -94,7 +94,7 @@ public final class CadWorkspaceView extends View {
     /** Screen Y of the centre of model-tree row {@code index} (used by touch tests). */
     float treeRowCenterY(int index) { return treeTop() + index * dp(36) + dp(18) - treeScroll; }
 
-    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final GestureDetector gestures;
     private final ScaleGestureDetector scaleGestures;
 
@@ -121,8 +121,8 @@ public final class CadWorkspaceView extends View {
     private GeometryPreviewWorker modelCommitWorker;private boolean modelOperationPending;
     private final java.util.Set<Integer> collapsedBodies=new java.util.HashSet<>();
     private List<ModelTree.Row> modelTreeRows=new ArrayList<>();
-    private String selectedTreeKey="";private float treeScroll;
-    private long treeLastTap;
+    String selectedTreeKey="";private float treeScroll;
+    long treeLastTap;
     private TechnicalSheet technicalSheet;
     private String modelInfo = "Nie można odtworzyć geometrii dokumentu";
     String operationMessage = "";
@@ -131,9 +131,9 @@ public final class CadWorkspaceView extends View {
     double modelHeight = 48.0;
     double modelDepth = 32.0;
     /** World-space camera pivot; geometry bounds below are tracked separately. */
-    private double meshCenterX;
-    private double meshCenterY;
-    private double meshCenterZ;
+    double meshCenterX;
+    double meshCenterY;
+    double meshCenterZ;
     double modelCenterX,modelCenterY,modelCenterZ;
     private boolean cameraAnchorSet;
     private RectF sketchRect;
@@ -148,7 +148,7 @@ public final class CadWorkspaceView extends View {
     private final Deque<String> undoStack = new ArrayDeque<>();
     private final Deque<String> redoStack = new ArrayDeque<>();
     private final FileRequestListener fileRequestListener;
-    private boolean sketchPlaneChosen;
+    boolean sketchPlaneChosen;
     private String sketchPlane = "Nie wybrano";
     int selectedFace = -1;
     double selectedNormalX;
@@ -264,7 +264,7 @@ public final class CadWorkspaceView extends View {
     private int selectedTimelineIndex = -1;
     private long lastTimelineTap;
     private long lastSketchTreeTap;
-    private boolean highlightSketch;
+    boolean highlightSketch;
     private boolean sketchVisible = true;
     private boolean showExtrusionSketch;
     private final java.util.Set<String> extrusionSelections=new java.util.LinkedHashSet<>();
@@ -273,7 +273,7 @@ public final class CadWorkspaceView extends View {
     private java.util.function.DoubleConsumer extrusionFacePick;
     /** One-finger drag orbits the view instead of drawing while a sketch is active. */
     private boolean sketchOrbit;
-    private static final class DimensionHit {
+    static final class DimensionHit {
         final String entityId,kind;final int segment;final RectF bounds;
         /** Linear dimensions can be dragged away from their element along (nx,ny) [screen]. */
         boolean linear;float nx,ny;
@@ -743,8 +743,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
                         else if(picked>=0)operationMessage="Wskaż płaską ścianę – ta powierzchnia jest zakrzywiona";
                         invalidate();return true;
                     }
-                    if(mode.equals("Konstrukcja")){datumPickTap(e.getX(),e.getY());return true;}
-                    if((mode.equals("Wybierz")||mode.equals("Szkic")&&!sketchPlaneChosen)&&datumTap(e.getX(),e.getY()))return true;
+                    if(mode.equals("Konstrukcja")){datumTools.pickTap(e.getX(),e.getY());return true;}
+                    if((mode.equals("Wybierz")||mode.equals("Szkic")&&!sketchPlaneChosen)&&datumTools.tap(e.getX(),e.getY()))return true;
                     if(mode.equals("Wybierz")&&editVisibleSketchAt(e.getX(),e.getY()))return true;
                     int face = findFaceAt(e.getX(), e.getY());
                     if(mode.equals("Gwint")) {threadTools.tap(face);return true;}
@@ -1156,7 +1156,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             drawTechnicalViews(canvas, left, top, right, bottom);
         } else {
             if (showSolid || !inSketch()) drawNativeSolid(canvas, workCenterX, workCenterY);
-            if (!inSketch() || !sketchPlaneChosen) drawDatums(canvas);
+            if (!inSketch() || !sketchPlaneChosen) datumTools.draw(canvas);
             if(inSketch()){if(sketchVisible)drawSketch(canvas,left,right);drawHover(canvas);}
             else drawVisibleTreeSketches(canvas);
             if (mode.equals("Zmierz")) drawDimensions(canvas, left, top, right, bottom);
@@ -1357,7 +1357,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             ModelTree.Row entry=modelTreeRows.get(i);float y=treeTop()+i*dp(36)-treeScroll;if(y+dp(36)<treeTop()||y>getHeight())continue;
             if(entry.key.equals(selectedTreeKey)){paint.setColor(Color.rgb(226,242,240));canvas.drawRoundRect(new RectF(dp(8),y,dp(220),y+dp(34)),dp(6),dp(6),paint);}
             if(entry.datum()) {
-                Datum d=datum(entry.datum);String glyph=d==null?"?":d.plane()?"▱":d.axis()?"⟋":"⊕";
+                Datum d=datumTools.datum(entry.datum);String glyph=d==null?"?":d.plane()?"▱":d.axis()?"⟋":"⊕";
                 text(canvas,glyph,dp(34),y+dp(23),13,Color.rgb(214,137,16),true);
                 canvas.save();canvas.clipRect(dp(50),y,dp(TREE_MORE),y+dp(36));text(canvas,entry.name,dp(52),y+dp(23),11.5f,INK,entry.key.equals(selectedTreeKey));canvas.restore();
                 drawTreeControls(canvas,y,d!=null&&d.hidden);
@@ -1392,11 +1392,11 @@ if (isInsideViewport(e.getX(), e.getY())) {
         int index=(int)((y-treeTop()+treeScroll)/dp(36));if(index<0||index>=modelTreeRows.size())return;
         ModelTree.Row entry=modelTreeRows.get(index);long now=android.os.SystemClock.uptimeMillis();boolean edit=entry.key.equals(selectedTreeKey)&&now-treeLastTap<android.view.ViewConfiguration.getDoubleTapTimeout();treeLastTap=now;
         if(entry.datum()) {
-            Datum d=datum(entry.datum);if(d==null)return;
+            Datum d=datumTools.datum(entry.datum);if(d==null)return;
             if(x>dp(TREE_EYE)){d.hidden=!d.hidden;projectRepository.save(project);}
             else if(x>dp(TREE_MORE)){treeLongPress(y);return;}
-            else if(mode.equals("Szkic")&&!sketchPlaneChosen&&d.plane())sketchOnDatum(d);
-            else if(edit)showDatumEditor(commandOf(d),d,null);
+            else if(mode.equals("Szkic")&&!sketchPlaneChosen&&d.plane())datumTools.sketchOn(d);
+            else if(edit)datumTools.showEditor(datumTools.commandOf(d),d,null);
             else {selectedTreeKey=entry.key;highlightBody=0;highlightFeature=Integer.MIN_VALUE;highlightSketch=false;operationMessage=d.name+" · "+d.describe()+(d.plane()?". Szkic → wybierz tę płaszczyznę w drzewie, aby na niej rysować.":"");}
         } else if(entry.componentHeader()) {
             Component c=Assembly.find(project,entry.component);if(c==null)return;
@@ -1421,12 +1421,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
         performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
         List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();String title;
         if(entry.datum()) {
-            Datum d=datum(entry.datum);if(d==null)return;title=d.name;
-            labels.add("Edytuj parametry…");actions.add(()->showDatumEditor(commandOf(d),d,null));
-            if(d.plane()){labels.add("Nowy szkic na tej płaszczyźnie");actions.add(()->{activateTopTool("Szkic");if(mode.equals("Szkic")&&!sketchPlaneChosen)sketchOnDatum(d);});}
-            labels.add("Zmień nazwę");actions.add(()->askName("Nazwa elementu konstrukcyjnego",d.name,v->commitModelChange(()->{Datum x=datum(d.id);if(x!=null)x.name=v;})));
-            labels.add(d.hidden?"Pokaż":"Ukryj");actions.add(()->{if(commitModelChange(()->{Datum x=datum(d.id);if(x!=null)x.hidden=!x.hidden;}))operationMessage=(d.hidden?"Ukryto: ":"Pokazano: ")+d.name;});
-            labels.add("Usuń");actions.add(()->confirm("Usunąć „"+d.name+"”?","Szkice narysowane na tej płaszczyźnie zachowują swój układ.",()->removeDatum(d)));
+            Datum d=datumTools.datum(entry.datum);if(d==null)return;title=d.name;
+            labels.add("Edytuj parametry…");actions.add(()->datumTools.showEditor(datumTools.commandOf(d),d,null));
+            if(d.plane()){labels.add("Nowy szkic na tej płaszczyźnie");actions.add(()->{activateTopTool("Szkic");if(mode.equals("Szkic")&&!sketchPlaneChosen)datumTools.sketchOn(d);});}
+            labels.add("Zmień nazwę");actions.add(()->askName("Nazwa elementu konstrukcyjnego",d.name,v->commitModelChange(()->{Datum x=datumTools.datum(d.id);if(x!=null)x.name=v;})));
+            labels.add(d.hidden?"Pokaż":"Ukryj");actions.add(()->{if(commitModelChange(()->{Datum x=datumTools.datum(d.id);if(x!=null)x.hidden=!x.hidden;}))operationMessage=(d.hidden?"Ukryto: ":"Pokazano: ")+d.name;});
+            labels.add("Usuń");actions.add(()->confirm("Usunąć „"+d.name+"”?","Szkice narysowane na tej płaszczyźnie zachowują swój układ.",()->datumTools.remove(d)));
         } else if(entry.componentHeader()) {
             Component c=Assembly.find(project,entry.component);if(c!=null)showComponentActions(c);invalidate();return;
         } else if(!entry.sketch()) {
@@ -1594,7 +1594,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 if(!sketchPlaneChosen) {
                     contextText(contents,"Wybierz płaszczyznę lub dotknij płaskiej ściany bryły.",false);
                     for(String plane:new String[]{"XY","XZ","YZ"})contextAction(contents,"Płaszczyzna "+plane,false,()->chooseSketchPlane(plane));
-                    if(!datumsOf(Datum.PLANE).isEmpty())contextAction(contents,"Płaszczyzna konstrukcyjna…",false,()->showDatumPlanePicker());
+                    if(!datumTools.datumsOf(Datum.PLANE).isEmpty())contextAction(contents,"Płaszczyzna konstrukcyjna…",false,()->datumTools.showPlanePicker());
                 } else {
                     String tool=projectionMode?"Rzutowanie krawędzi":coincidenceMode?"Więzy · "+constraintKind:dimensionMode?"Wymiar":trimMode?"Przytnij":mode.equals("Edytuj szkic")?"Wybór i edycja":sketchTool;
                     contextText(contents,tool,true);
@@ -1692,7 +1692,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         applyProjection(java.util.Collections.singletonList(selected));invalidate();
     }
-    private static double sketchScreenSegmentDistance(double x,double y,double ax,double ay,double bx,double by) {
+    static double sketchScreenSegmentDistance(double x,double y,double ax,double ay,double bx,double by) {
         double dx=bx-ax,dy=by-ay,l=dx*dx+dy*dy,t=l<1e-9?0:Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/l));return Math.hypot(x-ax-t*dx,y-ay-t*dy);
     }
     private void applyProjection(List<Integer> ids) {
@@ -1738,7 +1738,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             names.add("Szkic na ścianie");icons.add("Szkic");actions.add(()->{activateTopTool("Szkic");if(mode.equals("Szkic")&&!sketchPlaneChosen){restore.run();chooseSketchPlane("Ściana "+(face+1));}});
             names.add("Odsuń ścianę");icons.add("Odsuń ścianę");actions.add(()->{restore.run();beginFaceOffsetTool();});
             names.add("Otwór");icons.add("Otwór");actions.add(()->{restore.run();holeTools.begin();});
-            names.add("Płaszczyzna");icons.add("Płaszczyzna odsunięta");actions.add(()->{restore.run();showDatumEditor(DATUM_COMMANDS[0],null,null);});
+            names.add("Płaszczyzna");icons.add("Płaszczyzna odsunięta");actions.add(()->{restore.run();datumTools.showEditor(DATUM_COMMANDS[0],null,null);});
         } else if(cylinder!=null) {
             names.add("Gwint");icons.add("Gwint");actions.add(()->{restore.run();threadTools.begin();});
         }
@@ -1748,7 +1748,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return (planar?"Ściana płaska":cylinder!=null?"Ściana walcowa · Ø"+formatMm(cylinder.radius*2):"Ściana")+" · "+BodyGraph.name(project,body);
     }
     /** One command of the options strip under the top bar. */
-    private static final class StripChip {
+    static final class StripChip {
         final String label,icon;final boolean active,primary;final Runnable action;
         StripChip(String label,String icon,boolean active,boolean primary,Runnable action){this.label=label;this.icon=icon;this.active=active;this.primary=primary;this.action=action;}
     }
@@ -1783,7 +1783,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             if(!sketchPlaneChosen) {
                 stripTitle="Płaszczyzna szkicu";stripHint="lub dotknij płaskiej ściany bryły";
                 for(String plane:new String[]{"XY","XZ","YZ"})out.add(new StripChip(plane,"Szkic",false,false,()->chooseSketchPlane(plane)));
-                if(!datumsOf(Datum.PLANE).isEmpty())out.add(new StripChip("Konstrukcyjna…","Płaszczyzna odsunięta",false,false,()->showDatumPlanePicker()));
+                if(!datumTools.datumsOf(Datum.PLANE).isEmpty())out.add(new StripChip("Konstrukcyjna…","Płaszczyzna odsunięta",false,false,()->datumTools.showPlanePicker()));
                 return out;
             }
             stripTitle=projectionMode?"Rzutowanie":coincidenceMode?"Więzy · "+constraintKind:dimensionMode?"Wymiar":trimMode?"Przytnij":mode.equals("Edytuj szkic")?"Edycja":sketchTool;
@@ -3592,7 +3592,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             axes.add(new double[]{p.x1,p.y1,p.x2,p.y2});labels.add("Oś z linii "+(axes.size()-2));axisIds.add(p.id);
         }
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.Spinner axisChoice=choice(form,"Oś odbicia",labels,0);
+        android.widget.Spinner axisChoice=datumTools.choice(form,"Oś odbicia",labels,0);
         android.widget.TextView hint=new android.widget.TextView(getContext());hint.setText("Podgląd kopii (zielona, przerywana) zmienia się razem z wyborem osi.");form.addView(hint);
         new PropertyBuilder().setTitle("Kopia lustrzana · "+source.type).setView(form).setNegativeButton("Anuluj",null)
             .setPositiveButton("Zastosuj",(d,button)-> {int w=axisChoice.getSelectedItemPosition();
@@ -4100,7 +4100,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return ShadeModel.color(rx,ry,cz);
     }
 
-    private int findFaceAt(float x, float y) {
+    int findFaceAt(float x, float y) {
         if(showingSection()){operationMessage="Przekrój jest tylko widokiem. Wyłącz go (Widok → Przekrój), aby wybierać ściany modelu.";return -1;}
         ProjectedTriangle best = null;
         double bestDepth=-Double.MAX_VALUE;
@@ -4148,7 +4148,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             && Math.abs(a.wz[ai] - b.wz[bi]) < 1.0e-7;
     }
 
-    private void chooseSketchPlane(String plane) {
+    void chooseSketchPlane(String plane) {
         editingSketchPlacement=SketchPlacement.identity();editingSketchBody=0;
         // A newly picked model face is a new geometric reference even if its
         // displayed face number happens to match the previous sketch plane.
@@ -4748,7 +4748,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(measureDirections.size()>=2)measureDirections.clear();measureDirections.add(picked);
         updateMeasurementOutput();invalidate();
     }
-    private MeasurePoint nearestBrepVertex(float x,float y) {
+    MeasurePoint nearestBrepVertex(float x,float y) {
         MeasurePoint best=null;double distance=dp(20);
         for(int i=0;i+15<measureProperties.length;i+=16)for(int endpoint:new int[]{0,6}) {
             double wx=measureProperties[i+endpoint],wy=measureProperties[i+endpoint+1],wz=measureProperties[i+endpoint+2];
@@ -4760,7 +4760,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return best;
     }
 
-    private void loadMeasurementGeometry() {
+    void loadMeasurementGeometry() {
         measureEdges=measureProperties=new double[0];measuredCurve=null;measureA=measureB=null;
         if(!project.hasSolid()||project.importedMeshSource!=null)return;
         String source=project.importedStep?importedSourceFile().getAbsolutePath():null;
@@ -5128,10 +5128,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(edited==null&&sources.isEmpty()&&loose.isEmpty()){operationMessage="Brak bryły do wstawienia";invalidate();return;}
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         List<String> labels=new ArrayList<>();for(Component c:sources)labels.add("Komponent: "+c.name);for(int id:loose)labels.add("Bryła: "+BodyGraph.name(project,id));
-        android.widget.Spinner source=edited==null?choice(form,"Źródło",labels,0):null;
+        android.widget.Spinner source=edited==null?datumTools.choice(form,"Źródło",labels,0):null;
         android.widget.TextView info=new android.widget.TextView(getContext());info.setText(edited==null?"Wystąpienie jest powiązaną kopią: zmiany źródła są przenoszone. Położenie: przesunięcie i obrót.":"Zmiana położenia wystąpienia „"+edited.name+"” względem bieżącego: przesunięcie i obrót.");form.addView(info);
         EditText dx=labeledCoordinate(form,"Przesunięcie X [mm]",edited==null?Math.max(20,modelWidth*1.2):0),dy=labeledCoordinate(form,"Przesunięcie Y [mm]",0),dz=labeledCoordinate(form,"Przesunięcie Z [mm]",0);
-        android.widget.Spinner axis=choice(form,"Oś obrotu",java.util.Arrays.asList("Z","X","Y"),0);
+        android.widget.Spinner axis=datumTools.choice(form,"Oś obrotu",java.util.Arrays.asList("Z","X","Y"),0);
         EditText angle=labeledCoordinate(form,"Kąt obrotu [°]",0),px=labeledCoordinate(form,"Punkt osi X [mm]",modelCenterX),py=labeledCoordinate(form,"Punkt osi Y [mm]",modelCenterY),pz=labeledCoordinate(form,"Punkt osi Z [mm]",modelCenterZ);
         android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
         java.util.function.Supplier<CadProject> candidate=()-> {
@@ -5222,7 +5222,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(ids.size()<2){operationMessage="Odległość mierzy się między dwiema bryłami dokumentu";invalidate();return;}
         String[] names=new String[ids.size()];for(int i=0;i<names.length;i++)names[i]=BodyGraph.name(project,ids.get(i));
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.Spinner a=choice(form,"Bryła A",java.util.Arrays.asList(names),0),b=choice(form,"Bryła B",java.util.Arrays.asList(names),1);
+        android.widget.Spinner a=datumTools.choice(form,"Bryła A",java.util.Arrays.asList(names),0),b=datumTools.choice(form,"Bryła B",java.util.Arrays.asList(names),1);
         android.widget.TextView result=new android.widget.TextView(getContext());result.setTextSize(15);result.setPadding(0,(int)dp(12),0,0);form.addView(result);
         Runnable compute=()-> {
             int first=ids.get(a.getSelectedItemPosition()),second=ids.get(b.getSelectedItemPosition());
@@ -5664,7 +5664,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     /** Sketch geometry shown as a dashed green preview while a sketch operation panel is open. */
     final List<SketchPrimitive> sketchGhost=new ArrayList<>();private boolean ghostDrawing;
     /** Construction element previewed while its panel is open; tap on a face while it is set feeds the listener. */
-    private Datum datumGhost;private java.util.function.IntConsumer datumFaceListener;
+    Datum datumGhost;java.util.function.IntConsumer datumFaceListener;
     /** While non-null, commitProjectAsync stores the candidate here instead of committing (preview capture). */
     CadProject[] previewSink;
     /** Runs a panel's apply action in capture mode to obtain its candidate document for a live preview. */
@@ -5747,7 +5747,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         try{CadProject next=CadProject.fromJson(new org.json.JSONObject(source.toJson().toString()));if(graph)BodyGraph.begin(next);return next;}
         catch(org.json.JSONException error){throw new IllegalArgumentException("Nie można skopiować dokumentu: "+error.getMessage());}
     }
-    private static final class ModelPreviewQuery implements java.util.concurrent.Callable<double[]> {
+    static final class ModelPreviewQuery implements java.util.concurrent.Callable<double[]> {
         final CadProject document;final java.util.concurrent.Callable<double[]> query;
         ModelPreviewQuery(CadProject document,java.util.concurrent.Callable<double[]> query){this.document=document;this.query=query;}
         public double[] call()throws Exception{return query.call();}
@@ -6226,7 +6226,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         android.widget.Spinner body=new android.widget.Spinner(getContext());body.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,names));form.addView(body);
         body.setSelection(Math.max(0,ids.indexOf(original!=null?featureBody(project,editIndex):project.selectedBody)));if(original!=null)body.setEnabled(false);
         android.widget.Spinner axis=new android.widget.Spinner(getContext());axis.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,kind==1?new String[]{"Płaszczyzna YZ (normalna X)","Płaszczyzna XZ (normalna Y)","Płaszczyzna XY (normalna Z)"}:new String[]{kind==2?"Kierunek X":"Oś X","Kierunek Y".replace("Kierunek",kind==2?"Kierunek":"Oś"),"Kierunek Z".replace("Kierunek",kind==2?"Kierunek":"Oś")}));form.addView(axis);
-        List<Datum> references=datumsOf(kind==1?Datum.PLANE:Datum.AXIS);
+        List<Datum> references=datumTools.datumsOf(kind==1?Datum.PLANE:Datum.AXIS);
         {android.widget.ArrayAdapter<String> items=new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,new ArrayList<>());for(int i=0;i<axis.getAdapter().getCount();i++)items.add(String.valueOf(axis.getAdapter().getItem(i)));
             for(Datum d:references)items.add("Konstrukcja: "+d.name+(kind==2?" (kierunek)":""));
             if(original!=null)items.add("Bieżące odniesienie (zapisane)");axis.setAdapter(items);}
@@ -6262,226 +6262,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     // ---- Construction geometry (datum planes, axes, points) ----
-    private static final String[] DATUM_COMMANDS={"Płaszczyzna odsunięta","Płaszczyzna pod kątem","Płaszczyzna przez 3 punkty","Oś konstrukcyjna","Punkt konstrukcyjny"};
-    /** Vertex picking for a datum: command, edited datum, picked points (model coordinates). */
-    private String datumPickCommand;private Datum datumPickEdited;private final List<double[]> datumPickPoints=new ArrayList<>();private int datumPickNeeded;
-    List<Datum> datumsOf(String kind){List<Datum> r=new ArrayList<>();for(Datum d:project.datums)if(d.kind.equals(kind))r.add(d);return r;}
-    private Datum datum(String id){for(Datum d:project.datums)if(d.id.equals(id))return d;return null;}
-    private static String commandOf(Datum d) {
-        if(d.plane())return d.method.equals("offset")?DATUM_COMMANDS[0]:d.method.equals("angle")?DATUM_COMMANDS[1]:DATUM_COMMANDS[2];
-        return d.axis()?DATUM_COMMANDS[3]:DATUM_COMMANDS[4];
-    }
-    /** Plane references for offset/angle planes: label → {origin xyz, normal xyz}. */
-    private void planeReferences(List<String> labels,List<double[]> frames,Datum excluded) {
-        labels.add("Płaszczyzna XY");frames.add(new double[]{0,0,0,0,0,1});
-        labels.add("Płaszczyzna XZ");frames.add(new double[]{0,0,0,0,1,0});
-        labels.add("Płaszczyzna YZ");frames.add(new double[]{0,0,0,1,0,0});
-        double[] face=featurePatternTools.selectedPlanarFace();if(face!=null){labels.add("Zaznaczona ściana (wartości stałe)");frames.add(face);}
-        for(Datum d:datumsOf(Datum.PLANE))if(d!=excluded){labels.add(d.name);frames.add(d.frame());}
-    }
-    private void axisReferences(List<String> labels,List<double[]> frames,Datum excluded) {
-        labels.add("Oś X");frames.add(new double[]{0,0,0,1,0,0});labels.add("Oś Y");frames.add(new double[]{0,0,0,0,1,0});labels.add("Oś Z");frames.add(new double[]{0,0,0,0,0,1});
-        double[] row=selectedSurfaceAxis();if(row!=null){labels.add("Oś zaznaczonej ściany walcowej/stożkowej");frames.add(row);}
-        for(Datum d:datumsOf(Datum.AXIS))if(d!=excluded){labels.add(d.name);frames.add(d.frame());}
-    }
-    /** Axis {point, direction} of the selected cylindrical/conical face from the exact face analysis, or null. */
-    double[] selectedSurfaceAxis() {
-        if(selectedFace<0||!project.hasSolid()||project.importedMeshSource!=null)return null;
-        String source=project.importedStep?importedSourceFile().getAbsolutePath():null;
-        double[] row=GeometryMeasure.face(NativeCadEngine.faceAnalysis(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),source),selectedFace);
-        if(row==null||(row[3]!=1&&row[3]!=2))return null;return new double[]{row[4],row[5],row[6],row[7],row[8],row[9]};
-    }
-    android.widget.Spinner choice(LinearLayout form,String label,List<String> items,int selected) {
-        android.widget.TextView title=new android.widget.TextView(getContext());title.setText(label);form.addView(title);
-        android.widget.Spinner spinner=new android.widget.Spinner(getContext());spinner.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,items));
-        spinner.setSelection(Math.max(0,Math.min(items.size()-1,selected)));form.addView(spinner);return spinner;
-    }
-    private android.widget.Spinner offsetBase;private List<String> offsetLabels;private List<double[]> offsetFrames;private EditText offsetDistance;private int offsetFirstFace;
-    private static final String FACE_REFERENCE="Zaznaczona ściana (wartości stałe)";
-    /** Puts the tapped planar face into the base-plane choice of an open construction panel and selects it. */
-    @SuppressWarnings("unchecked")
-    private void useFaceAsDatumBase(android.widget.Spinner base,List<String> labels,List<double[]> frames,int at,Runnable changed) {
-        double[] face=featurePatternTools.selectedPlanarFace();if(face==null)return;
-        int index=labels.indexOf(FACE_REFERENCE);if(index<0){index=Math.min(at,labels.size());labels.add(index,FACE_REFERENCE);frames.add(index,face);}else frames.set(index,face);
-        ((android.widget.ArrayAdapter<String>)base.getAdapter()).notifyDataSetChanged();base.setSelection(index);changed.run();
-        operationMessage="Płaszczyzna bazowa: wskazana ściana bryły";
-    }
-    private void showDatumEditor(String command,Datum existing,double[] picked) {
-        offsetBase=null;offsetLabels=null;offsetFrames=null;offsetDistance=null;
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        String kind=command.startsWith("Płaszczyzna")?Datum.PLANE:command.startsWith("Oś")?Datum.AXIS:Datum.POINT;
-        EditText name=new EditText(getContext());name.setSingleLine(true);name.setHint("Nazwa");name.setText(existing!=null?existing.name:Datum.nextName(project.datums,kind));form.addView(name);
-        android.widget.TextView info=new android.widget.TextView(getContext());form.addView(info);
-        java.util.function.Supplier<Datum> build;
-        double[] v=existing!=null?existing.values:null;
-        if(command.equals(DATUM_COMMANDS[0])) {
-            List<String> labels=new ArrayList<>();List<double[]> frames=new ArrayList<>();
-            if(existing!=null){labels.add("Bieżące odniesienie: "+(existing.reference.isEmpty()?"zapisane":existing.reference));frames.add(java.util.Arrays.copyOf(v,6));}
-            planeReferences(labels,frames,existing);
-            android.widget.Spinner base=choice(form,"Płaszczyzna bazowa",labels,existing==null&&featurePatternTools.selectedPlanarFace()!=null?3:0);
-            EditText distance=labeledCoordinate(form,"Odsunięcie wzdłuż normalnej [mm]",existing!=null?v[6]:10);slider(form,distance,-2*modelExtent(),2*modelExtent(),.5);
-            info.setText("Dotknij płaskiej ściany bryły, aby odsunąć płaszczyznę od tej ściany, albo wybierz płaszczyznę z listy. Przeciągnij strzałkę lub suwak, aby zmienić odległość.");
-            offsetBase=base;offsetLabels=labels;offsetFrames=frames;offsetDistance=distance;offsetFirstFace=existing!=null?4:3;
-            build=()->{double[] f=frames.get(base.getSelectedItemPosition());String ref=labels.get(base.getSelectedItemPosition()).replace("Bieżące odniesienie: ","");
-                double[] values=java.util.Arrays.copyOf(f,7);values[6]=parseCoordinate(distance);return existing!=null?new Datum(existing.id,kind,"offset",ref,values,name.getText().toString()):Datum.create(kind,"offset",ref,values,name.getText().toString());};
-        } else if(command.equals(DATUM_COMMANDS[1])) {
-            List<String> axisLabels=new ArrayList<>(),planeLabels=new ArrayList<>();List<double[]> axes=new ArrayList<>(),planes=new ArrayList<>();
-            if(existing!=null){axisLabels.add("Bieżąca oś");axes.add(java.util.Arrays.copyOf(v,6));planeLabels.add("Bieżąca płaszczyzna bazowa");planes.add(new double[]{v[0],v[1],v[2],v[6],v[7],v[8]});}
-            axisReferences(axisLabels,axes,null);planeReferences(planeLabels,planes,existing);
-            android.widget.Spinner axis=choice(form,"Oś obrotu (musi leżeć w płaszczyźnie bazowej)",axisLabels,0);
-            android.widget.Spinner base=choice(form,"Płaszczyzna bazowa",planeLabels,0);
-            EditText angle=labeledCoordinate(form,"Kąt [°]",existing!=null?v[9]:45);slider(form,angle,-180,180,1);
-            offsetBase=base;offsetLabels=planeLabels;offsetFrames=planes;offsetDistance=null;offsetFirstFace=existing!=null?4:3;
-            info.setText("Płaszczyzna zawiera oś i jest obrócona względem płaszczyzny bazowej o podany kąt.");
-            build=()->{double[] a=axes.get(axis.getSelectedItemPosition()),b=planes.get(base.getSelectedItemPosition());
-                double[] values={a[0],a[1],a[2],a[3],a[4],a[5],b[3],b[4],b[5],parseCoordinate(angle)};
-                String ref=planeLabels.get(base.getSelectedItemPosition());return existing!=null?new Datum(existing.id,kind,"angle",ref,values,name.getText().toString()):Datum.create(kind,"angle",ref,values,name.getText().toString());};
-        } else {
-            int points=command.equals(DATUM_COMMANDS[2])?3:command.equals(DATUM_COMMANDS[3])?2:1;
-            double[] initial=picked!=null?picked:existing!=null?existing.values:null;
-            android.widget.Spinner method=null;List<double[]> axes=new ArrayList<>();List<String> axisLabels=new ArrayList<>();
-            if(kind.equals(Datum.AXIS)) {
-                List<String> methods=new ArrayList<>(java.util.Arrays.asList("Przez punkt A w kierunku X","Przez punkt A w kierunku Y","Przez punkt A w kierunku Z","Przez punkty A i B"));
-                double[] surface=selectedSurfaceAxis();if(surface!=null){methods.add("Oś zaznaczonej ściany walcowej/stożkowej");axes.add(surface);}
-                int selected=picked!=null?3:existing!=null&&existing.method.equals("points")?3:0;
-                if(existing!=null&&existing.method.equals("line")){double[] d=existing.direction;selected=Math.abs(d[0])>1-1e-12?0:Math.abs(d[1])>1-1e-12?1:Math.abs(d[2])>1-1e-12?2:-1;
-                    if(selected<0){methods.add("Bieżący kierunek");axes.add(existing.frame());selected=methods.size()-1;}}
-                method=choice(form,"Sposób",methods,selected);
-            }
-            final android.widget.Spinner fMethod=method;final int fixedMethods=4;
-            String[] letters={"A","B","C"};List<EditText> fields=new ArrayList<>();
-            for(int i=0;i<points;i++)for(int k=0;k<3;k++){double value=initial!=null&&initial.length>=i*3+3?initial[i*3+k]:i==1&&kind.equals(Datum.AXIS)&&k==2?10:i==1&&k==0?10:i==2&&k==1?10:0;
-                fields.add(labeledCoordinate(form,"Punkt "+letters[i]+" "+"XYZ".charAt(k)+" [mm]",value));}
-            info.setText(points==3?"Trzy niewspółliniowe punkty. „Wskaż” wybiera wierzchołki B-Rep na modelu.":points==2?"Kierunek X/Y/Z przez punkt A albo prosta przez punkty A i B. „Wskaż” wybiera wierzchołki.":"Punkt w układzie modelu. „Wskaż” wybiera wierzchołek B-Rep.");
-            build=()->{
-                double[] values=new double[points*3];for(int i=0;i<values.length;i++)values[i]=parseCoordinate(fields.get(i));
-                String m=kind.equals(Datum.PLANE)?"points":kind.equals(Datum.POINT)?"coords":"points";String ref="";
-                if(kind.equals(Datum.AXIS)) {
-                    int s=fMethod.getSelectedItemPosition();
-                    if(s<3){double[] d=new double[3];d[s]=1;values=new double[]{values[0],values[1],values[2],d[0],d[1],d[2]};m="line";ref="Oś "+"XYZ".charAt(s)+" przez punkt";}
-                    else if(s>=fixedMethods){values=axes.get(s-fixedMethods).clone();m="line";ref=s-fixedMethods==0&&selectedSurfaceAxis()!=null?"Oś ściany walcowej":"Oś";}
-                }
-                return existing!=null?new Datum(existing.id,kind,m,ref,values,name.getText().toString()):Datum.create(kind,m,ref,values,name.getText().toString());
-            };
-        }
-        final java.util.function.Supplier<Datum> candidate=build;
-        PropertyBuilder dialog=new PropertyBuilder().setTitle(existing!=null?"Edytuj: "+existing.name:command).setView(form).setNegativeButton("Anuluj",null)
-            .setPositiveButton(existing!=null?"Zastosuj":"Utwórz",(d,w)->{
-                try {
-                    Datum created=candidate.get();created.hidden=existing!=null&&existing.hidden;
-                    if(commitModelChange(()->{int at=existing==null?-1:project.datums.indexOf(datum(existing.id));if(at>=0)project.datums.set(at,created);else project.datums.add(created);})) {
-                        selectedTreeKey="datum:"+created.id;operationMessage=(existing!=null?"Zaktualizowano: ":"Utworzono: ")+created.name+" · "+created.describe();
-                    }
-                }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
-                invalidate();
-            });
-        if(command.equals(DATUM_COMMANDS[2])||command.equals(DATUM_COMMANDS[3])||command.equals(DATUM_COMMANDS[4]))
-            dialog.setNeutralButton("Wskaż na modelu",(d,w)->beginDatumPick(command,existing,command.equals(DATUM_COMMANDS[2])?3:command.equals(DATUM_COMMANDS[3])?2:1));
-        else if(existing!=null)dialog.setNeutralButton("Usuń",(d,w)->removeDatum(existing));
-        dialog.show();
-        Runnable ghost=()->{try{datumGhost=candidate.get();}catch(IllegalArgumentException error){datumGhost=null;}invalidate();};
-        watchFields(form,ghost);ghost.run();
-        if(offsetBase!=null) {
-            final android.widget.Spinner base=offsetBase;final List<String> labels=offsetLabels;final List<double[]> frames=offsetFrames;final int at=offsetFirstFace;
-            datumFaceListener=face->useFaceAsDatumBase(base,labels,frames,at,ghost);
-            if(offsetDistance!=null) {
-                double[] f0=frames.get(base.getSelectedItemPosition());attachFieldHandle(new double[]{f0[0],f0[1],f0[2]},new double[]{f0[3],f0[4],f0[5]},offsetDistance,-5000,5000,"Odsunięcie");
-                if(fieldHandle!=null){fieldHandle.originSource=()->{double[] f=frames.get(base.getSelectedItemPosition());return new double[]{f[0],f[1],f[2]};};fieldHandle.axisSource=()->{double[] f=frames.get(base.getSelectedItemPosition());return new double[]{f[3],f[4],f[5]};};}
-            }
-        }
-    }
-    private void removeDatum(Datum d) {
-        if(commitModelChange(()->project.datums.removeIf(x->x.id.equals(d.id)))){if(selectedTreeKey.equals("datum:"+d.id))selectedTreeKey="";operationMessage="Usunięto: "+d.name+". Szkice na tej płaszczyźnie zachowują swój układ.";}
-        invalidate();
-    }
-    private void beginDatumPick(String command,Datum existing,int needed) {
-        if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Wskazywanie wymaga bryły B-Rep; wpisz współrzędne";invalidate();return;}
-        datumPickCommand=command;datumPickEdited=existing;datumPickNeeded=needed;datumPickPoints.clear();mode="Konstrukcja";loadMeasurementGeometry();
-        operationMessage="Dotknij wierzchołka bryły ("+1+"/"+needed+")";invalidate();
-    }
-    private void datumPickTap(float x,float y) {
-        MeasurePoint picked=nearestBrepVertex(x,y);
-        if(picked==null){operationMessage="Dotknij bliżej widocznego wierzchołka ("+(datumPickPoints.size()+1)+"/"+datumPickNeeded+")";invalidate();return;}
-        datumPickPoints.add(new double[]{picked.x+meshCenterX,picked.y+meshCenterY,picked.z+meshCenterZ});
-        if(datumPickPoints.size()<datumPickNeeded){operationMessage="Wybrano "+datumPickPoints.size()+"/"+datumPickNeeded+". Dotknij kolejnego wierzchołka.";invalidate();return;}
-        double[] values=new double[datumPickNeeded*3];for(int i=0;i<datumPickNeeded;i++)System.arraycopy(datumPickPoints.get(i),0,values,i*3,3);
-        mode="Wybierz";String command=datumPickCommand;Datum edited=datumPickEdited;datumPickCommand=null;datumPickPoints.clear();
-        showDatumEditor(command,edited,values);invalidate();
-    }
-    /** Starts a sketch on a datum plane with the same frame convention as a planar face. */
-    private void sketchOnDatum(Datum d) {
-        selectedNormalX=d.direction[0];selectedNormalY=d.direction[1];selectedNormalZ=d.direction[2];
-        selectedPointX=d.origin[0];selectedPointY=d.origin[1];selectedPointZ=d.origin[2];selectedFace=-1;
-        chooseSketchPlane(d.name);
-    }
-    private void showDatumPlanePicker() {
-        List<Datum> planes=datumsOf(Datum.PLANE);if(planes.isEmpty()){operationMessage="Brak płaszczyzn konstrukcyjnych (Bryła → Konstrukcja)";invalidate();return;}
-        String[] names=new String[planes.size()];for(int i=0;i<names.length;i++)names[i]=planes.get(i).name+" · "+planes.get(i).describe();
-        new PropertyBuilder().setTitle("Szkic na płaszczyźnie konstrukcyjnej").setItems(names,(d,w)->sketchOnDatum(planes.get(w))).setNegativeButton("Anuluj",null).show();
-    }
-    /** Screen geometry of the drawn construction elements, for touch selection: id → xy pairs (plane 4, axis 2, point 1). */
-    private final java.util.Map<String,float[]> datumScreen=new java.util.LinkedHashMap<>();
-    private Datum datumAt(float x,float y,boolean faceUnderneath) {
-        Datum best=null;double bestDistance=dp(16);
-        for(java.util.Map.Entry<String,float[]> e:datumScreen.entrySet()) {
-            Datum d=datum(e.getKey());if(d==null||d.hidden)continue;float[] q=e.getValue();double distance;
-            if(q.length==2)distance=Math.hypot(x-q[0],y-q[1]);
-            else if(q.length==4)distance=sketchScreenSegmentDistance(x,y,q[0],q[1],q[2],q[3]);
-            else {
-                distance=Double.POSITIVE_INFINITY;for(int i=0;i<8;i+=2){int j=(i+2)%8;distance=Math.min(distance,sketchScreenSegmentDistance(x,y,q[i],q[i+1],q[j],q[j+1]));}
-                if(!faceUnderneath&&distance>bestDistance&&inside(q,x,y))distance=bestDistance-.5;
-            }
-            if(distance<bestDistance){bestDistance=distance;best=d;}
-        }
-        return best;
-    }
-    private static boolean inside(float[] q,float x,float y) {
-        boolean in=false;for(int i=0,j=q.length-2;i<q.length;j=i,i+=2)if((q[i+1]>y)!=(q[j+1]>y)&&x<(q[j]-q[i])*(y-q[i+1])/(q[j+1]-q[i+1])+q[i])in=!in;return in;
-    }
-    /** Tap on a construction element: select it, or start a sketch on a plane while choosing the sketch plane. */
-    private boolean datumTap(float x,float y) {
-        if(project.datums.isEmpty())return false;Datum d=datumAt(x,y,findFaceAt(x,y)>=0);if(d==null)return false;
-        if(mode.equals("Szkic")&&!sketchPlaneChosen){if(!d.plane()){operationMessage="Szkic wymaga płaszczyzny – dotknij płaszczyzny konstrukcyjnej albo ściany";invalidate();return true;}sketchOnDatum(d);return true;}
-        long now=android.os.SystemClock.uptimeMillis();boolean repeat=selectedTreeKey.equals("datum:"+d.id)&&now-treeLastTap<android.view.ViewConfiguration.getDoubleTapTimeout();treeLastTap=now;
-        selectedTreeKey="datum:"+d.id;selectedFace=-1;highlightBody=0;highlightFeature=Integer.MIN_VALUE;highlightSketch=false;
-        if(repeat){showDatumEditor(commandOf(d),d,null);return true;}
-        operationMessage="Zaznaczono: "+d.name+" · "+d.describe()+". Dotknij ponownie, aby edytować"+(d.plane()?"; Szkic → dotknij płaszczyzny, aby na niej rysować.":".");invalidate();return true;
-    }
-    private void drawDatums(Canvas canvas) {
-        datumScreen.clear();
-        List<Datum> shown=new ArrayList<>(project.datums);final Datum ghost=propertyEditor!=null?datumGhost:null;
-        if(ghost!=null){shown.removeIf(x->x.id.equals(ghost.id));shown.add(ghost);}
-        if(shown.isEmpty())return;
-        double size=Math.max(20,.6*Math.max(modelWidth,Math.max(modelHeight,modelDepth)));double[] c={modelCenterX,modelCenterY,modelCenterZ};
-        paint.setStrokeWidth(dp(1.5f));
-        for(Datum d:shown) {
-            boolean isGhost=d==ghost;if(d.hidden&&!isGhost)continue;boolean selected=isGhost||selectedTreeKey.equals("datum:"+d.id);int color=isGhost?Color.rgb(39,174,96):selected?Color.rgb(230,126,34):Color.rgb(214,137,16);
-            if(d.plane()) {
-                double[] n=d.direction,f=d.sketchFrame();double t=(c[0]-d.origin[0])*n[0]+(c[1]-d.origin[1])*n[1]+(c[2]-d.origin[2])*n[2];
-                double[] centre={c[0]-n[0]*t,c[1]-n[1]*t,c[2]-n[2]*t};android.graphics.Path path=new android.graphics.Path();boolean visible=true;
-                double[][] corners={{-1,-1},{1,-1},{1,1},{-1,1}};
-                for(int i=0;i<4;i++){double[] q=projectWorldPoint(centre[0]+(f[3]*corners[i][0]+f[6]*corners[i][1])*size,centre[1]+(f[4]*corners[i][0]+f[7]*corners[i][1])*size,centre[2]+(f[5]*corners[i][0]+f[8]*corners[i][1])*size);
-                    if(q[2]<=0)visible=false;if(i==0)path.moveTo((float)q[0],(float)q[1]);else path.lineTo((float)q[0],(float)q[1]);}
-                if(!visible)continue;path.close();
-                {float[] q=new float[8];for(int i=0;i<4;i++){double[] r=projectWorldPoint(centre[0]+(f[3]*corners[i][0]+f[6]*corners[i][1])*size,centre[1]+(f[4]*corners[i][0]+f[7]*corners[i][1])*size,centre[2]+(f[5]*corners[i][0]+f[8]*corners[i][1])*size);q[2*i]=(float)r[0];q[2*i+1]=(float)r[1];}if(!isGhost)datumScreen.put(d.id,q);}
-                paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(selected?70:40,Color.red(color),Color.green(color),Color.blue(color)));canvas.drawPath(path,paint);
-                paint.setStyle(Paint.Style.STROKE);paint.setColor(color);canvas.drawPath(path,paint);
-                double[] label=projectWorldPoint(centre[0]+(f[3]-f[6])*size,centre[1]+(f[4]-f[7])*size,centre[2]+(f[5]-f[8])*size);paint.setStyle(Paint.Style.FILL);
-                text(canvas,d.name,(float)label[0]+dp(4),(float)label[1]-dp(4),10,color,true);
-            } else if(d.axis()) {
-                double[] a=projectWorldPoint(d.origin[0]-d.direction[0]*size,d.origin[1]-d.direction[1]*size,d.origin[2]-d.direction[2]*size),b=projectWorldPoint(d.origin[0]+d.direction[0]*size,d.origin[1]+d.direction[1]*size,d.origin[2]+d.direction[2]*size);
-                if(a[2]<=0||b[2]<=0)continue;if(!isGhost)datumScreen.put(d.id,new float[]{(float)a[0],(float)a[1],(float)b[0],(float)b[1]});paint.setStyle(Paint.Style.STROKE);paint.setColor(color);paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(10),dp(4),dp(2),dp(4)},0));
-                canvas.drawLine((float)a[0],(float)a[1],(float)b[0],(float)b[1],paint);paint.setPathEffect(null);paint.setStyle(Paint.Style.FILL);text(canvas,d.name,(float)b[0]+dp(4),(float)b[1],10,color,true);
-            } else {
-                double[] p=projectWorldPoint(d.origin[0],d.origin[1],d.origin[2]);if(p[2]<=0)continue;if(!isGhost)datumScreen.put(d.id,new float[]{(float)p[0],(float)p[1]});paint.setStyle(Paint.Style.STROKE);paint.setColor(color);
-                canvas.drawCircle((float)p[0],(float)p[1],dp(5),paint);canvas.drawLine((float)p[0]-dp(9),(float)p[1],(float)p[0]+dp(9),(float)p[1],paint);canvas.drawLine((float)p[0],(float)p[1]-dp(9),(float)p[0],(float)p[1]+dp(9),paint);
-                paint.setStyle(Paint.Style.FILL);text(canvas,d.name,(float)p[0]+dp(8),(float)p[1]-dp(8),10,color,true);
-            }
-        }
-        paint.setStyle(Paint.Style.FILL);
-    }
-
-    // ---- Split a body by a plane ----
+    static final String[] DATUM_COMMANDS={"Płaszczyzna odsunięta","Płaszczyzna pod kątem","Płaszczyzna przez 3 punkty","Oś konstrukcyjna","Punkt konstrukcyjny"};
+    /** Construction elements: offset / angled / three-point planes, axes and points, references, editing, vertex picking, drawing and touch. */
+    final DatumTools datumTools=new DatumTools(this);
     /** Body split (plane, surface, surface through curves) and body move / rotate / scale dialogs. */
     final BodyTools bodyTools=new BodyTools(this);
     /** Shell: picking open faces, wall thickness with preview, editing. */
@@ -6809,7 +6592,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         List<String> presets=new ArrayList<>();for(int i=0;i<PrintExport.PRESETS.length;i++)presets.add(PrintExport.PRESETS[i]+" · "+PrintExport.VALUES[i][0]+" mm / "+(int)PrintExport.VALUES[i][1]+"°");presets.add("Własna");
         int current=presets.size()-1;for(int i=0;i<PrintExport.VALUES.length;i++)if(PrintExport.VALUES[i][0]==project.exportDeflection&&PrintExport.VALUES[i][1]==project.exportAngle)current=i;
-        android.widget.Spinner preset=choice(form,"Dokładność siatki STL / OBJ / 3MF",presets,current);
+        android.widget.Spinner preset=datumTools.choice(form,"Dokładność siatki STL / OBJ / 3MF",presets,current);
         EditText deflection=labeledCoordinate(form,"Odchyłka cięciwy [mm]",project.exportDeflection),angle=labeledCoordinate(form,"Odchyłka kątowa [°]",project.exportAngle);
         EditText overhang=labeledCoordinate(form,"Nawis bez podpór – kąt od pionu [°] (widok Nawisy)",project.overhangAngle);
         android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Mniejsza odchyłka = gładsze otwory i zaokrąglenia, ale większy plik. Widok na ekranie nie zmienia się.");form.addView(info);
@@ -7303,7 +7086,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             + x2 + "\n21\n" + y2 + "\n31\n0\n");
     }
 
-    private static final class ProjectedTriangle {
+    static final class ProjectedTriangle {
         int meshIndex;
         final double[] q = new double[3];
         HiddenLineVisibility.Triangle surface;
@@ -7340,7 +7123,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
     }
 
-    private static final class MeasurePoint {
+    static final class MeasurePoint {
         final double x, y, z;
         float sx, sy;
         final String kind;
@@ -7632,7 +7415,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(tool.equals("Dosuń ściany")){mateTools.begin();return;}
         if(tool.equals("Kolizje")){showInterference();return;}
         if(tool.equals("Lista części")){showBillOfMaterials();return;}
-        for(String command:DATUM_COMMANDS)if(tool.equals(command)){mode="Wybierz";showDatumEditor(command,null,null);return;}
+        for(String command:DATUM_COMMANDS)if(tool.equals(command)){mode="Wybierz";datumTools.showEditor(command,null,null);return;}
         if(tool.equals("Zmierz kąt")||tool.equals("Pole ściany")) {
             if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Pomiar kątów i pól wymaga bryły B-Rep";invalidate();return;}
             mode="Zmierz";measurePointMode=false;loadMeasurementGeometry();measureFaceMode=tool.equals("Zmierz kąt")?1:2;showMeasurementPanel();invalidate();return;
@@ -7854,7 +7637,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             }else next.parameters.add(value);
         },"Zapisano parametr")).show();
     }
-    private interface DocumentChange{void apply(CadProject next);}
+    interface DocumentChange{void apply(CadProject next);}
     private void changeParameters(DocumentChange change,String success) {
         try {
             String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));
@@ -7929,7 +7712,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         };
         retry.setOnClickListener(v->refresh.run());projectChooser=dialog;dialog.show();refresh.run();
     }
-    private static final class TrashListing {
+    static final class TrashListing {
         final List<pl.tabletcad.app.storage.ProjectLibraryFiles.TrashEntry> entries;final String[] labels;
         TrashListing(List<pl.tabletcad.app.storage.ProjectLibraryFiles.TrashEntry> entries,String[] labels){this.entries=entries;this.labels=labels;}
     }
@@ -8373,7 +8156,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         text(canvas, value, right + dp(32), y + dp(37), 14, INK, false);
     }
 
-    private void row(Canvas canvas, String value, float x, float y, boolean strong) {
+    void row(Canvas canvas, String value, float x, float y, boolean strong) {
         text(canvas, value, x, y, 14, INK, strong);
     }
 
@@ -8414,5 +8197,5 @@ if (isInsideViewport(e.getX(), e.getY())) {
         canvas.drawText(value, x, y, paint);
     }
 
-    private float dp(float value) { return value * density; }
+    float dp(float value) { return value * density; }
 }

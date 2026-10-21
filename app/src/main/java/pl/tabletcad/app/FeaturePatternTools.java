@@ -62,7 +62,7 @@ final class FeaturePatternTools {
             if(kind==FeaturePattern.LINEAR&&face!=null){choices.add("Normalna zaznaczonej ściany");frames.add(face);}
             if(kind==FeaturePattern.CIRCULAR&&cylinder!=null){choices.add("Oś zaznaczonej ściany walcowej");frames.add(new double[]{cylinder.origin[0],cylinder.origin[1],cylinder.origin[2],cylinder.axis[0],cylinder.axis[1],cylinder.axis[2]});}
         }
-        for(Datum d:ws.datumsOf(kind==FeaturePattern.MIRROR?Datum.PLANE:Datum.AXIS)){choices.add("Konstrukcja: "+d.name);frames.add(d.frame());}
+        for(Datum d:ws.datumTools.datumsOf(kind==FeaturePattern.MIRROR?Datum.PLANE:Datum.AXIS)){choices.add("Konstrukcja: "+d.name);frames.add(d.frame());}
         android.widget.TextView reference=new android.widget.TextView(ws.getContext());reference.setText(kind==FeaturePattern.MIRROR?"Płaszczyzna lustra":kind==FeaturePattern.LINEAR?"Kierunek szyku":"Oś obrotu");form.addView(reference);
         android.widget.Spinner frame=new android.widget.Spinner(ws.getContext());frame.setAdapter(new android.widget.ArrayAdapter<>(ws.getContext(),android.R.layout.simple_spinner_dropdown_item,choices));form.addView(frame);
         if(original==null&&((kind==FeaturePattern.MIRROR&&face!=null)||(kind==FeaturePattern.LINEAR&&face!=null)||(kind==FeaturePattern.CIRCULAR&&cylinder!=null)))frame.setSelection(choices.size()-1);

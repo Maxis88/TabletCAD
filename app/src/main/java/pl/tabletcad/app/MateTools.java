@@ -33,7 +33,7 @@ final class MateTools {
         v.operationMessage="Dotknij płaskiej lub walcowej ściany bryły, która ma się przesunąć";v.invalidate();
     }
     /** Axis {point, direction} of a cylindrical/conical face. */
-    double[] faceAxis(int face){int old=v.selectedFace;v.selectedFace=face;try{return v.selectedSurfaceAxis();}finally{v.selectedFace=old;}}
+    double[] faceAxis(int face){int old=v.selectedFace;v.selectedFace=face;try{return v.datumTools.selectedSurfaceAxis();}finally{v.selectedFace=old;}}
     void tap(int face) {
         if(face<0){v.operationMessage="Dotknij ściany bryły";v.invalidate();return;}
         boolean planar=v.isFacePlanar(face);double[] axis=planar?null:faceAxis(face);

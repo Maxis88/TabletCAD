@@ -22,7 +22,7 @@ final class BodyTools {
         android.widget.Spinner body=new android.widget.Spinner(v.getContext());body.setAdapter(new android.widget.ArrayAdapter<>(v.getContext(),android.R.layout.simple_spinner_dropdown_item,names));form.addView(body);
         body.setSelection(Math.max(0,ids.indexOf(original!=null?v.featureBody(v.project,editIndex):v.project.selectedBody)));if(original!=null)body.setEnabled(false);
         List<String> choices=new ArrayList<>(java.util.Arrays.asList("Płaszczyzna YZ (normalna X)","Płaszczyzna XZ (normalna Y)","Płaszczyzna XY (normalna Z)"));if(face!=null)choices.add("Płaszczyzna zaznaczonej ściany (stała)");
-        final List<Datum> splitPlanes=v.datumsOf(Datum.PLANE);for(Datum d:splitPlanes)choices.add("Konstrukcja: "+d.name+" (odsunięcie)");
+        final List<Datum> splitPlanes=v.datumTools.datumsOf(Datum.PLANE);for(Datum d:splitPlanes)choices.add("Konstrukcja: "+d.name+" (odsunięcie)");
         final int surfaceStart=choices.size();final List<SweepLoft.Placed> curves=new ArrayList<>();
         for(SweepLoft.Placed e:SweepLoft.elements(v.project))if(SurfaceSplit.usable(e.shape)){curves.add(e);choices.add("Powierzchnia z krzywej: "+e.sketchName+" · "+v.sketchEntityName(e.shape));}
         String originalRef=surfaceOriginal&&editIndex<v.project.committedProfileIds.size()?v.project.committedProfileIds.get(editIndex):null;
