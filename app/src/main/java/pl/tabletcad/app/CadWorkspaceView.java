@@ -1999,6 +1999,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
     /** Major grid line: darker on light backgrounds, lighter on dark ones. */
     private static int darker(int c){int d=(Color.red(c)+Color.green(c)+Color.blue(c))/3<110?-22:26;return Color.rgb(Math.min(255,Math.max(0,Color.red(c)-d)),Math.min(255,Math.max(0,Color.green(c)-d)),Math.min(255,Math.max(0,Color.blue(c)-d)));}
 
+    private double edgeTolerance=.2;private double[] extentSource;private double extentValue=100;
+    private double modelExtentCached(){if(extentSource!=nativeMesh){extentSource=nativeMesh;extentValue=modelExtent();}return extentValue;}
     private final DepthRaster depthRaster=new DepthRaster();private long lastSolidFrame;private boolean slowFullFrame;
     private final Runnable sharpFrame=()->{lastSolidFrame=0;invalidate();};
     private void drawNativeSolid(Canvas canvas, float cx, float cy) {
@@ -2025,6 +2027,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         for(ProjectedTriangle triangle:projectedTriangles){int color=surfaceColors[colorIndex];colorIndex+=3;
             depthRaster.triangle(triangle.sx[0],triangle.sy[0],(float)triangle.q[0],triangle.sx[1],triangle.sy[1],(float)triangle.q[1],triangle.sx[2],triangle.sy[2],(float)triangle.q[2],color);}
         depthRaster.draw(canvas,viewport);
+        edgeTolerance=Math.max(.15,modelExtentCached()*.004);
         if(resolution==1f)slowFullFrame=System.nanoTime()-started>40_000_000L;
         else {removeCallbacks(sharpFrame);postDelayed(sharpFrame,180);}
         for (ProjectedTriangle triangle : projectedTriangles) {
@@ -2034,8 +2037,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
             for (int edge = 0; edge < 3; edge++) {
                 if (isVisibleCadEdge(triangle, edge)) {
                     int next = (edge + 1) % 3;
-                    for(double[] interval:HiddenLineVisibility.segments(triangle.sx[edge],triangle.sy[edge],triangle.q[edge],
-                            triangle.sx[next],triangle.sy[next],triangle.q[next],depthSurfaces)) {
+                    for(double[] interval:depthRaster.visibleSegments(triangle.sx[edge],triangle.sy[edge],triangle.q[edge],
+                            triangle.sx[next],triangle.sy[next],triangle.q[next],edgeTolerance)) {
                         float dx=triangle.sx[next]-triangle.sx[edge],dy=triangle.sy[next]-triangle.sy[edge];
                         canvas.drawLine(triangle.sx[edge]+dx*(float)interval[0],triangle.sy[edge]+dy*(float)interval[0],
                             triangle.sx[edge]+dx*(float)interval[1],triangle.sy[edge]+dy*(float)interval[1],paint);

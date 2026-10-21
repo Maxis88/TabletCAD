@@ -44,6 +44,30 @@ final class DepthRaster {
             }
         }
     }
+    /**
+     * Visible parts of a line (view pixels, q per end) against the filled depth buffer: a point is
+     * visible when it is not farther than the stored surface by more than tolerance (distance units).
+     * Linear in the line's length — replaces testing every edge against every triangle.
+     */
+    java.util.List<double[]> visibleSegments(float ax,float ay,double aq,float bx,float by,double bq,double tolerance) {
+        java.util.List<double[]> out=new java.util.ArrayList<>();
+        float x0=(ax-left)*scale,y0=(ay-top)*scale,x1=(bx-left)*scale,y1=(by-top)*scale;
+        int steps=Math.max(1,(int)Math.ceil(Math.hypot(x1-x0,y1-y0)/2));double start=-1;
+        for(int k=0;k<=steps;k++) {
+            double t=(double)k/steps;int px=(int)(x0+(x1-x0)*t),py=(int)(y0+(y1-y0)*t);
+            double q=aq+(bq-aq)*t;boolean visible=true;
+            if(q>0&&px>=0&&py>=0&&px<w&&py<h) {
+                float stored=depth[py*w+px];
+                // Nearest surface among the pixel and its neighbours (an edge lies between two faces).
+                for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++){int x=px+dx,y=py+dy;if(x>=0&&y>=0&&x<w&&y<h)stored=Math.min(stored,depth[y*w+x]==0?stored:depth[y*w+x]);}
+                if(stored>0&&1/q>1/stored+tolerance)visible=false;
+            }
+            if(visible&&start<0)start=t;
+            if(!visible&&start>=0){out.add(new double[]{start,t});start=-1;}
+        }
+        if(start>=0)out.add(new double[]{start,1});
+        return out;
+    }
     void draw(Canvas canvas,Rect viewport) {
         bitmap.setPixels(pixels,0,w,0,0,w,h);
         canvas.drawBitmap(bitmap,new Rect(0,0,w,h),new RectF(viewport.left,viewport.top,viewport.left+w/scale,viewport.top+h/scale),paint);
