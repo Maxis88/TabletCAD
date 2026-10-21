@@ -36,6 +36,7 @@
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <ShapeUpgrade_ShapeDivideArea.hxx>
 #include <ShapeFix_Face.hxx>
 #include <BRepClass_FaceClassifier.hxx>
 #include <BRepAdaptor_Curve.hxx>
@@ -145,28 +146,37 @@ std::vector<double> tessellatedTriangles(const TopoDS_Shape& shape,double linear
     BRepMesh_IncrementalMesh mesher(shape, linear, false, angular, true);
     mesher.Perform();
     if (!mesher.IsDone()) return {};
-    // Complex faces (helical thread flanks clipped by a bore) are sometimes triangulated with large
-    // triangles spanning the face: the mesh area then differs from the exact B-Rep area. Such a
-    // face is meshed again, finer, on its own until its mesh matches the surface.
+    // Long helical faces (thread flanks, especially where a thread runs out near an edge) can be
+    // triangulated with triangles spanning the face: the mesh area then differs from the exact
+    // B-Rep area. Such a face is displayed from a copy divided into smaller pieces, which mesh
+    // correctly; the B-Rep itself is untouched. Analytic faces (planes, cylinders…) are skipped.
+    std::map<int,TopoDS_Shape> divided;
+    {int index=0;
     for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More(); explorer.Next()) {
-        const TopoDS_Face face = TopoDS::Face(explorer.Current());
-        auto meshArea=[&](){TopLoc_Location l;const Handle(Poly_Triangulation) t=BRep_Tool::Triangulation(face,l);if(t.IsNull())return -1.0;double a=0;
-            for(int i=1;i<=t->NbTriangles();i++){int n1,n2,n3;t->Triangle(i).Get(n1,n2,n3);a+=gp_Vec(t->Node(n1),t->Node(n2)).Crossed(gp_Vec(t->Node(n1),t->Node(n3))).Magnitude()/2;}return a;};
-        GProp_GProps props;BRepGProp::SurfaceProperties(face,props);const double exact=std::abs(props.Mass());if(!(exact>1e-9))continue;
-        double area=meshArea();
-        if(area>=0&&std::abs(area-exact)<=.03*exact)continue;
-        // One finer attempt with a bounded size; a result that is too heavy or no better is dropped.
-        auto triangles=[&](){TopLoc_Location l;const Handle(Poly_Triangulation) t=BRep_Tool::Triangulation(face,l);return t.IsNull()?0:t->NbTriangles();};
-        const double before=area;BRepTools::Clean(face);
-        BRepMesh_IncrementalMesh again(face,linear*.5,false,angular*.6,false);again.Perform();area=meshArea();
-        if(triangles()>60000||!(std::abs(area-exact)<std::abs(before-exact))){BRepTools::Clean(face);BRepMesh_IncrementalMesh back(face,linear,false,angular,false);back.Perform();}
-    }
-
+        ++index;const TopoDS_Face face = TopoDS::Face(explorer.Current());
+        const GeomAbs_SurfaceType type=BRepAdaptor_Surface(face,false).GetType();
+        if(type==GeomAbs_Plane||type==GeomAbs_Cylinder||type==GeomAbs_Cone||type==GeomAbs_Sphere||type==GeomAbs_Torus)continue;
+        TopLoc_Location l;const Handle(Poly_Triangulation) t=BRep_Tool::Triangulation(face,l);double area=-1;
+        if(!t.IsNull()){area=0;for(int i=1;i<=t->NbTriangles();i++){int n1,n2,n3;t->Triangle(i).Get(n1,n2,n3);area+=gp_Vec(t->Node(n1),t->Node(n2)).Crossed(gp_Vec(t->Node(n1),t->Node(n3))).Magnitude()/2;}}
+        GProp_GProps props;BRepGProp::SurfaceProperties(face,props);const double exact=std::abs(props.Mass());
+        if(!(exact>1e-9)||(area>=0&&std::abs(area-exact)<=.03*exact))continue;
+        try {
+            ShapeUpgrade_ShapeDivideArea divide(face);divide.MaxArea()=std::max(exact/16,1.0);divide.Perform();
+            TopoDS_Shape pieces=divide.Result();if(pieces.IsNull())continue;
+            BRepMesh_IncrementalMesh piecesMesh(pieces,linear,false,angular,false);piecesMesh.Perform();
+            divided[index]=pieces;
+        }catch(const Standard_Failure&){}
+    }}
     std::vector<double> packed;
     int faceIndex = 0;
     for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More(); explorer.Next()) {
         ++faceIndex;
-        const TopoDS_Face face = TopoDS::Face(explorer.Current());
+        const TopoDS_Face original = TopoDS::Face(explorer.Current());
+        auto replacement=divided.find(faceIndex);
+        std::vector<TopoDS_Face> parts;
+        if(replacement!=divided.end()){for(TopExp_Explorer p(replacement->second,TopAbs_FACE);p.More();p.Next())parts.push_back(TopoDS::Face(p.Current()));}
+        else parts.push_back(original);
+        for(const TopoDS_Face& face:parts){
         TopLoc_Location location;
         const Handle(Poly_Triangulation) triangulation = BRep_Tool::Triangulation(face, location);
         if (triangulation.IsNull()) continue;
@@ -187,6 +197,7 @@ std::vector<double> tessellatedTriangles(const TopoDS_Shape& shape,double linear
                 p1.X(), p1.Y(), p1.Z(), p2.X(), p2.Y(), p2.Z(), p3.X(), p3.Y(), p3.Z(),
                 normal.X(), normal.Y(), normal.Z(), static_cast<double>(faceIndex)
             });
+        }
         }
     }
     return packed;
@@ -1678,7 +1689,7 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                 shape=shellBody(shape,f,origins);if(shape.IsNull()){kernelFailAt(tag,"Powłoka nie powiodła się");return {};}
                 updateOrigins(prior,shape,tag,origins);i+=stride;continue;
             }
-            if(f[0]==-8){shape=threadedHole(shape,f);if(shape.IsNull()){kernelFailAt(tag,"Nie można wyciąć gwintu w tym otworze (sprawdź średnicę, skok i głębokość)");return {};}updateOrigins(prior,shape,tag,origins);i+=16;continue;}
+            if(f[0]==-8){shape=threadedHole(shape,f);if(shape.IsNull()){kernelFailAt(tag,"Nie można poprawnie wyciąć gwintu w tym miejscu (sprawdź średnicę, skok i głębokość; przy krawędzi lub zaokrągleniu wybierz mniejszy skok albo przesuń otwór)");return {};}updateOrigins(prior,shape,tag,origins);i+=16;continue;}
             if(f[0]==-6||f[0]==-7) {
                 if(f[1]!=std::floor(f[1])||f[1]<1||f[1]>256||f[11]<.1||f[11]>1000){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
                 for(int k=2;k<16;k++)if(k!=11&&f[k]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}

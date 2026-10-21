@@ -7,7 +7,7 @@ public final class HoleThread {
     private HoleThread() {}
     public static final class Preset {
         public final double diameter,pitch;
-        Preset(double d,double p){diameter=d;pitch=p;}
+        public Preset(double d,double p){diameter=d;pitch=p;}
         public String label(){return "M"+java.math.BigDecimal.valueOf(diameter).stripTrailingZeros().toPlainString()+" × "+java.math.BigDecimal.valueOf(pitch).stripTrailingZeros().toPlainString();}
     }
     public static final class Cylinder {

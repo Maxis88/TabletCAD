@@ -3726,6 +3726,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     void chooseSketchPlane(String plane) {
+        project.drawingConstruction=false;// every new sketch starts with normal geometry
         editingSketchPlacement=SketchPlacement.identity();editingSketchBody=0;
         // A newly picked model face is a new geometric reference even if its
         // displayed face number happens to match the previous sketch plane.
@@ -6364,6 +6365,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     void finishSketchWork(){finishSketchWork(null);}
     /** Commits the sketch (in the background); {@code then} runs after a successful rebuild (e.g. Wyciągnij continues). */
     void finishSketchWork(Runnable then) {
+        project.drawingConstruction=false;
         if(!project.threePointDraft.isEmpty()){showThreePointActions(null);return;}
         if(!arcDraft.isEmpty()){showArcDraftActions(null);return;}
         if(!project.polylineDraft.isEmpty()){showPolylineActions(null);return;}

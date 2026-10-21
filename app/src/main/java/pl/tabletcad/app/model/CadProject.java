@@ -305,7 +305,7 @@ public final class CadProject {
         project.featureOperation = schema >= 6 ? root.optString("featureOperation", "none") : "none";
         project.featureDepth = schema >= 6 ? root.optDouble("featureDepth", 10.0) : 10.0;
         project.splineDraft=root.optBoolean("splineDraft",false);
-        project.drawingConstruction=root.optBoolean("drawingConstruction",false);
+        project.drawingConstruction=false;// normal geometry by default; the construction switch is per drawing session
         project.sketchName=root.optString("sketchName","Szkic");
         project.featureSymmetric=root.optBoolean("featureSymmetric",false);
         JSONArray history = root.optJSONArray("committedFeatures");
