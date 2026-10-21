@@ -143,11 +143,11 @@ final class DatumTools {
     }
     void beginPick(String command,Datum existing,int needed) {
         if(!ws.project.hasSolid()||ws.project.importedMeshSource!=null){ws.operationMessage="Wskazywanie wymaga bryły B-Rep; wpisz współrzędne";ws.invalidate();return;}
-        datumPickCommand=command;datumPickEdited=existing;datumPickNeeded=needed;datumPickPoints.clear();ws.mode="Konstrukcja";ws.loadMeasurementGeometry();
+        datumPickCommand=command;datumPickEdited=existing;datumPickNeeded=needed;datumPickPoints.clear();ws.mode="Konstrukcja";ws.measureTools.loadMeasurementGeometry();
         ws.operationMessage="Dotknij wierzchołka bryły ("+1+"/"+needed+")";ws.invalidate();
     }
     void pickTap(float x,float y) {
-        CadWorkspaceView.MeasurePoint picked=ws.nearestBrepVertex(x,y);
+        CadWorkspaceView.MeasurePoint picked=ws.measureTools.nearestBrepVertex(x,y);
         if(picked==null){ws.operationMessage="Dotknij bliżej widocznego wierzchołka ("+(datumPickPoints.size()+1)+"/"+datumPickNeeded+")";ws.invalidate();return;}
         datumPickPoints.add(new double[]{picked.x+ws.meshCenterX,picked.y+ws.meshCenterY,picked.z+ws.meshCenterZ});
         if(datumPickPoints.size()<datumPickNeeded){ws.operationMessage="Wybrano "+datumPickPoints.size()+"/"+datumPickNeeded+". Dotknij kolejnego wierzchołka.";ws.invalidate();return;}

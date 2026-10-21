@@ -42,6 +42,8 @@ import pl.tabletcad.app.storage.ProjectRepository;
  * Touch-first CAD viewport backed by tessellated Open CASCADE B-Rep geometry.
  */
 public final class CadWorkspaceView extends View {
+    /** Measurements: points, edges, faces, angles, areas, the measurement panel and drawing */
+    final MeasureTools measureTools=new MeasureTools(this);
     /** History operation editor: opens the right dialog for each kind of operation */
     final FeatureEditorTools featureEditorTools=new FeatureEditorTools(this);
     /** Project files and settings: rename, project browser, copies, trash, parameters, units, drawing metadata */
@@ -164,7 +166,7 @@ public final class CadWorkspaceView extends View {
     double selectedPointX;
     double selectedPointY;
     double selectedPointZ;
-    private final List<ProjectedTriangle> projectedTriangles = new ArrayList<>();
+    final List<ProjectedTriangle> projectedTriangles = new ArrayList<>();
     /** Back-facing triangles, collected only for the edge and transparent display modes. */
     private final List<ProjectedTriangle> backTriangles = new ArrayList<>();
     /** View-only display style; never changes the document or the B-Rep. */
@@ -178,18 +180,18 @@ public final class CadWorkspaceView extends View {
     private java.util.function.Consumer<double[]> lastPreviewDisplay;
     private Runnable previewControlsRefresh;
     private boolean showingSection(){return sectionPlane!=null&&sectionResult!=null&&featurePreview==null;}
-    private final List<HiddenLineVisibility.Triangle> depthSurfaces = new HiddenLineVisibility.Index();
+    final List<HiddenLineVisibility.Triangle> depthSurfaces = new HiddenLineVisibility.Index();
     private DisplayMeshTopology displayTopology;
     private final List<ProjectedTriangle> projectionPool=new ArrayList<>();
     private float[] surfaceVertices=new float[0];
     private int[] surfaceColors=new int[0];
     MeasurePoint measureA;
     MeasurePoint measureB;
-    private double[] measureEdges=new double[0],measureProperties=new double[0],measuredCurve;
-    private boolean measurePointMode;
+    double[] measureEdges=new double[0],measureProperties=new double[0],measuredCurve;
+    boolean measurePointMode;
     /** 0 edge/point measurement, 1 angle between two faces/edges, 2 face area and surface type. */
-    private int measureFaceMode;private double[] measureFaces=new double[0];private final List<GeometryMeasure.Direction> measureDirections=new ArrayList<>();private double[] measuredFace;private int measuredFaceIndex=-1;
-    private android.widget.TextView measurementOutput;
+    int measureFaceMode;double[] measureFaces=new double[0];final List<GeometryMeasure.Direction> measureDirections=new ArrayList<>();double[] measuredFace;int measuredFaceIndex=-1;
+    android.widget.TextView measurementOutput;
     String measuredEdgeText = "";
     private float touchDownX;
     private float touchDownY;
@@ -401,7 +403,7 @@ public final class CadWorkspaceView extends View {
         else if(mode.equals("Odsuń ścianę")){faceOffsetRef=null;showFaceOffsetPanel();}
         else if(extrusionSelectionChanged!=null)extrusionSelectionChanged.run();
         else if(filletSelectionChanged!=null)filletSelectionChanged.run();
-        else if(mode.equals("Zmierz"))updateMeasurementOutput();
+        else if(mode.equals("Zmierz"))measureTools.updateMeasurementOutput();
         else closePropertyEditor();
         operationMessage="Odznaczono wszystkie elementy";invalidate();
     }
@@ -741,7 +743,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                         return true;
                     }
                     if (mode.equals("Zmierz")) {
-                        handleMeasureTap(e.getX(), e.getY());
+                        measureTools.handleMeasureTap(e.getX(), e.getY());
                         return true;
                     }
                     if(datumFaceListener!=null&&propertyEditor!=null) {
@@ -1652,7 +1654,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 contextAction(footer,"Anuluj szkic",false,()->{if(SketchTransactions.active(project))cancelSketchWork();else {mode="Wybierz";sketchPlaneChosen=false;invalidate();}});
             } else if(mode.equals("Zmierz")) {
                 contextText(contents,measuredEdgeText.isEmpty()?"Wskaż geometrię do pomiaru.":measuredEdgeText,false);
-                contextAction(contents,"Rodzaj pomiaru…",false,()->showMeasurementPanel());
+                contextAction(contents,"Rodzaj pomiaru…",false,()->measureTools.showMeasurementPanel());
                 contextAction(footer,"Zakończ pomiar",true,()->{mode="Wybierz";invalidate();});
             } else if(mode.equals("Rysunek")) {
                 if(sheetDimensionMode)contextAction(contents,"Zakończ wymiarowanie",true,()->{sheetDimensionMode=sheetAngleMode=false;sheetFirst=sheetSecond=null;operationMessage="";});
@@ -1782,7 +1784,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         if(mode.equals("Zmierz")) {
             stripTitle="Pomiar";stripHint=measuredEdgeText.isEmpty()?"Wskaż geometrię do pomiaru":measuredEdgeText;
-            out.add(new StripChip("Rodzaj pomiaru…","Zmierz",false,false,()->showMeasurementPanel()));
+            out.add(new StripChip("Rodzaj pomiaru…","Zmierz",false,false,()->measureTools.showMeasurementPanel()));
             out.add(new StripChip("Zakończ pomiar","Wybierz",false,true,()->mode="Wybierz"));
             return out;
         }
@@ -3625,7 +3627,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return reference != null;
     }
 
-    private boolean isVisibleCadEdge(ProjectedTriangle source, int edge) {
+    boolean isVisibleCadEdge(ProjectedTriangle source, int edge) {
         int neighbour=displayTopology.neighbours[source.meshIndex*3+edge];
         return neighbour<0||!displayTopology.visible[neighbour];
     }
@@ -4160,7 +4162,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     private void drawDimensions(Canvas canvas, float left, float top, float right, float bottom) {
         if(measureFaceMode>0)return;
-        if(!measurePointMode&&measuredCurve!=null){drawMeasuredCurve(canvas);return;}
+        if(!measurePointMode&&measuredCurve!=null){measureTools.drawMeasuredCurve(canvas);return;}
         if (measureA == null) {
             text(canvas, measurePointMode?"Wskaż dwa punkty / wierzchołki":"Dotknij widocznej krawędzi", (left + right) / 2f,
                 top + dp(68), 14, INK, true, Paint.Align.CENTER);
@@ -4183,210 +4185,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
     }
 
-    private void handleMeasureTap(float x, float y) {
-        if(measurementOutput==null)showMeasurementPanel();
-        if(measureFaceMode>0&&project.importedMeshSource==null){measureFaceTap(x,y);return;}
-        if(findFaceAt(x,y)<0&&nearestBrepVertex(x,y)==null&&nearestMeasurePoint(x,y)==null){clearViewportSelection();return;}
-        if(!measurePointMode&&project.importedMeshSource==null) {
-            double distance=dp(18);int selected=-1;
-            for(int i=0;i+15<measureEdges.length;i+=16) {
-                double[] a=projectWorldPoint(measureEdges[i+9],measureEdges[i+10],measureEdges[i+11]);
-                double[] b=projectWorldPoint(measureEdges[i+12],measureEdges[i+13],measureEdges[i+14]);
-                double d=HiddenLineVisibility.distanceToVisibleSegment(x,y,a,b,depthSurfaces);
-                if(d<distance){distance=d;selected=i;}
-            }
-            if(selected>=0)measuredCurve=CadMeasurements.edge(measureProperties,measureEdges[selected+15]);
-            else operationMessage="Dotknij bliżej widocznej krawędzi";
-            updateMeasurementOutput();invalidate();return;
-        }
-        MeasurePoint picked = project.importedMeshSource==null?nearestBrepVertex(x,y):nearestMeasurePoint(x, y);
-        if (picked == null) {
-            measuredEdgeText = "Brak krawędzi w zasięgu";
-            operationMessage="Dotknij widocznego wierzchołka bryły";
-            updateMeasurementOutput();
-            invalidate();
-            return;
-        }
-        if (measureA == null || measureB != null) {
-            measureA = picked;
-            measureB = null;
-        } else {
-            measureB = picked;
-        }
-        measuredEdgeText = picked.edgeLength > 0.0 ? formatMm(picked.edgeLength) : "";
-        updateMeasurementOutput();
-        invalidate();
-    }
-
-    /** Angle (two picks: straight edges, planar faces or surface axes) or exact face area. */
-    private void measureFaceTap(float x,float y) {
-        double distance=dp(14);int selected=-1;
-        if(measureFaceMode==1)for(int i=0;i+15<measureEdges.length;i+=16) {
-            double[] a=projectWorldPoint(measureEdges[i+9],measureEdges[i+10],measureEdges[i+11]),b=projectWorldPoint(measureEdges[i+12],measureEdges[i+13],measureEdges[i+14]);
-            double d=HiddenLineVisibility.distanceToVisibleSegment(x,y,a,b,depthSurfaces);if(d<distance){distance=d;selected=i;}
-        }
-        GeometryMeasure.Direction picked=null;
-        if(selected>=0){try{picked=GeometryMeasure.edgeDirection(CadMeasurements.edge(measureProperties,measureEdges[selected+15]));}catch(IllegalArgumentException ignored){picked=null;}}
-        int face=selected>=0&&picked!=null?-1:findFaceAt(x,y);
-        if(picked==null&&face<0){operationMessage=measureFaceMode==1?"Dotknij prostej krawędzi albo ściany":"Dotknij ściany bryły";invalidate();return;}
-        double[] row=face>=0?GeometryMeasure.face(measureFaces,face):null;
-        if(face>=0&&row==null){operationMessage="Brak danych B-Rep tej ściany";invalidate();return;}
-        if(measureFaceMode==2){measuredFace=row;measuredFaceIndex=face;selectedFace=face;updateMeasurementOutput();invalidate();return;}
-        if(picked==null){picked=GeometryMeasure.faceDirection(row);if(picked==null){operationMessage="Ta powierzchnia nie ma kierunku (kula lub powierzchnia swobodna)";invalidate();return;}selectedFace=face;}
-        if(measureDirections.size()>=2)measureDirections.clear();measureDirections.add(picked);
-        updateMeasurementOutput();invalidate();
-    }
-    MeasurePoint nearestBrepVertex(float x,float y) {
-        MeasurePoint best=null;double distance=dp(20);
-        for(int i=0;i+15<measureProperties.length;i+=16)for(int endpoint:new int[]{0,6}) {
-            double wx=measureProperties[i+endpoint],wy=measureProperties[i+endpoint+1],wz=measureProperties[i+endpoint+2];
-            double[] p=projectWorldPoint(wx,wy,wz);double d=Math.hypot(p[0]-x,p[1]-y);
-            if(d<distance&&HiddenLineVisibility.visible(p[0],p[1],p[2],depthSurfaces)) {
-                distance=d;best=new MeasurePoint(wx-meshCenterX,wy-meshCenterY,wz-meshCenterZ,(float)p[0],(float)p[1],"Punkt B-Rep",0);
-            }
-        }
-        return best;
-    }
-
-    void loadMeasurementGeometry() {
-        measureEdges=measureProperties=new double[0];measuredCurve=null;measureA=measureB=null;
-        if(!project.hasSolid()||project.importedMeshSource!=null)return;
-        String source=project.importedStep?importedSourceFile().getAbsolutePath():null;
-        double radius=project.importedStep?0:project.filletRadius;
-        measureEdges=NativeCadEngine.modelEdges(modelWidth,modelHeight,modelDepth,radius,evaluationBase(),kernelFeatures(),source);
-        measureProperties=NativeCadEngine.edgeMeasurements(modelWidth,modelHeight,modelDepth,radius,evaluationBase(),kernelFeatures(),source);
-        measureFaces=NativeCadEngine.faceAnalysis(modelWidth,modelHeight,modelDepth,radius,evaluationBase(),kernelFeatures(),source);
-        measureDirections.clear();measuredFace=null;measuredFaceIndex=-1;
-    }
-
-    private void showMeasurementPanel() {
-        android.widget.RadioGroup types=new android.widget.RadioGroup(getContext());
-        android.widget.RadioButton edge=new android.widget.RadioButton(getContext()),points=new android.widget.RadioButton(getContext());
-        edge.setId(View.generateViewId());points.setId(View.generateViewId());
-        edge.setText("Krawędź · długość / R / Ø");points.setText("Punkt–punkt · wierzchołki");
-        android.widget.RadioButton angle=new android.widget.RadioButton(getContext()),area=new android.widget.RadioButton(getContext());
-        angle.setId(View.generateViewId());area.setId(View.generateViewId());angle.setText("Kąt · ściany, krawędzie, osie");area.setText("Ściana · pole i typ powierzchni");
-        edge.setEnabled(project.importedMeshSource==null);angle.setEnabled(project.importedMeshSource==null);area.setEnabled(project.importedMeshSource==null);
-        types.addView(edge);types.addView(points);types.addView(angle);types.addView(area);
-        types.check(measureFaceMode==1?angle.getId():measureFaceMode==2?area.getId():measurePointMode?points.getId():edge.getId());
-        android.widget.TextView output=new android.widget.TextView(getContext());output.setTextSize(15);
-        output.setTextColor(INK);output.setPadding(0,(int)dp(12),0,(int)dp(16));
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);form.addView(types);form.addView(output);
-        new PropertyBuilder().setTitle(project.importedMeshSource==null?"Pomiar · geometria OCCT":"Pomiar · siatka STL (przybliżony)")
-            .setView(form).setNeutralButton("Wyczyść pomiar",(d,w)-> {
-                measureA=measureB=null;measuredCurve=null;showMeasurementPanel();invalidate();
-            }).setNegativeButton("Zamknij pomiar",(d,w)->{mode="Wybierz";measureA=measureB=null;measuredCurve=null;invalidate();}).show();
-        measurementOutput=output;
-        types.setOnCheckedChangeListener((group,id)-> {
-            measurePointMode=id==points.getId();measureFaceMode=id==angle.getId()?1:id==area.getId()?2:0;measureA=measureB=null;measuredCurve=null;measureDirections.clear();measuredFace=null;
-            updateMeasurementOutput();invalidate();
-        });
-        updateMeasurementOutput();
-    }
-
-    private void updateMeasurementOutput() {
-        if(measurementOutput==null)return;
-        if(measureFaceMode==1) {
-            if(measureDirections.isEmpty())measurementOutput.setText("Dotknij pierwszej ściany płaskiej, prostej krawędzi albo ściany walcowej (oś).");
-            else if(measureDirections.size()==1)measurementOutput.setText("Wybrano: "+measureDirections.get(0).label+". Dotknij drugiego elementu.");
-            else measurementOutput.setText(measureDirections.get(0).label+" · "+measureDirections.get(1).label+"\n\n"+GeometryMeasure.describeAngle(measureDirections.get(0),measureDirections.get(1))+"\n\nWartości z geometrii OCCT. Kolejne dotknięcie zaczyna nowy pomiar.");
-            return;
-        }
-        if(measureFaceMode==2) {
-            if(measuredFace==null){measurementOutput.setText("Dotknij ściany bryły.");return;}
-            String text="Ściana "+(measuredFaceIndex+1)+" · "+GeometryMeasure.surfaceName(measuredFace[3])+"\n\nPole: "+formatArea(measuredFace[2]);
-            if(measuredFace[3]==1||measuredFace[3]==3)text+="\nPromień R: "+formatMm(measuredFace[10])+"\nŚrednica Ø: "+formatMm(2*measuredFace[10]);
-            measurementOutput.setText(text+"\n\nPole dokładne z B-Rep (BRepGProp), nie z siatki ekranu.");return;
-        }
-        if(!measurePointMode) {
-            if(measuredCurve==null){measurementOutput.setText(measureEdges.length==0?"Brak krawędzi B-Rep do pomiaru":"Dotknij widocznej krawędzi bryły. Przeciągnięcie obraca model.");return;}
-            String value=(measuredCurve[14]==0?"Krawędź prosta":measuredCurve[14]==1?"Krawędź kołowa / łuk":"Krzywa B-Rep")+"\n\nDługość: "+formatMm(measuredCurve[9]);
-            if(measuredCurve[14]==1)value+="\nPromień R: "+formatMm(measuredCurve[10])+"\nŚrednica Ø: "+formatMm(measuredCurve[10]*2);
-            measurementOutput.setText(value+"\n\nWartości z geometrii OCCT, nie z siatki ekranu.");
-        }else if(measureA==null)measurementOutput.setText(project.importedMeshSource==null?"Wskaż pierwszy widoczny wierzchołek. Punkty są przyciągane do końców krawędzi B-Rep.":"Wskaż dwa punkty siatki STL. Pomiar zależy od jej dokładności.");
-        else if(measureB==null)measurementOutput.setText("Punkt A wybrany. Wskaż drugi wierzchołek.");
-        else measurementOutput.setText("Odległość 3D: "+formatMm(measureA.distanceTo(measureB))
-            +"\nΔX: "+formatMm(Math.abs(measureB.x-measureA.x))+"\nΔY: "+formatMm(Math.abs(measureB.y-measureA.y))+"\nΔZ: "+formatMm(Math.abs(measureB.z-measureA.z))
-            +"\n\nKolejne dotknięcie rozpoczyna nowy pomiar.");
-    }
-
-    private void drawMeasuredCurve(Canvas canvas) {
-        boolean visible=false;paint.setStrokeWidth(dp(3));paint.setColor(Color.rgb(45,90,190));
-        for(int i=0;i+15<measureEdges.length;i+=16)if(measureEdges[i+15]==measuredCurve[15]) {
-            double[] a=projectWorldPoint(measureEdges[i+9],measureEdges[i+10],measureEdges[i+11]);
-            double[] b=projectWorldPoint(measureEdges[i+12],measureEdges[i+13],measureEdges[i+14]);
-            for(double[] r:HiddenLineVisibility.segments(a[0],a[1],a[2],b[0],b[1],b[2],depthSurfaces)) {
-                visible=true;canvas.drawLine((float)(a[0]+(b[0]-a[0])*r[0]),(float)(a[1]+(b[1]-a[1])*r[0]),
-                    (float)(a[0]+(b[0]-a[0])*r[1]),(float)(a[1]+(b[1]-a[1])*r[1]),paint);
-            }
-        }
-        if(!visible)return;
-        double[] a=projectWorldPoint(measuredCurve[0],measuredCurve[1],measuredCurve[2]);
-        double[] b=projectWorldPoint(measuredCurve[6],measuredCurve[7],measuredCurve[8]);
-        String label=formatMm(measuredCurve[9]);
-        if(measuredCurve[14]==1) {b=a;a=projectWorldPoint(measuredCurve[11],measuredCurve[12],measuredCurve[13]);label="Ø "+formatMm(2*measuredCurve[10])+"  (R "+formatMm(measuredCurve[10])+")";}
-        else if(measuredCurve[14]!=0)return;
-        double dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);if(length<dp(3))return;
-        float nx=(float)(-dy/length*dp(22)),ny=(float)(dx/length*dp(22));
-        float ax=(float)a[0],ay=(float)a[1],bx=(float)b[0],by=(float)b[1];
-        paint.setStrokeWidth(dp(1));canvas.drawLine(ax,ay,ax+nx*1.3f,ay+ny*1.3f,paint);canvas.drawLine(bx,by,bx+nx*1.3f,by+ny*1.3f,paint);
-        canvas.drawLine(ax+nx,ay+ny,bx+nx,by+ny,paint);
-        canvas.drawCircle(ax+nx,ay+ny,dp(2.5f),paint);canvas.drawCircle(bx+nx,by+ny,dp(2.5f),paint);
-        text(canvas,label,(ax+bx)/2+nx,(ay+by)/2+ny-dp(8),12,Color.rgb(45,90,190),true,Paint.Align.CENTER);
-    }
-
-    private MeasurePoint nearestMeasurePoint(float x, float y) {
-        MeasurePoint bestVertex = null;
-        double bestVertexDistance = dp(15);
-        for (ProjectedTriangle triangle : projectedTriangles) {
-            for (int i = 0; i < 3; i++) {
-                double screenDistance = Math.hypot(x - triangle.sx[i], y - triangle.sy[i]);
-                if (screenDistance < bestVertexDistance) {
-                    if(!HiddenLineVisibility.visible(triangle.sx[i],triangle.sy[i],triangle.q[i],depthSurfaces))continue;
-                    bestVertexDistance = screenDistance;
-                    bestVertex = new MeasurePoint(triangle.wx[i], triangle.wy[i], triangle.wz[i],
-                        triangle.sx[i], triangle.sy[i], "Wierzchołek", 0.0);
-                }
-            }
-        }
-        if (bestVertex != null) return bestVertex;
-
-        MeasurePoint bestEdge = null;
-        double bestEdgeDistance = dp(13);
-        for (ProjectedTriangle triangle : projectedTriangles) {
-            for (int edge = 0; edge < 3; edge++) {
-                if (!isVisibleCadEdge(triangle, edge)) continue;
-                int next = (edge + 1) % 3;
-                double dx = triangle.sx[next] - triangle.sx[edge];
-                double dy = triangle.sy[next] - triangle.sy[edge];
-                double lengthSquared = dx * dx + dy * dy;
-                if (lengthSquared < 1.0e-8) continue;
-                double t = ((x - triangle.sx[edge]) * dx + (y - triangle.sy[edge]) * dy) / lengthSquared;
-                t = Math.max(0.0, Math.min(1.0, t));
-                float sx = triangle.sx[edge] + (float)(t * dx);
-                float sy = triangle.sy[edge] + (float)(t * dy);
-                double screenDistance = Math.hypot(x - sx, y - sy);
-                if (screenDistance < bestEdgeDistance) {
-                    if(!HiddenLineVisibility.visible(sx,sy,triangle.q[edge]+t*(triangle.q[next]-triangle.q[edge]),depthSurfaces))continue;
-                    double wx = triangle.wx[edge] + t * (triangle.wx[next] - triangle.wx[edge]);
-                    double wy = triangle.wy[edge] + t * (triangle.wy[next] - triangle.wy[edge]);
-                    double wz = triangle.wz[edge] + t * (triangle.wz[next] - triangle.wz[edge]);
-                    double edgeLength = Math.sqrt(
-                        square(triangle.wx[next] - triangle.wx[edge])
-                        + square(triangle.wy[next] - triangle.wy[edge])
-                        + square(triangle.wz[next] - triangle.wz[edge]));
-                    bestEdgeDistance = screenDistance;
-                    bestEdge = new MeasurePoint(wx, wy, wz, sx, sy, "Krawędź", edgeLength);
-                }
-            }
-        }
-        return bestEdge;
-    }
-
-    private static double square(double value) { return value * value; }
+    static double square(double value) { return value * value; }
 
     /** Display text of a length in the project unit and display precision. */
-    private String formatArea(double value){return Units.area(value,project.units,project.displayDecimals);}
+    String formatArea(double value){return Units.area(value,project.units,project.displayDecimals);}
     String formatMm(double value) {
         return Units.length(value,project.units,project.displayDecimals);
     }
@@ -4477,7 +4279,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             : nativeMesh.length==0?"Nie można przebudować bryły"
             : "Bryła B-Rep · ściany "+meshFaces.size()+" · trójkąty "+nativeMesh.length/13;
         technicalSheet=null;
-        if(mode.equals("Zmierz")){loadMeasurementGeometry();updateMeasurementOutput();}
+        if(mode.equals("Zmierz")){measureTools.loadMeasurementGeometry();measureTools.updateMeasurementOutput();}
         if(mode.equals("Rysunek")) prepareTechnicalSheet();
         scheduleThumbnail();
         return true;
@@ -6235,7 +6037,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         for(String command:DATUM_COMMANDS)if(tool.equals(command)){mode="Wybierz";datumTools.showEditor(command,null,null);return;}
         if(tool.equals("Zmierz kąt")||tool.equals("Pole ściany")) {
             if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Pomiar kątów i pól wymaga bryły B-Rep";invalidate();return;}
-            mode="Zmierz";measurePointMode=false;loadMeasurementGeometry();measureFaceMode=tool.equals("Zmierz kąt")?1:2;showMeasurementPanel();invalidate();return;
+            mode="Zmierz";measurePointMode=false;measureTools.loadMeasurementGeometry();measureFaceMode=tool.equals("Zmierz kąt")?1:2;measureTools.showMeasurementPanel();invalidate();return;
         }
         if (tool.equals("Zakończ")) {
             finishSketchWork();return;
@@ -6330,7 +6132,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         else if (tool.equals("Zmierz")) {
             mode = "Zmierz";
             measurePointMode=project.importedMeshSource!=null;measureFaceMode=0;
-            loadMeasurementGeometry();showMeasurementPanel();
+            measureTools.loadMeasurementGeometry();measureTools.showMeasurementPanel();
         } else if (tool.equals("Rysunek")) {
             if(mode.equals("Rysunek")) {
                 EditText value=coordinateInput("Położenie przekroju X [%]",project.drawingSectionFraction*100);
