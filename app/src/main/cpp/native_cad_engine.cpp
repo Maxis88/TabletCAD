@@ -154,10 +154,12 @@ std::vector<double> tessellatedTriangles(const TopoDS_Shape& shape,double linear
             for(int i=1;i<=t->NbTriangles();i++){int n1,n2,n3;t->Triangle(i).Get(n1,n2,n3);a+=gp_Vec(t->Node(n1),t->Node(n2)).Crossed(gp_Vec(t->Node(n1),t->Node(n3))).Magnitude()/2;}return a;};
         GProp_GProps props;BRepGProp::SurfaceProperties(face,props);const double exact=std::abs(props.Mass());if(!(exact>1e-9))continue;
         double area=meshArea();
-        for(int attempt=1;attempt<=3&&(area<0||std::abs(area-exact)>.03*exact);attempt++) {
-            BRepTools::Clean(face);const double f=std::pow(.35,attempt);
-            BRepMesh_IncrementalMesh again(face,linear*f,false,angular*std::pow(.6,attempt),false);again.Perform();area=meshArea();
-        }
+        if(area>=0&&std::abs(area-exact)<=.03*exact)continue;
+        // One finer attempt with a bounded size; a result that is too heavy or no better is dropped.
+        auto triangles=[&](){TopLoc_Location l;const Handle(Poly_Triangulation) t=BRep_Tool::Triangulation(face,l);return t.IsNull()?0:t->NbTriangles();};
+        const double before=area;BRepTools::Clean(face);
+        BRepMesh_IncrementalMesh again(face,linear*.5,false,angular*.6,false);again.Perform();area=meshArea();
+        if(triangles()>60000||!(std::abs(area-exact)<std::abs(before-exact))){BRepTools::Clean(face);BRepMesh_IncrementalMesh back(face,linear,false,angular,false);back.Perform();}
     }
 
     std::vector<double> packed;
