@@ -42,6 +42,14 @@ import pl.tabletcad.app.storage.ProjectRepository;
  * Touch-first CAD viewport backed by tessellated Open CASCADE B-Rep geometry.
  */
 public final class CadWorkspaceView extends View {
+    // Entry points kept on the view for the device UI probes (reflection) after the dialogs moved to helper classes.
+    private void beginThreadTool(){threadTools.begin();}
+    private boolean activateProject(CadProject next){return projectFileTools.activateProject(next);}
+    private void sketchOnDatum(Datum d){datumTools.sketchOn(d);}
+    private void showEdgeFilletEditor(int index){edgeTools.showFillet(index);}
+    private void showNewProject(){projectFileTools.showNewProject();}
+    private void showProjectMenu(){projectFileTools.showProjectMenu();}
+    private void showSketchPosition(String id,int pointChoice,String refId,int refAnchor){sketchPositionTools.showSketchPosition(id,pointChoice,refId,refAnchor);}
     /** Measurements: points, edges, faces, angles, areas, the measurement panel and drawing */
     final MeasureTools measureTools=new MeasureTools(this);
     /** History operation editor: opens the right dialog for each kind of operation */

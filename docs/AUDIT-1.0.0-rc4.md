@@ -85,3 +85,8 @@
 - **Obrót profilu → Nowa bryła** (podgląd i zapis jako osobna bryła).
 - **Łuk eliptyczny: wymiary na szkicu** a, b i rozwarcie ∠ (dotknięcie → zmiana wartości).
 - **Podział CadWorkspaceView (początek)**: TextTools (napisy) i OutlineTools (obrys) jako osobne moduły.
+- **Podział CadWorkspaceView**: 9256 → ok. 6550 linii. Moduły: TextTools, OutlineTools, ThreadTools, RevolveTools,
+  EdgeTools, MateTools, BodyTools, ShellTools, SketchPatternTools, FeaturePatternTools, HoleTools, DatumTools,
+  ExtrusionDialogs, SheetTools, MaterialTools, AssemblyTools, SketchPositionTools, SketchConstraintTools,
+  SketchMirrorTools, ProjectFileTools, FeatureEditorTools, MeasureTools. Zachowanie bez zmian (przeniesienie kodu);
+  wejścia używane przez sondy UI (refleksja) pozostały w widoku jako delegaty.
