@@ -117,7 +117,7 @@ public final class CadWorkspaceView extends View {
     int shellEditIndex=-1;
     private final java.util.Map<Integer,ShellFeature.Face> draftSelections=new java.util.LinkedHashMap<>();private int draftEditIndex=-1;
     /** Face reference (point xyz, outward normal xyz, creator tag) of the hole being placed. */
-    private double[] holeReference;private int holeEditIndex=-1;
+    double[] holeReference;int holeEditIndex=-1;
     private GeometryPreviewWorker modelCommitWorker;private boolean modelOperationPending;
     private final java.util.Set<Integer> collapsedBodies=new java.util.HashSet<>();
     private List<ModelTree.Row> modelTreeRows=new ArrayList<>();
@@ -750,7 +750,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     if(mode.equals("Gwint")) {threadTools.tap(face);return true;}
                     if(mode.equals("Dosuń")) {mateTools.tap(face);return true;}
                     if(mode.equals("Powłoka")) {shellTools.tap(face);return true;}
-                    if(mode.equals("Otwór")) {holeTap(face);return true;}
+                    if(mode.equals("Otwór")) {holeTools.tap(face);return true;}
                     if(mode.equals("Pochyl ściany")) {draftTap(face);return true;}
                     if(mode.equals("Odsuń ścianę")) {faceOffsetTap(face);return true;}
                     if (face >= 0) {
@@ -1737,7 +1737,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(planar) {
             names.add("Szkic na ścianie");icons.add("Szkic");actions.add(()->{activateTopTool("Szkic");if(mode.equals("Szkic")&&!sketchPlaneChosen){restore.run();chooseSketchPlane("Ściana "+(face+1));}});
             names.add("Odsuń ścianę");icons.add("Odsuń ścianę");actions.add(()->{restore.run();beginFaceOffsetTool();});
-            names.add("Otwór");icons.add("Otwór");actions.add(()->{restore.run();beginHoleTool();});
+            names.add("Otwór");icons.add("Otwór");actions.add(()->{restore.run();holeTools.begin();});
             names.add("Płaszczyzna");icons.add("Płaszczyzna odsunięta");actions.add(()->{restore.run();showDatumEditor(DATUM_COMMANDS[0],null,null);});
         } else if(cylinder!=null) {
             names.add("Gwint");icons.add("Gwint");actions.add(()->{restore.run();threadTools.begin();});
@@ -3891,7 +3891,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private final java.util.Map<EditText,java.lang.ref.WeakReference<android.widget.TextView>> fieldLabels=new java.util.WeakHashMap<>();
-    private android.widget.TextView fieldLabel(EditText input){java.lang.ref.WeakReference<android.widget.TextView> ref=fieldLabels.get(input);return ref==null?null:ref.get();}
+    android.widget.TextView fieldLabel(EditText input){java.lang.ref.WeakReference<android.widget.TextView> ref=fieldLabels.get(input);return ref==null?null:ref.get();}
     void fieldVisible(EditText input,boolean visible) {
         input.setVisibility(visible?View.VISIBLE:View.GONE);input.setEnabled(visible);
         android.widget.TextView label=fieldLabel(input);if(label!=null)label.setVisibility(input.getVisibility());
@@ -3905,7 +3905,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     /** Tag of inputs whose text is a length in project units (stored geometry stays in mm). */
-    private static final String LENGTH_INPUT="length-input";
+    static final String LENGTH_INPUT="length-input";
     EditText coordinateInput(String hint, double value) {
         EditText input = new EditText(getContext());
         boolean length=hint!=null&&hint.contains("[mm]");
@@ -3919,7 +3919,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return input;
     }
     /** Shows the bound parameter expression instead of the value, when the field is driven by one. */
-    private EditText bound(EditText field,String key){String expression=project.parameterBindings.get(key);if(expression!=null){textKeyboard(field);field.setText(expression);}return field;}
+    EditText bound(EditText field,String key){String expression=project.parameterBindings.get(key);if(expression!=null){textKeyboard(field);field.setText(expression);}return field;}
     /** Numeric keypad that still accepts simple expressions (digits, separators, + − × ÷, brackets). */
     private static void numericKeyboard(EditText input) {
         input.setKeyListener(android.text.method.DigitsKeyListener.getInstance("0123456789.,-+*/() "));
@@ -3931,10 +3931,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     private static void textKeyboard(EditText input){input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);input.setSingleLine(true);}
     /** Binds (expression with parameter names) or unbinds (plain value) a driven value in the given document. */
-    private static void bindField(CadProject target,String key,EditText field){String text=field.getText().toString().trim();if(UserParameters.isExpression(text))UserParameters.bind(target,key,text);else target.parameterBindings.remove(key);}
+    static void bindField(CadProject target,String key,EditText field){String text=field.getText().toString().trim();if(UserParameters.isExpression(text))UserParameters.bind(target,key,text);else target.parameterBindings.remove(key);}
     /** Length input (project units, expressions allowed) for forms built outside coordinateInput. */
     private EditText lengthInput(double mm) {return coordinateInput("Wartość [mm]",mm);}
-    private void setLengthText(EditText input,double mm){input.setText(LENGTH_INPUT.equals(input.getTag())?Units.input(mm,project.units):String.format(java.util.Locale.US,"%.3f",mm));}
+    void setLengthText(EditText input,double mm){input.setText(LENGTH_INPUT.equals(input.getTag())?Units.input(mm,project.units):String.format(java.util.Locale.US,"%.3f",mm));}
 
     /** Exact value of a field: lengths are returned in mm, other fields as plain numbers. */
     double parseCoordinate(EditText input) {
@@ -5459,7 +5459,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(BodyInstance.is(feature)){int created=BodyInstance.created(feature);Component c=Component.of(project.components,created);
             if(c!=null&&c.instance())showInstanceDialog(c);else{operationMessage="Wystąpienie bez komponentu – usuń je z historii i wstaw ponownie";invalidate();}return;}
         if(BodyTransform.is(feature)){bodyTools.showTransform((int)feature[1],index);return;}
-        if(HoleFeature.is(feature)){holeEditIndex=index;double[] f=feature;holeReference=new double[]{f[2],f[3],f[4],f[5],f[6],f[7],f[8]};mode="Otwór";showHolePanel();return;}
+        if(HoleFeature.is(feature)){holeEditIndex=index;double[] f=feature;holeReference=new double[]{f[2],f[3],f[4],f[5],f[6],f[7],f[8]};mode="Otwór";holeTools.showPanel();return;}
         if(Revolve.is(feature)){String id=project.committedProfileIds.get(index);revolveTools.show(Revolve.profile(id,feature),feature,index,false);return;}
         if(EdgeFillet.is(feature)||EdgeChamfer.is(feature)){edgeTools.showFillet(index);return;}
         String linkedProfileId=index<project.committedProfileIds.size()?project.committedProfileIds.get(index):null;
@@ -6034,100 +6034,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     // ---- Hole on a planar face ----
-    private void beginHoleTool() {
-        if(!prepareSolidTool("Otwór"))return;
-        mode="Otwór";holeEditIndex=-1;holeReference=null;
-        if(selectedFace>=0)holeTap(selectedFace);
-        else {operationMessage="Otwór: dotknij płaskiej ściany w miejscu środka otworu. Położenie można potem wpisać dokładnie.";closePropertyEditor();invalidate();}
-    }
-    private void holeTap(int face) {
-        if(face<0){clearViewportSelection();if(holeEditIndex<0){holeReference=null;}return;}
-        if(!isFacePlanar(face)){operationMessage="Otwór można umieścić tylko na płaskiej ścianie";invalidate();return;}
-        Integer origin=faceFeatures.get(face);if(origin==null){operationMessage="Nie można ustalić operacji, która utworzyła tę ścianę";invalidate();return;}
-        selectedFace=face;
-        double l=Math.sqrt(selectedNormalX*selectedNormalX+selectedNormalY*selectedNormalY+selectedNormalZ*selectedNormalZ);
-        holeReference=new double[]{selectedPointX,selectedPointY,selectedPointZ,selectedNormalX/l,selectedNormalY/l,selectedNormalZ/l,origin};
-        showHolePanel();invalidate();
-    }
-    private void showHolePanel() {
-        if(holeReference==null)return;
-        double[] original=holeEditIndex>=0?project.committedFeatures.get(holeEditIndex):null;
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView info=new android.widget.TextView(getContext());
-        info.setText("Środek leży na wskazanej ścianie. Odległości od krawędzi A i B są zapamiętywane – po zmianie modelu środek zachowuje te odległości. Dotknij innej płaskiej ściany, aby ją zmienić.");form.addView(info);
-        EditText x=labeledCoordinate(form,"Środek X [mm]",holeReference[0]),y=labeledCoordinate(form,"Środek Y [mm]",holeReference[1]),z=labeledCoordinate(form,"Środek Z [mm]",holeReference[2]);
-        // Exact distances from the nearest straight face edge (A) and a perpendicular one (B).
-        HolePlacement placement=null;
-        try{String src=project.importedStep?importedSourceFile().getAbsolutePath():null;placement=HolePlacement.find(new double[]{holeReference[0],holeReference[1],holeReference[2]},new double[]{holeReference[3],holeReference[4],holeReference[5]},
-            NativeCadEngine.edgeMeasurements(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),src));}catch(IllegalArgumentException ignored){placement=null;}
-        double[] holeFaces=new double[0];
-        if(placement!=null)try{String src=project.importedStep?importedSourceFile().getAbsolutePath():null;holeFaces=NativeCadEngine.faceAnalysis(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),src);}catch(IllegalArgumentException ignored){holeFaces=new double[0];}
-        final double[] faceRows=holeFaces;
-        final HolePlacement place=placement;final EditText fromA=place==null?null:labeledCoordinate(form,"Odległość od krawędzi A (najbliższej) [mm]",place.distanceA),
-            fromB=place==null||!place.hasB()?null:labeledCoordinate(form,"Odległość od krawędzi B (prostopadłej) [mm]",place.distanceB);
-        if(place!=null) {
-            final boolean[] syncing={false};
-            Runnable fromEdges=()->{if(syncing[0])return;try{double[] q=place.at(parseCoordinate(fromA),fromB==null?0:parseCoordinate(fromB));syncing[0]=true;setLengthText(x,q[0]);setLengthText(y,q[1]);setLengthText(z,q[2]);}catch(IllegalArgumentException ignored){}finally{syncing[0]=false;}};
-            android.text.TextWatcher watcher=new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int n){}public void onTextChanged(CharSequence s,int a,int b,int c){fromEdges.run();}public void afterTextChanged(android.text.Editable s){}};
-            fromA.addTextChangedListener(watcher);if(fromB!=null)fromB.addTextChangedListener(watcher);
-        }
-        EditText diameter=labeledCoordinate(form,"Średnica [mm]",original!=null?original[9]:6.5);if(holeEditIndex>=0)bound(diameter,"hole:"+holeEditIndex+":d");
-        android.widget.CheckBox through=new android.widget.CheckBox(getContext());through.setText("Na wylot (przez całą bryłę)");through.setChecked(original==null||original[1]==1);form.addView(through);
-        EditText depth=labeledCoordinate(form,"Głębokość [mm]",original!=null&&original[1]==0?original[10]:10);if(holeEditIndex>=0)bound(depth,"hole:"+holeEditIndex+":h");
-        EditText tip=labeledCoordinate(form,"Kąt wierzchołkowy wiertła [°] (0 = płaskie dno)",original!=null&&original[1]==0?original[14]:118);
-        android.widget.TextView headLabel=new android.widget.TextView(getContext());headLabel.setText("Pogłębienie");form.addView(headLabel);
-        android.widget.Spinner head=new android.widget.Spinner(getContext());head.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,new String[]{"Brak (otwór prosty)","Walcowe (pod łeb walcowy)","Stożkowe (pod łeb stożkowy)"}));
-        if(original!=null)head.setSelection((int)original[11]);form.addView(head);
-        EditText headDiameter=labeledCoordinate(form,"Średnica pogłębienia [mm]",original!=null&&original[11]!=0?original[12]:11);
-        EditText headValue=labeledCoordinate(form,"Głębokość pogłębienia [mm] / kąt stożka [°]",original!=null&&original[11]!=0?original[13]:6);
-        Runnable states=()->{fieldVisible(depth,!through.isChecked());fieldVisible(tip,!through.isChecked());boolean headed=head.getSelectedItemPosition()!=0;fieldVisible(headDiameter,headed);fieldVisible(headValue,headed);android.widget.TextView label=fieldLabel(headValue);if(label!=null)label.setText(head.getSelectedItemPosition()==HoleFeature.COUNTERSINK?"Kąt pogłębienia [°]":Units.label("Głębokość pogłębienia [mm]",project.units));};
-        through.setOnCheckedChangeListener((b,c)->states.run());
-        // The second head value is a length for a counterbore and an angle for a countersink.
-        if(original!=null&&original[11]==HoleFeature.COUNTERSINK){headValue.setTag(null);headValue.setText(Units.input(original[13],"mm"));}
-        final int[] shownHead={original!=null?(int)original[11]:0};
-        head.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
-            @Override public void onItemSelected(android.widget.AdapterView<?> parent,View view,int position,long id){
-                if(position!=shownHead[0]) {
-                    shownHead[0]=position;
-                    if(position==HoleFeature.COUNTERSINK){headValue.setTag(null);headValue.setText("90");}
-                    else {headValue.setTag(LENGTH_INPUT);setLengthText(headValue,6);}
-                }
-                states.run();}
-            @Override public void onNothingSelected(android.widget.AdapterView<?> parent){}});
-        states.run();
-        android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
-        final int editIndex=holeEditIndex;final double[] reference=holeReference.clone();
-        java.util.function.Supplier<CadProject> candidate=()-> {
-            int kind=head.getSelectedItemPosition();
-            double[] point={parseCoordinate(x),parseCoordinate(y),parseCoordinate(z)};
-            double headSecond=kind==HoleFeature.COUNTERSINK?Units.parseNumber(headValue.getText().toString()):kind==HoleFeature.COUNTERBORE?parseCoordinate(headValue):0;
-            double[] record=HoleFeature.create(point,new double[]{reference[3],reference[4],reference[5]},(int)reference[6],parseCoordinate(diameter),through.isChecked(),
-                through.isChecked()?0:parseCoordinate(depth),kind,kind==0?0:parseCoordinate(headDiameter),headSecond,through.isChecked()?0:parseCoordinate(tip));
-            CadProject next=copyProject(project);
-            int body=selectedFace>=0?faceBodies.getOrDefault(selectedFace,1):project.selectedBody>0?project.selectedBody:1;
-            if(editIndex>=0)next.committedFeatures.set(editIndex,record);
-            else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
-            int at=editIndex>=0?editIndex:next.committedFeatures.size()-1;
-            // Keep the centre associative with the reference edges (the faces meeting the hole face there).
-            double[] refs=place==null?null:HoleAssociation.references(place,point,faceRows);if(refs!=null)next.holeReferences.put(at,refs);else next.holeReferences.remove(at);
-            bindField(next,"hole:"+at+":d",diameter);if(through.isChecked())next.parameterBindings.remove("hole:"+at+":h");else bindField(next,"hole:"+at+":h",depth);
-            return next;
-        };
-        new PropertyBuilder().setTitle(holeEditIndex>=0?"Edytuj otwór":"Otwór").setView(form)
-            .setNegativeButton("Anuluj",(d,w)->{mode="Wybierz";holeReference=null;holeEditIndex=-1;})
-            .setPositiveButton(holeEditIndex>=0?"Zastosuj":"Utwórz otwór",(d,w)->{
-                try {
-                    String baseline=project.toJson().toString();CadProject next=candidate.get();
-                    double[] record=next.committedFeatures.get(editIndex>=0?editIndex:next.committedFeatures.size()-1);
-                    holeEditIndex=-1;holeReference=null;
-                    commitProjectAsync(next,baseline,(editIndex>=0?"Zaktualizowano: ":"Utworzono: ")+HoleFeature.describe(record));
-                }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-            }).show();
-        attachLivePreview(form,candidate,status,"Podgląd otworu na bryle. Przeciągnij strzałkę głębokości lub Zastosuj.");
-        attachFieldHandle(new double[]{reference[0],reference[1],reference[2]},new double[]{-reference[3],-reference[4],-reference[5]},depth,.1,5000,"Głębokość");
-    }
-
-    // ---- Draft (taper) of planar faces ----
+    /** Hole tool: picking the face and centre, diameter, depth, counterbore / countersink, preview. */
+    final HoleTools holeTools=new HoleTools(this);
     private void beginDraftTool(int editIndex) {
         if(!prepareSolidTool("Pochylenie ścian"))return;
         mode="Pochyl ściany";draftEditIndex=editIndex;draftSelections.clear();
@@ -7602,7 +7510,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(tool.equals("Gwint")){threadTools.begin();return;}
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
         if(tool.equals("Powłoka")){shellTools.begin(-1);return;}
-        if(tool.equals("Otwór")){beginHoleTool();return;}
+        if(tool.equals("Otwór")){holeTools.begin();return;}
         if(tool.equals("Pochyl ściany")){beginDraftTool(-1);return;}
         if(tool.equals("Odsuń ścianę")){beginFaceOffsetTool();return;}
         if(tool.equals("Przejście")){if(prepareProfileTool("Przejście"))showLoftDialog();return;}
