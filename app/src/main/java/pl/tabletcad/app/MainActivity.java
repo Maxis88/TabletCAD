@@ -65,6 +65,8 @@ public final class MainActivity extends Activity {
         if(report!=null){prefs.edit().putLong("seen",System.currentTimeMillis()).apply();
             Toast.makeText(this,"Poprzednie uruchomienie zakończyło się błędem. Raport: Android/data/pl.tabletcad.app/files/"+CrashReport.NAME,Toast.LENGTH_LONG).show();}
         AppOptions.load(this);
+        long installed=0;try{installed=getPackageManager().getPackageInfo(getPackageName(),0).lastUpdateTime;}catch(Exception ignored){}
+        KernelCache.setDisk(new java.io.File(getCacheDir(),"kernel"),version+"@"+installed);
         if(AppOptions.activityTheme()!=0)setTheme(AppOptions.activityTheme());
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setDecorFitsSystemWindows(false);

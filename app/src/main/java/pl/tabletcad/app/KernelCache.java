@@ -46,15 +46,55 @@ public final class KernelCache {
             if(found!=null){hits++;return found.clone();}
             misses++;
         }
+        // Second level: results saved on disk by earlier sessions (opening a project with threads
+        // no longer re-runs every helical cut). Keyed by a SHA-256 of all inputs and the app build.
+        File file=diskFile(key);
+        if(file!=null&&file.isFile()){double[] loaded=read(file);if(loaded!=null&&loaded.length>0){file.setLastModified(System.currentTimeMillis());remember(key,loaded);return loaded.clone();}}
         double[] result=query.run();
         if(result==null||result.length==0||result.length>LIMIT/2)return result;
+        if(file!=null)write(file,result);
+        remember(key,result);
+        return result;
+    }
+    private static void remember(Key key,double[] result) {
         synchronized(MEMO) {
             double[] previous=MEMO.put(key,result.clone());
             if(previous!=null)stored-=previous.length;stored+=result.length;
             Iterator<Map.Entry<Key,double[]>> oldest=MEMO.entrySet().iterator();
             while(stored>LIMIT&&oldest.hasNext()){Map.Entry<Key,double[]> e=oldest.next();stored-=e.getValue().length;oldest.remove();}
         }
-        return result;
+    }
+    private static volatile File disk;private static volatile String build="";
+    /** Enables the disk level (app cache folder); build identifies the kernel version. */
+    public static void setDisk(File folder,String buildId){disk=folder;build=buildId==null?"":buildId;if(folder!=null)folder.mkdirs();}
+    static final long DISK_LIMIT=300L*1024*1024;
+    private static File diskFile(Key k) {
+        File folder=disk;if(folder==null)return null;
+        try {
+            java.security.MessageDigest sha=java.security.MessageDigest.getInstance("SHA-256");java.nio.ByteBuffer b=java.nio.ByteBuffer.allocate(8);
+            java.util.function.DoubleConsumer put=v->{b.clear();b.putLong(Double.doubleToLongBits(v));sha.update(b.array());};
+            sha.update(build.getBytes(java.nio.charset.StandardCharsets.UTF_8));put.accept(k.mode);put.accept(k.w);put.accept(k.h);put.accept(k.d);put.accept(k.r);
+            put.accept(k.base==null?-1:k.base.length);if(k.base!=null)for(double v:k.base)put.accept(v);
+            put.accept(k.features==null?-1:k.features.length);if(k.features!=null)for(double v:k.features)put.accept(v);
+            if(k.source!=null){sha.update(k.source.getBytes(java.nio.charset.StandardCharsets.UTF_8));put.accept(k.sourceLength);put.accept(k.sourceTime);}
+            StringBuilder name=new StringBuilder();for(byte x:sha.digest())name.append(String.format("%02x",x));return new File(folder,name+".k");
+        }catch(Exception error){return null;}
+    }
+    private static double[] read(File f) {
+        try(java.io.DataInputStream in=new java.io.DataInputStream(new java.io.BufferedInputStream(new java.io.FileInputStream(f),1<<16))) {
+            int n=in.readInt();if(n<=0||n>LIMIT)return null;double[] r=new double[n];for(int i=0;i<n;i++)r[i]=in.readDouble();return r;
+        }catch(Exception error){f.delete();return null;}
+    }
+    private static void write(File f,double[] values) {
+        File folder=f.getParentFile();File temp=new File(folder,f.getName()+".tmp");
+        try(java.io.DataOutputStream out=new java.io.DataOutputStream(new java.io.BufferedOutputStream(new java.io.FileOutputStream(temp),1<<16))) {
+            out.writeInt(values.length);for(double v:values)out.writeDouble(v);
+        }catch(Exception error){temp.delete();return;}
+        if(!temp.renameTo(f)){temp.delete();return;}
+        // Oldest results go first when the folder exceeds its limit.
+        File[] all=folder.listFiles((d,n)->n.endsWith(".k"));if(all==null)return;long total=0;for(File x:all)total+=x.length();
+        if(total<=DISK_LIMIT)return;Arrays.sort(all,(a,b)->Long.compare(a.lastModified(),b.lastModified()));
+        for(File x:all){if(total<=DISK_LIMIT*.8)break;total-=x.length();x.delete();}
     }
     public static void clear(){synchronized(MEMO){MEMO.clear();stored=0;}}
     public static long hits(){synchronized(MEMO){return hits;}}
