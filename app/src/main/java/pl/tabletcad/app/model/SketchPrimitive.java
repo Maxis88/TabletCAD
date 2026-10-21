@@ -108,6 +108,8 @@ public final class SketchPrimitive {
     /** Same kind of two-point element at new points (an ellipse keeps its semi-minor axis). */
     public SketchPrimitive withPoints(double ax,double ay,double bx,double by,double[] lock) {
         if(isPoint())return point(id,ax,ay);
+        // A text is never stretched by a handle: it moves with whichever corner was dragged.
+        if(isText()){double dx=ax!=x1||ay!=y1?ax-x1:bx-x2,dy=ax!=x1||ay!=y1?ay-y1:by-y2;return pl.tabletcad.app.SketchTransform.move(this,dx,dy);}
         if(isEllipse())return ellipse(id,ax,ay,bx,by,minor).withConstruction(construction);
         return new SketchPrimitive(id,type,ax,ay,bx,by,lock);
     }

@@ -56,6 +56,13 @@ public final class TextKernelProbe {
         int at=c.sketch.indexOf(flat);c.sketch.set(at,SketchText.with(flat,"II",flat.textParams(),FONT));
         close("engraving follows the edited text",volume(c),120000-2*.2*25,1e-6);
         c.sketch.set(at,SketchText.moved(c.sketch.get(at),5,5));close("moved text keeps its volume",volume(c),120000-2*.2*25,1e-6);
+        // Sketch transforms keep the text editable.
+        SketchPrimitive mv=SketchTransform.move(flat,3,4);close("moved text anchor X",mv.textParams()[0],13,1e-9);check(mv.text().equals("OIL")&&Math.abs(mv.x1-13)<1e-9,"moved text keeps content and outline");
+        SketchPrimitive rt=SketchTransform.rotate(flat,90,10,20);close("rotated text angle",rt.textParams()[4],90,1e-9);
+        SketchPrimitive rebuilt=SketchText.with(rt,"OIL",rt.textParams(),FONT);double dev=0;for(int i=0;i<rt.textLoops().length;i++)dev=Math.max(dev,Math.abs(rt.textLoops()[i]-rebuilt.textLoops()[i]));check(dev<1e-9,"rotated outline equals the text rebuilt at the new angle");
+        SketchPrimitive sc=SketchTransform.scale(flat,2,10,20);close("scaled letter height",sc.textParams()[2],10,1e-9);
+        check(SketchPattern.transform(flat,"copy",0,0,0,0,30).isText(),"pattern copy of a text is a text");
+        boolean mirrored=false;try{SketchMirror.copy(flat,"m",0,0,0,1);}catch(IllegalArgumentException x){mirrored=true;}check(mirrored,"mirroring a text is refused with a reason");
         // Circular engraving.
         CadProject r=plate();r.sketch.add(arc);add(r,arc,"cut",1);double v=volume(r);check(v<120000&&v>120000-letters*1.2,"text along a circle is engraved ("+(120000-v)+" mm³)");
         // Letters floating beside the plate do not join silently.

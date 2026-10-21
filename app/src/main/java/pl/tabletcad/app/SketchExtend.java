@@ -40,7 +40,7 @@ public final class SketchExtend {
     static double nearest(double px,double py,double ux,double uy,String self,List<SketchPrimitive> sketch) {
         double best=Double.POSITIVE_INFINITY;
         for(SketchPrimitive p:sketch) {
-            if(p.id.equals(self))continue;
+            if(p.id.equals(self)||p.isText())continue;
             double t=hit(p,px,py,ux,uy);if(t<best)best=t;
         }
         return Double.isInfinite(best)?Double.NaN:best;

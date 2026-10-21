@@ -37,6 +37,8 @@ public final class SketchSnapper {
         points.add(new double[]{0,0});
         for(SketchPrimitive p:geometry) {
             if(p.id.equals(excluded)) continue;
+            // Text: only its anchor (start of the baseline or centre of the circle) attracts.
+            if(p.isText()){double[] t=p.textParams();points.add(new double[]{t[0],t[1]});continue;}
             if(SketchSpline.is(p)){for(int i=0;i<p.vertices.length;i+=2)points.add(new double[]{p.vertices[i],p.vertices[i+1]});continue;}
             if(p.type.equals("Okrąg")) {
                 points.add(new double[]{p.x1,p.y1});points.add(new double[]{p.x2,p.y2});

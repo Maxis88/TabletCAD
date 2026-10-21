@@ -13,6 +13,7 @@ public final class SketchMirror {
         return new double[]{px,py};
     }
     public static SketchPrimitive copy(SketchPrimitive source,String id,double ax,double ay,double bx,double by) {
+        if(source.isText())throw new IllegalArgumentException("Napisu nie odbija się lustrzanie (litery byłyby odwrócone) – wstaw drugi napis albo obróć go");
         return copyGeometry(source,id,ax,ay,bx,by).withConstruction(source.construction);
     }
     private static SketchPrimitive copyGeometry(SketchPrimitive source,String id,double ax,double ay,double bx,double by) {

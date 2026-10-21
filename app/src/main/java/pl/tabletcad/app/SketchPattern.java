@@ -13,6 +13,7 @@ public final class SketchPattern {
 
     /** Rigid transform: rotate by angle (radians) about (cx,cy), then translate by (dx,dy). */
     public static SketchPrimitive transform(SketchPrimitive s,String id,double cx,double cy,double angle,double dx,double dy) {
+        if(s.isText()){SketchPrimitive t=SketchTransform.text(s,cx,cy,angle,1,dx,dy);return SketchPrimitive.text(id,t.text(),t.textParams(),t.textLoops());}
         double c=Math.cos(angle),n=Math.sin(angle);
         java.util.function.BiFunction<Double,Double,double[]> map=(x,y)->{
             double px=cx+(x-cx)*c-(y-cy)*n+dx,py=cy+(x-cx)*n+(y-cy)*c+dy;

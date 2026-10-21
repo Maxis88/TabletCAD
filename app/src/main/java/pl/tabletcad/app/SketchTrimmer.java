@@ -80,7 +80,7 @@ public final class SketchTrimmer {
         if(selected<0)throw new IllegalArgumentException("Wybierz odcinek do przycięcia");
         double[] edge=outline.get(selected);List<Double> cuts=new ArrayList<>();cuts.add(0.0);cuts.add(1.0);
         for(SketchPrimitive cutter:geometry) {
-            if(cutter.id.equals(target.id))continue;
+            if(cutter.id.equals(target.id)||cutter.isText())continue;
             if(cutter.curves!=null)for(double[] p:SketchCurves.lineHits(edge,cutter.curves))cut(cuts,parameter(edge,p[0],p[1]));
             else if(cutter.type.equals("Okrąg")) circleIntersections(edge,cutter,cuts);
             else if(cutter.isEllipse()) ellipseIntersections(edge,cutter,cuts);
