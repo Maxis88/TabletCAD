@@ -14,7 +14,7 @@ public final class ToolbarCatalog {
         return sketch?new Group[]{
             new Group("Edytuj","Edytuj","Edytuj"),
             new Group("Wyci\u0105gnij","Wyci\u0105gnij","Wyci\u0105gnij"),
-            new Group("Rysuj","Polilinia","Linia","Polilinia","Prostokąt","Kwadrat","Prostokąt od środka","Wielokąt","Okrąg","Okrąg 3 pkt","Elipsa","Szczelina","Łuk","Splajn","Punkt"),
+            new Group("Rysuj","Polilinia","Linia","Polilinia","Prostokąt","Kwadrat","Prostokąt od środka","Wielokąt","Okrąg","Okrąg 3 pkt","Elipsa","Szczelina","Łuk","Splajn","Punkt","Napis"),
             new Group("Geometria","Geometria","Geometria","Odsunięcie","Rzutuj","Połącz kontur","Powiązania profilu"),
             new Group("Przekształć","Lustro","Położenie","Przesuń szkic","Obróć szkic","Skaluj szkic","Lustro","Szyk liniowy","Szyk kołowy","Szyk po ścieżce","Edytuj szyk"),
             new Group("Przytnij","Przytnij","Przytnij","Przedłuż","Zaokrąglij szkic"),

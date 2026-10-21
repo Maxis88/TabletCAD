@@ -10,10 +10,15 @@ public final class SemanticIcons {
         else if(id.equals("Bryła z liniami niewidocznymi"))id="Krawędzie";
         if(drawConstruction(canvas,id,x,y,scale,color)||drawView(canvas,id,x,y,scale,color)||drawSolidCopy(canvas,id,x,y,scale,color))return true;
         if(id.equals("Zmierz kąt"))id="Kąt";
-        if(!java.util.Arrays.asList("Splajn","Wielokąt","Kwadrat","Prostokąt od środka","Zaokrąglij szkic","Wymiary","Wyciągnij","Wytnij","Wycięcie","Połączenie","Dodanie","Nowa bryła","Część wspólna","Gwint","Kąt").contains(id))return false;
+        if(!java.util.Arrays.asList("Napis","Splajn","Wielokąt","Kwadrat","Prostokąt od środka","Zaokrąglij szkic","Wymiary","Wyciągnij","Wytnij","Wycięcie","Połączenie","Dodanie","Nowa bryła","Część wspólna","Gwint","Kąt").contains(id))return false;
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setStrokeWidth(1.7f);p.setStyle(Paint.Style.STROKE);p.setStrokeJoin(Paint.Join.ROUND);p.setStrokeCap(Paint.Cap.ROUND);
         canvas.save();canvas.translate(x,y);canvas.scale(scale,scale);
-        if(id.equals("Splajn")) {
+        if(id.equals("Napis")) {
+            // Letters "AT" standing on a curved (circular) baseline.
+            canvas.drawLine(-11,7,-5.5f,-10,p);canvas.drawLine(-5.5f,-10,0,7,p);canvas.drawLine(-8.6f,0,-2.4f,0,p);
+            canvas.drawLine(3,-10,13,-10,p);canvas.drawLine(8,-10,8,7,p);
+            p.setStrokeWidth(1.1f);p.setPathEffect(new DashPathEffect(new float[]{2f,2f},0));canvas.drawArc(new RectF(-16,8,16,22),200,140,false,p);p.setPathEffect(null);
+        } else if(id.equals("Splajn")) {
             Path path=new Path();path.moveTo(-12,8);path.cubicTo(-8,-15,6,15,12,-8);canvas.drawPath(path,p);
             for(float[] point:new float[][]{{-12,8},{0,0},{12,-8}})canvas.drawCircle(point[0],point[1],2,p);
         } else if(id.equals("Wielokąt")) {

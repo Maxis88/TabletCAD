@@ -53,3 +53,16 @@
 - Czasy etapów zapisywane w logcat (TabletCAD-perf); na Honorze logcat jest szyfrowany.
 - Auto-wyciągnięcie: Połącz, gdy narzędzie tylko częściowo zachodzi na materiał (AutoExtrusionKernelProbe).
 - Wyciągnij przy zaznaczonej ścianie = odsunięcie ściany. Kontrast cieniowania (ShadeModel). Małe okienka bez opisów.
+
+## 1.0.0-rc5
+
+- **Napis** (Szkic → Rysuj → Napis): treść, wysokość liter, układ płasko / po okręgu (na zewnątrz,
+  wewnątrz), kąt, promień, 4 czcionki systemowe (offline), odstęp liter. Kontury liter z wyspami
+  (O, A, B…) — rekord jądra -28. Edycja: dotknięcie napisu w trybie Edytuj.
+- **Wyciągnięcie napisu**: Połącz (wypukły), Wytnij (grawer), Nowa bryła, Część wspólna; głębokość
+  z suwakiem, podgląd, kierunek, symetria. Operacja śledzi edycję napisu w szkicu.
+  Ograniczenie: napis nie może być pierwszą bryłą pustego projektu (najpierw np. płytka).
+- **Gwinty**: OCCT po cichu pomijał wycięcie gwintu na pełną długość dla niektórych skoków (M3/M4)
+  — ponowienie z obróconym początkiem gwintu i weryfikacja usuniętej objętości (ThreadVariantsProbe).
+- **Wiązanie kątowe** ścian płaskich (MateKernelProbe).
+- Host: 46 zestawów PASS. Tablet: NIEPRZEPROWADZONE (AndroidTextProbe — czcionki urządzenia — tylko na tablecie).

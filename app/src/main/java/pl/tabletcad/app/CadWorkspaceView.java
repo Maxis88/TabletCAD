@@ -705,6 +705,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchOrbit)return true;
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&fingerNavigates()){operationMessage="Rysik rysuje, palec przesuwa widok. Palec też może rysować: panel szkicu → Palec rysuje";invalidate();return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Punkt")){pointTap(e.getX(),e.getY());return true;}
+                    if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Napis")){double[] at=snappedSketchPoint(e.getX(),e.getY(),null,null,null);snapMarker=null;showTextEditor(null,at[0],at[1]);return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&(sketchTool.equals("Okrąg 3 pkt")||sketchTool.equals("Szczelina")||sketchTool.equals("Elipsa"))){threePointTap(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Łuk")){arcTap(e.getX(),e.getY());return true;}
                     if(filletSelectionChanged!=null) {
@@ -1073,7 +1074,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             try{threePointPreview=SketchShapes.threePoint("preview",sketchTool,project.threePointDraft.get(0),project.threePointDraft.get(1),snappedSketchPoint(event.getX(),event.getY(),null,null,null));}
             catch(IllegalArgumentException error){threePointPreview=null;}invalidate();
         }
-        if (mode.equals("Szkic") && !SketchShapes.threePointTool(sketchTool) && !(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn")||sketchTool.equals("Punkt")) && sketchPlaneChosen && !fingerNavigates()
+        if (mode.equals("Szkic") && !SketchShapes.threePointTool(sketchTool) && !(sketchTool.equals("Polilinia")||sketchTool.equals("Splajn")||sketchTool.equals("Punkt")||sketchTool.equals("Napis")) && sketchPlaneChosen && !fingerNavigates()
                 && (isInsideViewport(event.getX(), event.getY()) || sketching)) {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 if(event.getY()<dp(152)) return true;
@@ -2313,7 +2314,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         paint.setColor(selected ? Color.rgb(245, 145, 20) : Color.rgb(30, 105, 210));
         if(entity.construction) paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(8),dp(5)},0));
         if(ghostDrawing){paint.setColor(Color.rgb(46,160,90));paint.setStrokeWidth(dp(2.2f));paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(6),dp(4)},0));}
-        if(SketchSpline.is(entity)) {double[] points=SketchSpline.sample(entity.vertices,24);for(int i=0;i<points.length-2;i+=2)drawSketchSegment(canvas,points[i],points[i+1],points[i+2],points[i+3]);}
+        if(entity.isText()) {for(double[] l:SketchText.loops(entity.textLoops())){int n=l.length;for(int i=0;i<n;i+=2){int j=(i+2)%n;drawSketchSegment(canvas,l[i],l[i+1],l[j],l[j+1]);}}}
+        else if(SketchSpline.is(entity)) {double[] points=SketchSpline.sample(entity.vertices,24);for(int i=0;i<points.length-2;i+=2)drawSketchSegment(canvas,points[i],points[i+1],points[i+2],points[i+3]);}
         else if(entity.curves!=null)drawCurves(canvas,entity.curves);
         else if(entity.vertices!=null) {
             for(int i=0;i<entity.vertices.length;i+=2) {
@@ -3292,7 +3294,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
             PointF second = projectSketchPoint(entity.x2, entity.y2);
             float x1 = first.x, y1 = first.y, x2 = second.x, y2 = second.y;
             double distance;
-            if(SketchSpline.is(entity)) {
+            if(entity.isText()) {
+                // Anywhere over the text (its bounding box) picks it.
+                distance=sx>=Math.min(entity.x1,entity.x2)&&sx<=Math.max(entity.x1,entity.x2)&&sy>=Math.min(entity.y1,entity.y2)&&sy<=Math.max(entity.y1,entity.y2)?0:Double.POSITIVE_INFINITY;
+            } else if(SketchSpline.is(entity)) {
                 double[] points=SketchSpline.sample(entity.vertices,24);distance=Double.POSITIVE_INFINITY;
                 for(int i=0;i<points.length-2;i+=2)distance=Math.min(distance,sketchSegmentDistance(sx,sy,points[i],points[i+1],points[i+2],points[i+3]));
             } else if(entity.curves!=null) {
@@ -3344,6 +3349,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private void showSketchEntityEditor(SketchPrimitive entity) {
+        if(entity.isText()){showTextEditor(entity,entity.textParams()[0],entity.textParams()[1]);return;}
         if(entity.isPoint()){showSketchPosition(entity.id,0,null,0);return;}
         if(entity.isEllipse()){showEllipseEditor(entity);return;}
         if(entity.curves!=null){showCurveEditor(entity);return;}
@@ -3879,6 +3885,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     private void showSketchDimensionEditor(SketchPrimitive entity) {
+        if(entity.isText()){showTextEditor(entity,entity.textParams()[0],entity.textParams()[1]);return;}
         if(entity.isPoint()){showSketchPosition(entity.id,0,null,0);return;}
         if(entity.curves!=null){showCurveEditor(entity);return;}
         if(entity.vertices!=null){showSketchEntityEditor(entity);return;}
@@ -5842,8 +5849,73 @@ if (isInsideViewport(e.getX(), e.getY())) {
         postDelayed(preview,100);
     }
 
+    private AndroidTextFont textFont;
+    private SketchText.Font textFont(){if(textFont==null)textFont=new AndroidTextFont();return textFont;}
+    /** New text at (x, y) or edit of an existing one: content, height, flat or along a circle, font. */
+    private void showTextEditor(SketchPrimitive existing,double x,double y) {
+        double[] p=existing!=null?existing.textParams():SketchText.params(x,y,5,SketchText.FLAT,0,20,0,0);
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        EditText content=new EditText(getContext());content.setSingleLine(true);content.setHint("Treść napisu");content.setText(existing!=null?existing.text():"");form.addView(content);
+        android.widget.Spinner layout=new android.widget.Spinner(getContext());layout.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,SketchText.LAYOUTS));layout.setSelection((int)p[3]);form.addView(layout);
+        EditText height=labeledCoordinate(form,"Wysokość liter [mm]",p[2]);slider(form,height,1,50,.5);
+        EditText radius=labeledCoordinate(form,"Promień okręgu [mm]",p[5]);
+        EditText angle=labeledCoordinate(form,"Kąt [°] (płasko: obrót; okrąg: środek napisu)",p[4]);slider(form,angle,-180,180,1);
+        android.widget.Spinner font=new android.widget.Spinner(getContext());font.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,SketchText.FONTS));font.setSelection((int)p[6]);form.addView(font);
+        EditText spacing=labeledCoordinate(form,"Dodatkowy odstęp liter [mm]",p[7]);
+        EditText ax=labeledCoordinate(form,"Punkt zaczepienia X [mm] (okrąg: środek)",p[0]),ay=labeledCoordinate(form,"Punkt zaczepienia Y [mm]",p[1]);
+        Runnable visibility=()->fieldVisible(radius,layout.getSelectedItemPosition()!=SketchText.FLAT);visibility.run();
+        layout.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onItemSelected(android.widget.AdapterView<?> a,View v,int i,long l){visibility.run();}public void onNothingSelected(android.widget.AdapterView<?> a){}});
+        PropertyBuilder builder=new PropertyBuilder().setTitle(existing==null?"Napis":"Napis · edycja").setView(form).setNegativeButton("Anuluj",null)
+            .setPositiveButton(existing==null?"Wstaw":"Zastosuj",(d,w)->{
+                try {
+                    double[] params=SketchText.params(parseCoordinate(ax),parseCoordinate(ay),parseCoordinate(height),layout.getSelectedItemPosition(),parseCoordinate(angle),parseCoordinate(radius),font.getSelectedItemPosition(),parseCoordinate(spacing));
+                    String value=content.getText().toString();
+                    if(existing==null) {
+                        SketchPrimitive t=SketchText.create(UUID.randomUUID().toString(),value,params,textFont());
+                        checkpoint();preserveExtrudedBase();commitActiveFeature();project.sketch.add(t);selectedSketchId=t.id;projectRepository.save(project);
+                        operationMessage="Napis „"+value+"” · "+SketchText.loopCount(t.textLoops())+" konturów. Wyciągnij: dodaj na ścianie albo wytnij (grawer).";
+                    } else {
+                        SketchPrimitive t=SketchText.with(existing,value,params,textFont());replaceSketchEntity(existing,t,true);selectedSketchId=t.id;
+                        operationMessage="Zmieniono napis „"+value+"”";
+                    }
+                    invalidate();
+                }catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+            });
+        if(existing!=null)builder.setNeutralButton("Usuń element",(d,w)->deleteSketchEntity(existing.id));
+        builder.show();
+    }
+    /** Embossing or engraving of a sketch text (or letters as a new body): depth, operation, direction. */
+    private void showTextExtrusion(SketchPrimitive text) {
+        if(!project.hasSolid()){operationMessage="Napis wyciąga się na bryle (wypukły lub grawerowany) albo jako nową bryłę obok niej – najpierw utwórz bryłę, np. płytkę pod napis";invalidate();return;}
+        if(inSketch()&&SketchTransactions.active(project)){finishSketchWork(()->showTextExtrusion(text));return;}
+        mode="Wybierz";
+        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
+        String[] labels={"Połącz (wypukły)","Wytnij (grawer)","Nowa bryła","Część wspólna"},ops={"join","cut","new","common"};
+        android.widget.Spinner operation=new android.widget.Spinner(getContext());operation.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,labels));form.addView(operation);
+        EditText depth=labeledCoordinate(form,"Głębokość [mm]",1);slider(form,depth,.1,30,.1);
+        android.widget.CheckBox reverse=new android.widget.CheckBox(getContext());reverse.setText("Odwróć kierunek");form.addView(reverse);
+        android.widget.CheckBox symmetric=new android.widget.CheckBox(getContext());symmetric.setText("Symetrycznie");form.addView(symmetric);
+        // Engraving goes into the face the text was drawn on: the default direction is reversed for a cut.
+        operation.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onItemSelected(android.widget.AdapterView<?> a,View v,int i,long l){reverse.setChecked(ops[i].equals("cut"));}public void onNothingSelected(android.widget.AdapterView<?> a){}});
+        final int target=project.selectedBody>0?project.selectedBody:1;
+        android.content.DialogInterface.OnClickListener apply=(d,w)->{
+            try {
+                String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
+                SketchPrimitive t=null;for(SketchPrimitive e:next.sketch)if(e.id.equals(text.id))t=e;if(t==null)throw new IllegalArgumentException("Napis nie jest dostępny");
+                String op=ops[operation.getSelectedItemPosition()];
+                double[] feature=SketchText.feature(next,t,op,parseCoordinate(depth),reverse.isChecked(),symmetric.isChecked());
+                next.committedFeatures.add(feature);next.committedProfileIds.add(SketchText.REF+next.sketchId+"/"+t.id);
+                next.featureBodyTargets.add(op.equals("new")?0:target);next.featureBodyOutputs.add(op.equals("new")?BodyGraph.allocate(next):target);
+                commitProjectAsync(next,baseline,SketchText.describe(feature));
+            }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
+        };
+        new PropertyBuilder().setTitle("Wyciągnij napis „"+text.text()+"”").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",apply).show();
+        capturedPreview(form,apply,"Podgląd napisu.");
+    }
     private void extrudeSketchProfile() {
         if(project.importedMeshSource!=null){operationMessage="Wyciąganie wymaga bryły B-Rep albo pustego dokumentu";invalidate();return;}
+        for(SketchPrimitive p:project.sketch)if(p.id.equals(selectedSketchId)&&p.isText()){showTextExtrusion(p);return;}
+        {SketchPrimitive onlyText=null;int closed=0;for(SketchPrimitive p:project.sketch)if(p.closedProfile()){closed++;if(p.isText())onlyText=p;}if(closed==1&&onlyText!=null){showTextExtrusion(onlyText);return;}}
         extrusionSelections.clear();for(SketchPrimitive p:project.sketch)if(p.id.equals(selectedSketchId)&&p.closedProfile())extrusionSelections.add(p.id);
         boolean any=false;for(SketchPrimitive p:project.sketch)if(p.closedProfile())any=true;
         if(!any){operationMessage="Narysuj zamknięte profile zwykłej geometrii";invalidate();return;}
@@ -5859,7 +5931,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private boolean extrusionAutoSelected;private String lastExtrusionProfile;
     private void toggleExtrusionProfile(float x,float y) {
         double[] point=screenToSketch(x,y);SketchPrimitive chosen=null;double area=Double.POSITIVE_INFINITY;boolean overConstruction=false;
-        for(SketchPrimitive p:project.sketch)if(p.closedGeometry()) {
+        for(SketchPrimitive p:project.sketch)if(p.isText()&&point[0]>=p.x1&&point[0]<=p.x2&&point[1]>=p.y1&&point[1]<=p.y2){showTextExtrusion(p);return;}
+        for(SketchPrimitive p:project.sketch)if(p.closedGeometry()&&!p.isText()) {
             if(p.isEllipse()) {
                 double a=p.major(),ux=(p.x2-p.x1)/a,uy=(p.y2-p.y1)/a,dx=point[0]-p.x1,dy=point[1]-p.y1,s=(dx*ux+dy*uy)/a,t=(-dx*uy+dy*ux)/p.minor;
                 boolean in=s*s+t*t<1;double size=Math.PI*a*p.minor;
@@ -7926,6 +7999,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         writer.write("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1015\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n");
         for (SketchPrimitive primitive : project.sketch) {
             if(primitive.isPoint()){writer.write("0\nPOINT\n8\nSKETCH\n10\n"+primitive.x1+"\n20\n"+primitive.y1+"\n30\n0\n");continue;}
+            if(primitive.isText()){for(double[] l:SketchText.loops(primitive.textLoops())){writer.write("0\nLWPOLYLINE\n8\nSKETCH\n100\nAcDbEntity\n100\nAcDbPolyline\n90\n"+l.length/2+"\n70\n1\n");for(int i=0;i<l.length;i+=2)writer.write("10\n"+l[i]+"\n20\n"+l[i+1]+"\n");}continue;}
             if(SketchSpline.is(primitive))SketchSpline.writeDxf(writer,primitive.vertices);
             else if(primitive.curves!=null)SketchCurves.writeDxf(writer,primitive.curves);
             else if(primitive.vertices!=null) {
@@ -8359,6 +8433,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 chooseSketchPlane("XY");sketchTool=tool;mode="Szkic";
             } else operationMessage="Najpierw wybierz płaszczyznę na pasku (XY, XZ, YZ) albo dotknij płaskiej ściany";
             post(this::showDrawingOptions);
+            if(tool.equals("Napis"))operationMessage="Napis: dotknij miejsca początku napisu (po okręgu – środka okręgu). Istniejący napis: dotknij go w trybie Edytuj.";
             if(tool.equals("Łuk"))operationMessage="Łuk: dotknij początku, końca, a następnie punktu pośredniego łuku.";
             if(tool.equals("Okrąg 3 pkt")||tool.equals("Szczelina")||tool.equals("Elipsa"))operationMessage=SketchShapes.instruction(tool,project.threePointDraft.size());
         } else if (tool.equals("Edytuj")) {

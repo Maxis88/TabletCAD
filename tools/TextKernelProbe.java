@@ -59,8 +59,12 @@ public final class TextKernelProbe {
         // Circular engraving.
         CadProject r=plate();r.sketch.add(arc);add(r,arc,"cut",1);double v=volume(r);check(v<120000&&v>120000-letters*1.2,"text along a circle is engraved ("+(120000-v)+" mm³)");
         // Letters floating beside the plate do not join silently.
-        CadProject f=plate();SketchPrimitive far=SketchText.create("t","II",SketchText.params(95,20,5,0,0,0,0,2),FONT);f.sketch.add(far);add(f,far,"join",2);
+        CadProject f=plate();SketchPrimitive far=SketchText.create("t","II",SketchText.params(150,20,5,0,0,0,0,2),FONT);f.sketch.add(far);add(f,far,"join",2);
         String why=failure(f);check(why!=null&&why.contains("nie styka"),"letters off the body are reported: "+why);
+        // Free-standing letters as a new body beside the plate.
+        CadProject e=plate();SketchPrimitive free=SketchText.create("t","OIL",SketchText.params(150,20,5,0,0,0,0,0),FONT);e.sketch.add(free);
+        e.committedFeatures.add(SketchText.feature(e,free,"new",3,false,false));e.committedProfileIds.add(SketchText.REF+e.sketchId+"/"+free.id);e.featureBodyTargets.add(0);e.featureBodyOutputs.add(BodyGraph.allocate(e));
+        close("letters as a new body beside the plate",volume(e),120000+letters*3,1e-6);
         System.out.println("PASS TextKernelProbe: "+checks+" checks");
     }
 }
