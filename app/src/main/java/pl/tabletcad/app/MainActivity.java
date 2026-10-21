@@ -24,11 +24,42 @@ public final class MainActivity extends Activity {
     private String pendingExportFormat;
     private String pendingImportFormat = "step";
 
+    /**
+     * Diagnostics: when the file "export-projects" exists in the app's external files folder (put
+     * there over USB), the project library is copied next to it into "projects-copy" and the
+     * trigger removed. The library itself is never changed.
+     */
+    private void exportProjectsForDiagnosis() {
+        try {
+            java.io.File ext=getExternalFilesDir(null);if(ext==null)return;java.io.File trigger=new java.io.File(ext,"export-projects");
+            android.content.SharedPreferences prefs=getSharedPreferences("diagnostics",MODE_PRIVATE);long done=prefs.getLong("exported",0);
+            // The previous run ended by "not responding" (or a crash): the library is attached to the report.
+            String reason=null;long when=0;
+            java.util.List<android.app.ApplicationExitInfo> exits=((android.app.ActivityManager)getSystemService(ACTIVITY_SERVICE)).getHistoricalProcessExitReasons(getPackageName(),0,8);
+            for(android.app.ApplicationExitInfo e:exits){int r=e.getReason();if(reason==null&&((r==android.app.ApplicationExitInfo.REASON_ANR||r==android.app.ApplicationExitInfo.REASON_CRASH||r==android.app.ApplicationExitInfo.REASON_CRASH_NATIVE)&&e.getTimestamp()>done)){reason=e.getDescription();when=e.getTimestamp();}}
+            if(!trigger.exists()&&reason==null)return;
+            java.io.File library=new java.io.File(getFilesDir(),"projects");
+            copyTree(library,new java.io.File(ext,"projects-copy"));
+            java.io.File report=new java.io.File(ext,CrashReport.NAME);
+            if(!report.exists()||trigger.exists()) {
+                StringBuilder b=new StringBuilder("TabletCAD diagnostics: previous exit "+reason+" at "+new java.util.Date(when)+"\n");
+                java.io.File[] files=library.listFiles();if(files!=null)for(java.io.File f:files)if(f.isFile()&&f.getName().endsWith(".tcad")&&f.length()<8_000_000)
+                    b.append("=== ").append(f.getName()).append(' ').append(f.length()).append('\n').append(android.util.Base64.encodeToString(java.nio.file.Files.readAllBytes(f.toPath()),android.util.Base64.NO_WRAP)).append('\n');
+                java.nio.file.Files.write(report.toPath(),b.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            trigger.delete();prefs.edit().putLong("exported",Math.max(when,System.currentTimeMillis())).apply();
+        }catch(java.io.IOException|RuntimeException ignored){}
+    }
+    private static void copyTree(java.io.File from,java.io.File to)throws java.io.IOException {
+        if(from.isDirectory()){if(!to.isDirectory()&&!to.mkdirs())throw new java.io.IOException("mkdir "+to);java.io.File[] list=from.listFiles();if(list!=null)for(java.io.File f:list)copyTree(f,new java.io.File(to,f.getName()));return;}
+        java.nio.file.Files.copy(from.toPath(),to.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         String version="?";try{version=getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception ignored){}
         CrashReport.install(this,version);
+        exportProjectsForDiagnosis();
         android.content.SharedPreferences prefs=getSharedPreferences("crash",MODE_PRIVATE);
         String report=CrashReport.pending(this,prefs.getLong("seen",0));
         if(report!=null){prefs.edit().putLong("seen",System.currentTimeMillis()).apply();

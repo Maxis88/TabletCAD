@@ -5400,6 +5400,27 @@ if (isInsideViewport(e.getX(), e.getY())) {
             });
         },"TabletCAD-prepare").start();
     }
+    /**
+     * Evaluates a document that is about to be shown (opening a project) on a worker thread first,
+     * so the synchronous activation that follows on the UI thread finds the model in KernelCache:
+     * a large project no longer freezes the screen (Android reported "not responding").
+     */
+    void warmThen(CadProject candidate,String label,Runnable then) {
+        if(rebuilding||synchronousCommits||!isAttachedToWindow()||candidate.importedMeshSource!=null||!candidate.hasSolid()){then.run();return;}
+        double[] base,features;double ww,hh,dd,radius;
+        CadProject keep=project;double kw=modelWidth,kh=modelHeight,kd=modelDepth;
+        try{project=candidate;modelWidth=ww=candidate.width;modelHeight=hh=candidate.height;modelDepth=dd=candidate.depth;radius=candidate.importedStep?0:candidate.filletRadius;
+            CadProject evaluated=SketchTransactions.active(candidate)?SketchTransactions.baseline(candidate):candidate;project=evaluated;base=evaluationBase();features=kernelFeatures();}
+        catch(RuntimeException error){then.run();return;}
+        finally{project=keep;modelWidth=kw;modelHeight=kh;modelDepth=kd;}
+        final String source=candidate.importedStep?importedSourceFile().getAbsolutePath():null;
+        final double[] b=base==null?null:base.clone(),f=features.clone();final double fw=ww,fh=hh,fd=dd,fr=radius;
+        rebuilding=true;rebuildLabel=label;rebuildStarted=System.currentTimeMillis();operationMessage=label;invalidate();
+        new Thread(()->{
+            try{NativeCadEngine.evaluateModelChecked(fw,fh,fd,fr,b,f,source);}catch(RuntimeException ignored){}
+            post(()->{rebuilding=false;try{then.run();}catch(RuntimeException error){recoverFromError(label,error);}invalidate();});
+        },"TabletCAD-open").start();
+    }
     /** Runs a long read-only task (export) on a worker thread with the progress card; input waits. */
     public void runBusy(String label,Runnable work) {
         if(rebuilding){android.widget.Toast.makeText(getContext(),"Trwa inna operacja",android.widget.Toast.LENGTH_SHORT).show();return;}

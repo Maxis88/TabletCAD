@@ -61,11 +61,11 @@ function Invoke-Job([string]$id, [string[]]$lines, [string]$log) {
         'pull-crash'{ $dst = Join-Path $Results "$id-crash.txt"
                       & $Adb pull "/sdcard/Android/data/$Pkg/files/tabletcad-crash.txt" $dst 2>&1 | ForEach-Object { "$_" }
                       $script:Code = [int](-not (Test-Path $dst)); if (Test-Path $dst) { Get-Content $dst -Encoding UTF8 } }
-        'pull-projects' { # copies the app's project library (debug build: run-as) to results\<id>-projects for diagnosis
-                      $ext = "/sdcard/Android/data/$Pkg/files/projects-copy"
-                      & $Adb shell "run-as $Pkg sh -c 'rm -rf $ext; mkdir -p $ext; cp -r files/projects/. $ext/'" 2>&1 | ForEach-Object { "$_" }
-                      $dst = Join-Path $Results "$id-projects"; & $Adb pull $ext $dst 2>&1 | ForEach-Object { "$_" }
-                      & $Adb shell "run-as $Pkg rm -rf $ext" 2>&1 | Out-Null
+        'pull-projects' { # the app copies its project library on start when the trigger file exists (see MainActivity)
+                      $ext = "/sdcard/Android/data/$Pkg/files"
+                      & $Adb shell "mkdir -p $ext; rm -rf $ext/projects-copy; touch $ext/export-projects" 2>&1 | ForEach-Object { "$_" }
+                      & $Adb shell am force-stop $Pkg; & $Adb shell monkey -p $Pkg -c android.intent.category.LAUNCHER 1 2>&1 | Out-Null; Start-Sleep -Seconds 8
+                      $dst = Join-Path $Results "$id-projects"; & $Adb pull "$ext/projects-copy" $dst 2>&1 | ForEach-Object { "$_" }
                       $script:Code = [int](-not (Test-Path $dst)); if (Test-Path $dst) { Get-ChildItem $dst -Recurse | ForEach-Object { "$($_.Length)`t$($_.FullName.Substring($dst.Length))" } } }
         'git-pull'  { Push-Location $Root; & $Git pull --ff-only 2>&1 | ForEach-Object { "$_" }; $script:Code = $LASTEXITCODE; Pop-Location }
         'logcat'    { $n = if ($a.Count) { Num $a[0] } else { '3000' }; & $Adb logcat -d -t $n 2>&1 | ForEach-Object { "$_" } }

@@ -38,7 +38,7 @@ final class ProjectFileTools {
         ws.closePropertyEditor();
         if(ws.projectChooser!=null){ws.projectChooser.dismiss();ws.projectChooser=null;}
         ProjectLibraryBrowser browser=new ProjectLibraryBrowser(ws.getContext(),ws.projectRepository,ws.project.id,new ProjectLibraryBrowser.Actions(){
-            public void open(CadProject next){if(!activateProject(next))ws.post(ProjectFileTools.this::showStartupProjects);}
+            public void open(CadProject next){ws.warmThen(next,"Otwieranie projektu „"+next.name+"”…",()->{if(!activateProject(next))ws.post(ProjectFileTools.this::showStartupProjects);});}
             public void create(){showNewProject();}
             public void trash(){showProjectTrash();}
             public void delete(CadProject target){confirmDeleteProject(target);}
