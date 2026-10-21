@@ -54,6 +54,7 @@ public final class BodyGraph {
         if(type==SweepLoft.LOFT||type==SweepLoft.SWEEP||type==SweepLoft.BODY_PATTERN)return SweepLoft.length(packed,offset);
         if(type==MateFeature.TYPE)return MateFeature.LENGTH;
         if(type==SurfaceSplit.TYPE)return SurfaceSplit.length(packed,offset);
+        if(type==SketchText.TYPE)return SketchText.length(packed,offset);
         if(type==SurfaceSplit.LOFT_TYPE)return SurfaceSplit.loftLength(packed,offset);
         if(type==2000)return 17;
         return 16+(type>=1001?((int)type-1000)*7:type>=5?((int)type-2)*2:0);
@@ -68,6 +69,7 @@ public final class BodyGraph {
             if(index<p.committedFeatures.size()&&FeatureHistory.inactive(p,index)){records.add(FeatureHistory.placeholder());length+=16;continue;}
             // Loft/sweep geometry is refreshed from the referenced sketch elements before every evaluation.
             if(SurfaceSplit.isLoft(record)&&index<p.committedFeatures.size())record=SurfaceSplit.refreshLoft(p,record,index<p.committedProfileIds.size()?p.committedProfileIds.get(index):null);
+            if(SketchText.is(record)&&index<p.committedFeatures.size())record=SketchText.refresh(p,record,index<p.committedProfileIds.size()?p.committedProfileIds.get(index):null);
             if(SurfaceSplit.is(record)&&index<p.committedFeatures.size())record=SurfaceSplit.refresh(p,record,index<p.committedProfileIds.size()?p.committedProfileIds.get(index):null);
             if((SweepLoft.loft(record)||SweepLoft.sweep(record))&&index<p.committedFeatures.size())record=SweepLoft.refresh(p,record,index<p.committedProfileIds.size()?p.committedProfileIds.get(index):null);
             // Patterns are expanded here, from the current source operations, into one routed record.

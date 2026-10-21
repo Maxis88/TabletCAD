@@ -19,6 +19,21 @@ public final class SketchPrimitive {
     /** Sketch point: a reference position (always construction), e.g. a hole centre. */
     public static final String POINT="Punkt";
     public static SketchPrimitive point(String id,double x,double y){return new SketchPrimitive(id,POINT,x,y,x,y);}
+    /** Text ("Tekst"): the string, layout parameters (see SketchText) and the glyph outlines as packed loops. */
+    public static final String TEXT="Tekst";
+    private String text;private double[] textParams,textLoops;
+    public boolean isText(){return TEXT.equals(type);}
+    public String text(){return text;}
+    public double[] textParams(){return textParams==null?null:textParams.clone();}
+    /** Packed closed loops [n, x0, y0, ...]... in sketch coordinates. */
+    public double[] textLoops(){return textLoops==null?null:textLoops.clone();}
+    public static SketchPrimitive text(String id,String value,double[] params,double[] loops) {
+        if(value==null||value.trim().isEmpty())throw new IllegalArgumentException("Wpisz treść napisu");
+        if(value.length()>200)throw new IllegalArgumentException("Napis może mieć najwyżej 200 znaków");
+        double[] b=pl.tabletcad.app.SketchText.bounds(loops);
+        SketchPrimitive t=new SketchPrimitive(id,TEXT,b[0],b[1],b[2],b[3]);t.text=value;t.textParams=params.clone();t.textLoops=loops.clone();
+        pl.tabletcad.app.SketchText.validate(t.textParams,t.textLoops);return t;
+    }
     public boolean isPoint(){return POINT.equals(type);}
 
     public SketchPrimitive(String id, String type, double x1, double y1, double x2, double y2) {
@@ -97,10 +112,11 @@ public final class SketchPrimitive {
         return new SketchPrimitive(id,type,ax,ay,bx,by,lock);
     }
     public double major(){return Math.hypot(x2-x1,y2-y1);}
-    public SketchPrimitive withConstruction(boolean value){return construction==value?this:new SketchPrimitive(this,value);}
-    public boolean closedGeometry() {return (vertices!=null&&(!type.equals("Splajn")||pl.tabletcad.app.SketchSpline.closed(vertices)))||type.equals("Kontur krzywy")||type.equals("Prostokąt")||type.equals("Okrąg")||isEllipse();}
+    public SketchPrimitive withConstruction(boolean value){return construction==value||isText()?this:new SketchPrimitive(this,value);}
+    public boolean closedGeometry() {return isText()||(vertices!=null&&(!type.equals("Splajn")||pl.tabletcad.app.SketchSpline.closed(vertices)))||type.equals("Kontur krzywy")||type.equals("Prostokąt")||type.equals("Okrąg")||isEllipse();}
     public boolean closedProfile(){return !construction&&closedGeometry();}
     public double featureType() {
+        if(isText())throw new IllegalArgumentException("Napis można tylko wyciągnąć (dodać lub wyciąć) – ta operacja nie obsługuje napisów");
         if(type.equals("Splajn")&&!construction&&pl.tabletcad.app.SketchSpline.closed(vertices))return 1000+vertices.length/2-1;
         if(construction||type.equals("Splajn"))throw new IllegalArgumentException("Wyciąganie wymaga zamkniętej geometrii zwykłej (otwarty splajn: zakończ go w pierwszym punkcie)");return isEllipse()?2000:curves!=null?1000+curves.length/7:vertices==null?(type.equals("Okrąg")?1:0):2+vertices.length/2;}
     public double[] appendVertices(double[] prefix) {
@@ -127,6 +143,7 @@ public final class SketchPrimitive {
         JSONObject result=new JSONObject().put("id", id).put("type", type)
             .put("x1", x1).put("y1", y1).put("x2", x2).put("y2", y2);
         result.put("construction",construction);
+        if(isText()){result.put("text",text);org.json.JSONArray a=new org.json.JSONArray();for(double v:textParams)a.put(v);result.put("textParams",a);org.json.JSONArray l=new org.json.JSONArray();for(double v:textLoops)l.put(v);result.put("textLoops",l);}
         if(isEllipse())result.put("minor",minor);
         if(vertices!=null) {org.json.JSONArray points=new org.json.JSONArray();for(double v:vertices) points.put(v);result.put("vertices",points);}
         if(curves!=null){org.json.JSONArray segments=new org.json.JSONArray();for(double v:curves)segments.put(v);result.put("curves",segments);}
@@ -138,6 +155,11 @@ public final class SketchPrimitive {
         return readGeometry(json).withConstruction(json.optBoolean("construction",json.optString("type").equals("Pomocnicza")));
     }
     private static SketchPrimitive readGeometry(JSONObject json) throws JSONException {
+        if(TEXT.equals(json.optString("type"))) {
+            org.json.JSONArray a=json.getJSONArray("textParams"),l=json.getJSONArray("textLoops");double[] params=new double[a.length()],loops=new double[l.length()];
+            for(int i=0;i<params.length;i++)params[i]=a.getDouble(i);for(int i=0;i<loops.length;i++)loops[i]=l.getDouble(i);
+            try{return text(json.getString("id"),json.getString("text"),params,loops);}catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}
+        }
         if(ELLIPSE.equals(json.optString("type"))) {
             try{return ellipse(json.getString("id"),json.getDouble("x1"),json.getDouble("y1"),json.getDouble("x2"),json.getDouble("y2"),json.getDouble("minor"));}
             catch(IllegalArgumentException e){throw new JSONException(e.getMessage());}

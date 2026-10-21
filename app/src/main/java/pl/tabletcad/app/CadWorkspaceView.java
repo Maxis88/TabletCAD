@@ -6112,15 +6112,16 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(inSketch()){finishSketchThenRetry();return;}
         if(project.importedMeshSource!=null||!project.hasSolid()){operationMessage="Gwint wymaga otworu w bryle B-Rep";invalidate();return;}
         closePropertyEditor();preserveExtrudedBase();commitActiveFeature();BodyGraph.begin(project);mode="Gwint";threadSelections.clear();
-        for(HoleThread.Cylinder hole:holeCylinders)if(hole.face==selectedFace)threadSelections.add(hole.face);showThreadPanel();
+        for(HoleThread.Cylinder hole:holeCylinders)if(hole.face==selectedFace&&!HoleThread.threaded(hole,project.committedFeatures))threadSelections.add(hole.face);showThreadPanel();
     }
     private void threadTap(int face) {
         if(face<0){clearViewportSelection();return;}
-        for(HoleThread.Cylinder hole:holeCylinders)if(hole.face==face){if(!threadSelections.add(face))threadSelections.remove(face);showThreadPanel();invalidate();return;}
+        for(HoleThread.Cylinder hole:holeCylinders)if(hole.face==face){if(HoleThread.threaded(hole,project.committedFeatures)){operationMessage="Ten otwór ma już gwint – zmień go z historii operacji";invalidate();return;}if(!threadSelections.add(face))threadSelections.remove(face);showThreadPanel();invalidate();return;}
         operationMessage="Dotknij wewnętrznej, walcowej ściany otworu. Obróć model, jeśli nie jest widoczna.";invalidate();
     }
     private void showThreadPanel() {
-        List<HoleThread.Cylinder> selected=new ArrayList<>();for(HoleThread.Cylinder hole:holeCylinders)if(threadSelections.contains(hole.face))selected.add(hole);
+        List<HoleThread.Cylinder> picked=new ArrayList<>();for(HoleThread.Cylinder hole:holeCylinders)if(threadSelections.contains(hole.face)&&!HoleThread.threaded(hole,project.committedFeatures))picked.add(hole);
+        List<HoleThread.Cylinder> selected=HoleThread.unique(picked);
         if(selected.isEmpty()) {android.widget.TextView message=new android.widget.TextView(getContext());message.setText("Dotknij walcowych ścian jednego lub kilku otworów. Ponowne dotknięcie usuwa wybór.");new PropertyBuilder().setTitle("Gwint · wybierz otwory").setView(message).setNegativeButton("Anuluj",(d,w)->{mode="Wybierz";threadSelections.clear();}).show();return;}
         List<HoleThread.Preset> presets=HoleThread.nearest(selected.get(0).radius*2);
         if(presets.isEmpty()){operationMessage="Brak pasującego presetu dla średnicy wskazanego otworu";invalidate();return;}

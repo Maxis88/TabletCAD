@@ -16,7 +16,42 @@ public final class HoleThread {
             face=(int)data[offset]-1;body=(int)data[offset+1];radius=data[offset+2];origin=Arrays.copyOfRange(data,offset+3,offset+6);axis=Arrays.copyOfRange(data,offset+6,offset+9);min=data[offset+9];max=data[offset+10];
             if(face<0||body<1||radius<=0||max-min<.1)throw new IllegalArgumentException("Niepoprawny otwór walcowy");
         }
+        Cylinder(Cylinder a,double min,double max){face=a.face;body=a.body;radius=a.radius;origin=a.origin;axis=a.axis;this.min=min;this.max=max;}
         public double[] end(boolean maximum){double t=maximum?max:min;return new double[]{origin[0]+axis[0]*t,origin[1]+axis[1]*t,origin[2]+axis[2]*t};}
+    }
+    /**
+     * True when the cylinder belongs to a hole that already has a thread: after threading, the
+     * kernel still reports the short crest strips of the original bore as cylinders, and a second
+     * thread there would cut nothing.
+     */
+    public static boolean threaded(Cylinder c,List<double[]> features) {
+        for(double[] f:features) {
+            if(!is(f)||Math.abs(f[8]-c.radius)>1e-4)continue;
+            double[] d={f[5],f[6],f[7]};double dot=d[0]*c.axis[0]+d[1]*c.axis[1]+d[2]*c.axis[2];
+            if(Math.abs(Math.abs(dot)-1)>1e-6)continue;
+            double[] w={f[2]-c.origin[0],f[3]-c.origin[1],f[4]-c.origin[2]};double t=w[0]*c.axis[0]+w[1]*c.axis[1]+w[2]*c.axis[2];
+            double off=Math.sqrt(Math.max(0,w[0]*w[0]+w[1]*w[1]+w[2]*w[2]-t*t));
+            if(off<1e-4)return true;
+        }
+        return false;
+    }
+    /** Same bore: same body, radius and axis line (OCCT may split one hole into several cylinder faces). */
+    public static boolean sameHole(Cylinder a,Cylinder b) {
+        if(a.body!=b.body||Math.abs(a.radius-b.radius)>1e-4)return false;
+        double dot=a.axis[0]*b.axis[0]+a.axis[1]*b.axis[1]+a.axis[2]*b.axis[2];if(Math.abs(Math.abs(dot)-1)>1e-6)return false;
+        double[] w={b.origin[0]-a.origin[0],b.origin[1]-a.origin[1],b.origin[2]-a.origin[2]};double t=w[0]*a.axis[0]+w[1]*a.axis[1]+w[2]*a.axis[2];
+        return Math.sqrt(Math.max(0,w[0]*w[0]+w[1]*w[1]+w[2]*w[2]-t*t))<1e-4;
+    }
+    /** One cylinder per bore; faces of one bore are merged into their full axial range. */
+    public static List<Cylinder> unique(List<Cylinder> list) {
+        List<Cylinder> out=new ArrayList<>();
+        for(Cylinder c:list){boolean merged=false;
+            for(int i=0;i<out.size();i++){Cylinder o=out.get(i);if(!sameHole(o,c))continue;
+                double[] w={c.origin[0]-o.origin[0],c.origin[1]-o.origin[1],c.origin[2]-o.origin[2]};double shift=w[0]*o.axis[0]+w[1]*o.axis[1]+w[2]*o.axis[2];
+                double sign=Math.signum(c.axis[0]*o.axis[0]+c.axis[1]*o.axis[1]+c.axis[2]*o.axis[2]);double a=shift+sign*c.min,b=shift+sign*c.max;
+                out.set(i,new Cylinder(o,Math.min(o.min,Math.min(a,b)),Math.max(o.max,Math.max(a,b))));merged=true;break;}
+            if(!merged)out.add(c);}
+        return out;
     }
     private static final double[][] METRIC={{2,.4},{2.5,.45},{3,.5},{3.5,.6},{4,.7},{5,.8},{6,1},{7,1},{8,1.25},{8,1},{10,1.5},{10,1},{12,1.75},{12,1.5},{14,2},{16,2},{18,2.5},{20,2.5},{22,2.5},{24,3},{27,3},{30,3.5},{36,4},{42,4.5},{48,5}};
     public static List<Preset> nearest(double holeDiameter) {

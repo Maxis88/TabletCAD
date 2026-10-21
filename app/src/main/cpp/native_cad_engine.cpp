@@ -418,6 +418,54 @@ TopoDS_Shape polygonPrism(const double* points, int count, double depth,
     return result;
 }
 
+// Text (or any region with islands) extruded along the sketch normal: record -28, payload of L
+// closed polylines [n, x0, y0, ...]. Loops are nested by containment: a loop inside an even number
+// of loops is material, inside an odd number it is a hole of its smallest container (letters O, A,
+// B, P...). Each material region becomes a planar face with its holes, swept as one prism.
+TopoDS_Shape textPrism(const double* f,int payload,bool cut,bool symmetric) {
+    const int loops=static_cast<int>(f[3]);if(loops<1||loops>2000||payload<7)return {};
+    struct Loop{std::vector<double> p;double area=0;int parent=-1,depth=0;};
+    std::vector<Loop> list;int at=16,end=16+payload;
+    for(int k=0;k<loops;k++) {
+        if(at>=end)return {};const int n=static_cast<int>(f[at]);if(f[at]!=n||n<3||n>4096||at+1+2*n>end)return {};
+        Loop l;l.p.assign(f+at+1,f+at+1+2*n);
+        for(double v:l.p)if(!std::isfinite(v)||std::abs(v)>5000)return {};
+        for(int i=0;i<n;i++){int j=(i+1)%n;l.area+=l.p[2*i]*l.p[2*j+1]-l.p[2*j]*l.p[2*i+1];}l.area/=2;
+        if(std::abs(l.area)<1e-8)return {};list.push_back(std::move(l));at+=1+2*n;
+    }
+    if(at!=end)return {};
+    auto inside=[](const std::vector<double>& poly,double x,double y){bool in=false;const int n=static_cast<int>(poly.size()/2);
+        for(int i=0,j=n-1;i<n;j=i++){double xi=poly[2*i],yi=poly[2*i+1],xj=poly[2*j],yj=poly[2*j+1];
+            if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))in=!in;}return in;};
+    for(size_t i=0;i<list.size();i++){double best=1e300;
+        for(size_t j=0;j<list.size();j++){if(i==j||std::abs(list[j].area)<=std::abs(list[i].area))continue;
+            if(inside(list[j].p,list[i].p[0],list[i].p[1])){list[i].depth++;if(std::abs(list[j].area)<best){best=std::abs(list[j].area);list[i].parent=static_cast<int>(j);}}}}
+    double depth=f[6];gp_Vec u(f[10],f[11],f[12]),v(f[13],f[14],f[15]);gp_Vec normal=u.Crossed(v);
+    if(!std::isfinite(depth)||std::abs(depth)<=1e-6||normal.SquareMagnitude()<1e-20)return {};
+    if(depth<0)normal.Reverse();depth=std::abs(depth);normal.Normalize();gp_Pnt start(f[7],f[8],f[9]);
+    if(cut)start.Translate(normal*(-depth));
+    if(symmetric)start.Translate(normal*(cut?depth*.5:-depth*.5));
+    const gp_Dir plane=gp_Dir(u.Crossed(v));
+    auto wire=[&](const Loop& l,bool ccw){BRepBuilderAPI_MakePolygon polygon;const int n=static_cast<int>(l.p.size()/2);const bool reverse=(l.area>0)!=ccw;
+        for(int k=0;k<n;k++){int i=reverse?n-1-k:k;polygon.Add(start.Translated(u*l.p[2*i]+v*l.p[2*i+1]));}polygon.Close();return polygon.IsDone()?polygon.Wire():TopoDS_Wire();};
+    NCollection_List<TopoDS_Shape> solids;
+    for(size_t i=0;i<list.size();i++) {
+        if(list[i].depth%2!=0)continue;
+        TopoDS_Wire outer=wire(list[i],true);if(outer.IsNull())return {};
+        BRepBuilderAPI_MakeFace face(gp_Pln(start,plane),outer);if(!face.IsDone())return {};
+        for(size_t j=0;j<list.size();j++)if(list[j].parent==static_cast<int>(i)&&list[j].depth%2==1){TopoDS_Wire hole=wire(list[j],false);if(hole.IsNull())return {};face.Add(hole);}
+        if(!face.IsDone()||!BRepCheck_Analyzer(face.Face()).IsValid())return {};
+        TopoDS_Shape prism=BRepPrimAPI_MakePrism(face.Face(),normal*depth).Shape();if(prism.IsNull())return {};solids.Append(prism);
+    }
+    if(solids.IsEmpty())return {};
+    TopoDS_Shape result;
+    if(solids.Size()==1)result=solids.First();
+    else {NCollection_List<TopoDS_Shape> first,rest;bool head=true;for(const auto& s:solids){if(head){first.Append(s);head=false;}else rest.Append(s);}
+        BRepAlgoAPI_Fuse fuse;fuse.SetArguments(first);fuse.SetTools(rest);fuse.SetRunParallel(true);fuse.Build();if(!fuse.IsDone())return {};fuse.SimplifyResult(true,true);result=fuse.Shape();}
+    if(result.IsNull()||!BRepCheck_Analyzer(result).IsValid())return {};
+    return result;
+}
+
 // One segment of a closed curve path (7 values): kind 0 line (start, -, end), 1 arc (start,
 // mid, end), 2 cubic Bezier (start, control 1, control 2; the end is the next segment's start).
 // map converts sketch coordinates to the work plane. Returns a null edge on invalid input.
@@ -913,7 +961,6 @@ TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
     if(!profile.IsDone())return {};
     BRepOffsetAPI_MakePipeShell pipe(wire.Wire());pipe.SetMode(true);pipe.Add(profile.Wire(),false,false);pipe.Build();
     if(!pipe.IsDone()||!pipe.MakeSolid())return {};
-    BRepAlgoAPI_Common clipped(pipe.Shape(),BRepPrimAPI_MakeCylinder(outer+.1,depth).Shape());clipped.Build();if(!clipped.IsDone())return {};
     // Use one canonical sweep frame for either entry end. Reversing the input
     // axis must preserve the same axial interval and thread handedness; a frame
     // rotated by 180 degrees otherwise makes OCCT lose some full-depth cuts.
@@ -921,11 +968,28 @@ TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
     const double leading=std::abs(axis.Z())>1e-9?axis.Z():std::abs(axis.Y())>1e-9?axis.Y():axis.X();
     if(leading<0){entry.Translate(axis*depth);axis.Reverse();}
     gp_Trsf placement;placement.SetDisplacement(gp_Ax3(),gp_Ax3(entry,gp_Dir(axis)));
-    TopoDS_Shape tool=BRepBuilderAPI_Transform(clipped.Shape(),placement,true).Shape();
-    if(tool.IsNull()||!BRepCheck_Analyzer(tool).IsValid()){kernelReason("Narzędzie gwintu ma niepoprawną topologię");return {};}
-    TopoDS_Shape result=applyProfileFeature(shape,tool,true);
-    if(result.IsNull()||countShapes(result,TopAbs_SOLID)!=countShapes(shape,TopAbs_SOLID))return {};
-    return result;
+    // For some pitch/length combinations the helical tool meets the part's end faces in nearly
+    // degenerate curves and OCCT silently drops the cut (nothing removed). The thread is then
+    // retried with its start rotated about the axis (the phase of a thread is free) and, last,
+    // ending 0.1 mm inside the material at open ends. A result is accepted only when it removes
+    // at least a fifth of the tool volume.
+    const bool full=f[12]!=0&&depth>=f[12]-1e-6;
+    const double attempts[][2]={{0,0},{.41,0},{1.37,0},{2.6,0},{0,.1},{.9,.1},{2.1,.1}};
+    GProp_GProps baseProps;BRepGProp::VolumeProperties(shape,baseProps);const double baseVolume=std::abs(baseProps.Mass());
+    for(const auto& at:attempts) {
+        const double inset=at[1];
+        BRepAlgoAPI_Common clipped(pipe.Shape(),BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0,0,inset),gp_Dir(0,0,1)),outer+.1,depth-inset-(full?inset:0)).Shape());clipped.Build();if(!clipped.IsDone())continue;
+        gp_Trsf phase;phase.SetRotation(gp_Ax1(gp_Pnt(0,0,0),gp_Dir(0,0,1)),at[0]);
+        TopoDS_Shape tool=BRepBuilderAPI_Transform(clipped.Shape(),placement*phase,true).Shape();
+        if(tool.IsNull()||!BRepCheck_Analyzer(tool).IsValid()){kernelReason("Narzędzie gwintu ma niepoprawną topologię");continue;}
+        GProp_GProps toolProps;BRepGProp::VolumeProperties(tool,toolProps);const double toolVolume=std::abs(toolProps.Mass());
+        TopoDS_Shape result=applyProfileFeature(shape,tool,true);
+        if(result.IsNull()||countShapes(result,TopAbs_SOLID)!=countShapes(shape,TopAbs_SOLID))continue;
+        GProp_GProps after;BRepGProp::VolumeProperties(result,after);
+        if(baseVolume-std::abs(after.Mass())<.2*toolVolume){kernelReason("Gwint usunął zbyt mało materiału");continue;}
+        return result;
+    }
+    return {};
 }
 // Creator of each face (history tag) and the tags of the faces it was trimmed from. A Boolean or
 // edge operation that only trims a face keeps its underlying surface, so a face that is not the
@@ -1489,6 +1553,30 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                 shape=filletSelectedEdge(shape,signature,f[11],f[0]==-2||f[0]==-5,expected.IsNull()?nullptr:&expected);
                 if(shape.IsNull()){kernelFailAt(tag,"Operacja na krawędzi nie powiodła się");return {};}
                 updateOrigins(prior,shape,tag,origins);i+=stride;continue;
+            }
+            if(f[0]==-28) {
+                const int payload=static_cast<int>(f[2]);
+                if(f[2]!=payload||payload<7||count-i<16+payload||f[4]!=0||f[5]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                if(f[1]!=std::floor(f[1])||!(f[1]==0||f[1]==1||f[1]==2||f[1]==3||f[1]==4||f[1]==6||f[1]==8||f[1]==10)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                const bool cut=(static_cast<int>(f[1])&1)!=0,symmetric=(static_cast<int>(f[1])&2)!=0;
+                const TopoDS_Shape tool=textPrism(f,payload,cut,symmetric);
+                if(tool.IsNull()){kernelFailAt(tag,"Kontury napisu nie tworzą poprawnej bryły (litery nie mogą się przecinać)");return {};}
+                if((static_cast<int>(f[1])&4)!=0) {
+                    BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);
+                    if(shape.IsNull())shape=tool;else {builder.Add(compound,shape);builder.Add(compound,tool);shape=compound;}
+                } else if((static_cast<int>(f[1])&8)!=0) {
+                    BRepAlgoAPI_Common operation(shape,tool);operation.Build();
+                    if(!operation.IsDone()||operation.Shape().IsNull()||countShapes(operation.Shape(),TopAbs_SOLID)==0){kernelFailAt(tag,"Bryły nie mają części wspólnej");return {};}
+                    shape=operation.Shape();
+                } else {
+                    // Letters are separate solids, so the tool is fused as a whole; every letter must touch the body.
+                    if(!cut&&!shape.IsNull()){BRepAlgoAPI_Fuse operation(shape,tool);operation.Build();if(!operation.IsDone()){kernelFailAt(tag,"OCCT nie wykonał łączenia brył");return {};}operation.SimplifyResult(true,true);shape=operation.Shape();
+                        if(shape.IsNull()||!BRepCheck_Analyzer(shape).IsValid()){kernelFailAt(tag,"Wynik operacji Boolean ma niepoprawną topologię");return {};}
+                        if(countShapes(shape,TopAbs_SOLID)>countShapes(prior,TopAbs_SOLID)){kernelFailAt(tag,"Część liter nie styka się z bryłą – przesuń napis na ścianę albo wybierz „Nowa bryła”");return {};}}
+                    else shape=applyProfileFeature(shape,tool,cut);
+                }
+                if(shape.IsNull()){kernelFailAt(tag,cut?"Wycięcie napisu nie powiodło się":"Dodanie napisu nie powiodło się");return {};}
+                updateOrigins(prior,shape,tag,origins);i+=16+payload;continue;
             }
             int vertices=0,curves=0;const bool ellipse=f[0]==2000;
             if(ellipse){}
