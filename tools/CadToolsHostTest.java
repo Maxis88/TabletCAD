@@ -25,7 +25,7 @@ public final class CadToolsHostTest {
         check(SketchShapes.threePoint("t","Elipsa",new double[]{0,0},new double[]{10,0},new double[]{3,4}).minor==4,"three-point ellipse uses the distance from the major axis");
         rejects(()->SketchShapes.threePoint("t","Elipsa",new double[]{0,0},new double[]{3,0},new double[]{1,5}),"three-point ellipse with minor > major refused");
         check(SketchSpline.is(SketchOffset.offset(e,"o",1)),"offset of an ellipse is a closed spline through exact offset points (SketchOffsetCurvesHostTest)");
-        rejects(()->Revolve.create(e,new CadProject(),new double[]{0,0,0,1},90,false),"revolution of an ellipse refused");
+        check(Revolve.is(Revolve.create(e,new CadProject(),new double[]{-100,0,-100,1},90,false)),"an ellipse beside the axis can be revolved (EllipseArcKernelProbe)");
         double[] feature=ExtrusionPlan.feature(new CadProject(),e,"add",10,0,false,false);check(feature.length==17&&feature[0]==2000&&feature[16]==5,"ellipse extrusion record");
         check(SketchPrimitive.fromFeature("e","Prostokąt",feature,2,16).isEllipse(),"profile is restored from the record as an ellipse");
         check(SketchConstraints.resolve(Arrays.asList(e,new SketchPrimitive("l","Linia",0,0,10,0)),new ArrayList<>()).get(0).isEllipse(),"solver keeps ellipses intact");

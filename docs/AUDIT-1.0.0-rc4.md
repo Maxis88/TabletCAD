@@ -80,4 +80,5 @@
 - **Obrys** całego zamkniętego łańcucha linii/łuków z jednego elementu; zastąpienie oryginału.
 - **Napis**: strzałka głębokości na modelu, domyślnie grawer (wycięcie z bryły).
 - **Suwaki** bez sztywnych limitów (zakres z rozmiaru modelu, rozszerzanie przy końcu).
+- **Obrót elipsy** (dokładna elipsa w jądrze); obrót jako nowa bryła obsługiwany w jądrze.
 - Host: 49 zestawów PASS (EllipseArcKernelProbe, SliderRangeHostTest, SketchOffsetCurvesHostTest).

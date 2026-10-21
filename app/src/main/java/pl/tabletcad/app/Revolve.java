@@ -10,7 +10,6 @@ public final class Revolve {
     public static boolean is(double[] f){return f!=null&&f.length>=PREFIX&&f[0]==-3;}
     public static double[] create(SketchPrimitive shape,CadProject p,double[] axis,double angle,boolean cut) {
         if(shape==null||!shape.closedProfile())throw new IllegalArgumentException("Obrót wymaga zamkniętego profilu");
-        if(shape.isEllipse())throw new IllegalArgumentException("Obrót elipsy nie jest jeszcze obsługiwany – użyj wyciągnięcia lub przejścia");
         if(axis==null||axis.length!=4)throw new IllegalArgumentException("Niepoprawna oś obrotu");
         double[] f={-3,cut?1:0,shape.x1,shape.y1,shape.x2,shape.y2,angle,
             p.sketchOriginX,p.sketchOriginY,p.sketchOriginZ,p.sketchUx,p.sketchUy,p.sketchUz,
@@ -20,6 +19,7 @@ public final class Revolve {
     public static SketchPrimitive profile(String id,double[] f) {
         if(!is(f))throw new IllegalArgumentException("Niepoprawny zapis obrotu");
         double type=f[20];
+        if(type==2000){if(f.length!=PREFIX+1)throw new IllegalArgumentException("Niepoprawny profil obrotu");return SketchPrimitive.ellipse(id,f[2],f[3],f[4],f[5],f[PREFIX]);}
         if(type>=1002&&type<=1128&&type==Math.floor(type)&&f.length==PREFIX+((int)type-1000)*7&&SketchSpline.hasBezier(Arrays.copyOfRange(f,PREFIX,f.length)))
             return new SketchPrimitive(id,SketchSpline.fromFeatureCurves(Arrays.copyOfRange(f,PREFIX,f.length)),"Splajn");
         if(type>=1002&&type<=1128&&type==Math.floor(type)&&f.length==PREFIX+((int)type-1000)*7)
@@ -32,7 +32,6 @@ public final class Revolve {
     }
     public static double[] withProfile(double[] f,SketchPrimitive shape) {
         if(shape==null||!shape.closedProfile())throw new IllegalArgumentException("Obrót wymaga zamkniętego profilu");
-        if(shape.isEllipse())throw new IllegalArgumentException("Obrót elipsy nie jest jeszcze obsługiwany");
         double[] result=Arrays.copyOf(f,PREFIX);result[2]=shape.x1;result[3]=shape.y1;result[4]=shape.x2;result[5]=shape.y2;result[20]=shape.featureType();
         result=shape.appendVertices(result);validate(result);return result;
     }
@@ -62,6 +61,7 @@ public final class Revolve {
                 }
             }
         }else if(p.vertices!=null){double[] v=SketchSpline.is(p)?SketchSpline.sample(p.vertices,64):p.vertices;for(int i=0;i<v.length;i+=2)add(range,side(v[i],v[i+1],f));}
+        else if(p.isEllipse()){double[] e=EllipseArc.sample(new double[]{p.x1,p.y1,p.x2,p.y2,p.minor,0,2*Math.PI-1e-9},720);for(int i=0;i<e.length;i+=2)add(range,side(e[i],e[i+1],f));}
         else if(p.type.equals("Okrąg")) {
             double r=Math.hypot(p.x2-p.x1,p.y2-p.y1),d=side(p.x1,p.y1,f);
             if(r<.01)throw new IllegalArgumentException("Promień profilu musi być dodatni");add(range,d-r);add(range,d+r);

@@ -4402,7 +4402,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private void chooseRevolveProfile() {
         if(project.importedMeshSource!=null){operationMessage="Obrót wymaga modelu B-Rep, nie siatki STL";invalidate();return;}
         List<SketchPrimitive> profiles=new ArrayList<>();List<String> labels=new ArrayList<>();
-        for(SketchPrimitive p:project.sketch)if(p.closedProfile()) {
+        for(SketchPrimitive p:project.sketch)if(p.closedProfile()&&!p.isText()) {
             if(p.id.equals(selectedSketchId)){showRevolveEditor(p,null,-1,!project.hasSolid());return;}
             profiles.add(p);labels.add("Profil "+profiles.size()+" · "+p.type);
         }

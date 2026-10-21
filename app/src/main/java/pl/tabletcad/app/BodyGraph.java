@@ -50,7 +50,7 @@ public final class BodyGraph {
         if(type==FeaturePattern.TYPE)return 16+(int)packed[offset+2];
         if(type==ShellFeature.TYPE)return 16+(int)packed[offset+1]*ShellFeature.FACE;
         if(type==DraftFeature.TYPE)return 16+(int)packed[offset+1]*DraftFeature.FACE;
-        if(type==-3){double t=packed[offset+20];return 22+(t>=1001?((int)t-1000)*7:t>=5?((int)t-2)*2:0);}
+        if(type==-3){double t=packed[offset+20];return 22+(t==2000?1:t>=1001?((int)t-1000)*7:t>=5?((int)t-2)*2:0);}
         if(type==SweepLoft.LOFT||type==SweepLoft.SWEEP||type==SweepLoft.BODY_PATTERN)return SweepLoft.length(packed,offset);
         if(type==MateFeature.TYPE)return MateFeature.LENGTH;
         if(type==SurfaceSplit.TYPE)return SurfaceSplit.length(packed,offset);

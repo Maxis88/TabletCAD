@@ -35,6 +35,12 @@ public final class EllipseArcKernelProbe {
         check(props.length==7,"D-shaped boss evaluates");close("boss volume within 0.01% of the exact half-ellipse prism",props[0],120000+Math.PI*30*20/2*10,Math.PI*300*10*1e-4);
         SketchPrimitive stub=new SketchPrimitive("s","Linia",50,5,40,5);SketchPrimitive reached=SketchExtend.extend(stub,Arrays.asList(stub,half),SketchExtend.End.END);
         double ex=30*Math.sqrt(1-25.0/400);close("line extended to the elliptic arc",reached.x2,ex,1e-4);
+        // Revolved ellipse (Pappus: V = 2π·R·πab) as a new body beside the plate.
+        SketchPrimitive el=SketchPrimitive.ellipse("r",200,0,210,0,5);CadProject rv=new CadProject();rv.emptyDocument=false;rv.width=100;rv.height=60;rv.depth=20;rv.featureBase=new double[]{0,0,0,100,60,0,20};BodyGraph.begin(rv);
+        rv.committedFeatures.add(Revolve.create(el,new CadProject(),new double[]{170,0,170,1},360,false));rv.committedProfileIds.add("r");rv.featureBodyTargets.add(0);rv.featureBodyOutputs.add(BodyGraph.allocate(rv));
+        double[] rp=NativeCadEngine.bodyProperties(rv.width,rv.height,rv.depth,0,rv.featureBase,BodyGraph.pack(rv,packed(rv)),null);
+        check(rp.length==7,"revolved ellipse evaluates"+(rp.length==7?"":": "+NativeCadEngine.lastFailure().getMessage()));close("revolved ellipse volume (Pappus)",rp[0]-120000,2*Math.PI*30*Math.PI*10*5,1e-6);
+        boolean crossing=false;try{Revolve.create(el,new CadProject(),new double[]{205,0,205,1},360,false);}catch(IllegalArgumentException x){crossing=true;}check(crossing,"axis through the ellipse is refused");
         // JSON, transforms, mirror, offset.
         SketchPrimitive back=SketchPrimitive.fromJson(new org.json.JSONObject(half.toJson().toString()));check(back.isEllipseArc()&&Arrays.equals(back.ellipseArc(),half.ellipseArc()),"elliptic arc saved and read back");
         SketchPrimitive moved=SketchTransform.move(half,5,-2);close("moved start x",moved.x1,half.x1+5,1e-9);

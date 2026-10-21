@@ -610,6 +610,7 @@ int revolveStride(const double* f,int available) {
     if(available<22||f[0]!=-3)return 0;
     double type=f[20];int tail=0;
     if(type>=1002&&type<=1128&&type==std::floor(type))tail=(static_cast<int>(type)-1000)*7;
+    else if(type==2000)tail=1;
     else if(type>=5&&type<=258&&type==std::floor(type))tail=(static_cast<int>(type)-2)*2;
     else if(type!=0&&type!=1)return 0;
     return available>=22+tail?22+tail:0;
@@ -626,7 +627,12 @@ TopoDS_Shape revolvedProfile(const double* f,int available) {
     if(std::hypot(f[18]-f[16],f[19]-f[17])<.01)return {};
     auto point=[&](double x,double y){return origin.Translated(u*x+v*y);};
     TopoDS_Wire wire;
-    if(f[20]==1) {
+    if(f[20]==2000) {
+        // Exact ellipse: centre (f2, f3), end of the semi-major axis (f4, f5), semi-minor f22.
+        const double a=std::hypot(f[4]-f[2],f[5]-f[3]),b=f[22];if(a<.01||b<.01||b>a+1e-9)return {};
+        gp_Vec major=u*(f[4]-f[2])+v*(f[5]-f[3]);major.Normalize();
+        wire=BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Elips(gp_Ax2(point(f[2],f[3]),gp_Dir(u.Crossed(v)),gp_Dir(major)),a,b)).Edge()).Wire();
+    }else if(f[20]==1) {
         double radius=std::hypot(f[4]-f[2],f[5]-f[3]);if(radius<.01)return {};
         wire=BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(point(f[2],f[3]),gp_Dir(u.Crossed(v)),gp_Dir(u)),radius)).Edge()).Wire();
     }else if(f[20]>=1002) {
@@ -1536,7 +1542,9 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
             }
             if(f[0]==-3) {
                 int stride=revolveStride(f,count-i);if(!stride){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
-                shape=applyProfileFeature(shape,revolvedProfile(f,stride),f[1]==1);
+                // Into an existing body (join or cut); routed to a new body (no input shape) it is the body itself.
+                if(shape.IsNull()&&f[1]!=1){shape=revolvedProfile(f,stride);if(!shape.IsNull()&&!BRepCheck_Analyzer(shape).IsValid())shape.Nullify();}
+                else shape=applyProfileFeature(shape,revolvedProfile(f,stride),f[1]==1);
                 if(shape.IsNull()){kernelFailAt(tag,"Obrót profilu nie powiódł się (profil nie może przecinać osi)");return {};}updateOrigins(prior,shape,tag,origins);i+=stride;continue;
             }
             if(f[0]==-1||f[0]==-2||f[0]==-4||f[0]==-5) {
