@@ -1995,6 +1995,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
     /** Major grid line: darker on light backgrounds, lighter on dark ones. */
     private static int darker(int c){int d=(Color.red(c)+Color.green(c)+Color.blue(c))/3<110?-22:26;return Color.rgb(Math.min(255,Math.max(0,Color.red(c)-d)),Math.min(255,Math.max(0,Color.green(c)-d)),Math.min(255,Math.max(0,Color.blue(c)-d)));}
 
+    private final DepthRaster depthRaster=new DepthRaster();private long lastSolidFrame;private boolean slowFullFrame;
+    private final Runnable sharpFrame=()->{lastSolidFrame=0;invalidate();};
     private void drawNativeSolid(Canvas canvas, float cx, float cy) {
         if(sectionPlane!=null&&sectionSource!=nativeMesh)requestSection();
         projectNativeMesh(cx, cy);
@@ -2010,11 +2012,17 @@ if (isInsideViewport(e.getX(), e.getY())) {
             else color=meshFaceColor(triangle);
             for(int i=0;i<3;i++){surfaceVertices[position++]=triangle.sx[i];surfaceVertices[position++]=triangle.sy[i];surfaceColors[colorIndex++]=color;}
         }
-        // Submit ordered surfaces together; only true display boundaries are stroked below.
-        // Disabling AA on adjacent filled patches prevents internal seam lines.
-        boolean antiAlias=paint.isAntiAlias();paint.setAntiAlias(false);paint.setStyle(Paint.Style.FILL);paint.setColor(Color.WHITE);
-        if(vertexValues>0)canvas.drawVertices(Canvas.VertexMode.TRIANGLES,vertexValues,surfaceVertices,0,null,0,surfaceColors,0,null,0,0,paint);
-        paint.setAntiAlias(antiAlias);
+        // Depth-buffered fill: each pixel shows the nearest surface (no thread flank through a face).
+        // While orbiting a heavy model the fill runs at half resolution; a sharp frame follows at rest.
+        android.graphics.Rect viewport=canvas.getClipBounds();long now=android.os.SystemClock.uptimeMillis();boolean moving=now-lastSolidFrame<150;lastSolidFrame=now;
+        float resolution=moving&&slowFullFrame?.5f:1f;long started=System.nanoTime();
+        depthRaster.begin(viewport,resolution);
+        colorIndex=0;
+        for(ProjectedTriangle triangle:projectedTriangles){int color=surfaceColors[colorIndex];colorIndex+=3;
+            depthRaster.triangle(triangle.sx[0],triangle.sy[0],(float)triangle.q[0],triangle.sx[1],triangle.sy[1],(float)triangle.q[1],triangle.sx[2],triangle.sy[2],(float)triangle.q[2],color);}
+        depthRaster.draw(canvas,viewport);
+        if(resolution==1f)slowFullFrame=System.nanoTime()-started>40_000_000L;
+        else {removeCallbacks(sharpFrame);postDelayed(sharpFrame,180);}
         for (ProjectedTriangle triangle : projectedTriangles) {
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(dp(triangle.faceId == selectedFace ? 2.6f : 1.35f));
