@@ -25,7 +25,7 @@ final class OutlineTools {
         android.widget.CheckBox inward=new android.widget.CheckBox(v.getContext());
         inward.setText(selected.closedGeometry()?"Do wewnątrz":selected.type.equals("Linia")||selected.type.equals("Pomocnicza")?"Na drugą stronę linii":"Zmniejsz promień");
         form.addView(inward);
-        android.widget.CheckBox replace=new android.widget.CheckBox(v.getContext());replace.setText("Zastąp oryginał (obrys: powiększ / pomniejsz kształt)");replace.setChecked(selected.closedGeometry()&&chain==null);form.addView(replace);
+        android.widget.CheckBox replace=new android.widget.CheckBox(v.getContext());replace.setText("Zastąp oryginał (obrys: powiększ / pomniejsz kształt)");replace.setChecked(false);form.addView(replace);
         if(chain!=null){android.widget.TextView about=new android.widget.TextView(v.getContext());about.setText("Cały zamknięty kontur: "+chain.consumed.size()+" elementów");form.addView(about);}
         android.widget.TextView status=new android.widget.TextView(v.getContext());status.setText("Kopia odsunięta o stałą odległość. Narożniki ostre, łuki współśrodkowe.");form.addView(status);
         v.slider(form,distance,.1,Math.max(20,v.modelExtent()),.1);
