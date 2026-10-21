@@ -76,7 +76,7 @@ $ClassesJar = Join-Path $Build "classes.jar"
 if ($HasJar) { & $Jar cf $ClassesJar -C (Join-Path $Build "classes") . } else { Zip-Add $ClassesJar (Join-Path $Build "classes") "." -Create }
 Assert-ExitCode "Class archive creation"
 New-Item -ItemType Directory -Force -Path (Join-Path $Build "dex") | Out-Null
-& $D8 --lib $AndroidJar --output (Join-Path $Build "dex") $ClassesJar
+& $D8 --thread-count 2 --lib $AndroidJar --output (Join-Path $Build "dex") $ClassesJar
 Assert-ExitCode "DEX compilation"
 
 Push-Location (Join-Path $Build "dex")
@@ -91,7 +91,7 @@ $NativeBuild = Join-Path $Build "native-arm64"
 New-Item -ItemType Directory -Force -Path $NativeBuild | Out-Null
 & $Cmake -S (Join-Path $Root "app\src\main\cpp") -B $NativeBuild -G Ninja "-DCMAKE_MAKE_PROGRAM=$Ninja" "-DCMAKE_TOOLCHAIN_FILE=$Ndk\build\cmake\android.toolchain.cmake" "-DANDROID_ABI=arm64-v8a" "-DANDROID_PLATFORM=android-34" "-DCMAKE_BUILD_TYPE=Release"
 Assert-ExitCode "Native configuration"
-& $Cmake --build $NativeBuild
+& $Cmake --build $NativeBuild --parallel 2
 Assert-ExitCode "Native compilation"
 
 $NativePackage = Join-Path $Build "native-package\lib\arm64-v8a"

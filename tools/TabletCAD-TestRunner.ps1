@@ -6,9 +6,15 @@
 param(
     [string]$Sdk = $(if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }),
     [string]$Jdk = 'C:\Program Files\Android\Android Studio\jbr',
-    [int]$PollSeconds = 3
+    [int]$PollSeconds = 5,
+    # The runner exits by itself after this many minutes without jobs (0 = never).
+    [int]$IdleMinutes = 45
 )
 $ErrorActionPreference = 'Continue'
+# Light on the computer: below-normal priority (inherited by builds, ADB and Java), Java limited to
+# two cores and 1.5 GB so the desktop stays responsive while building and testing.
+try { (Get-Process -Id $PID).PriorityClass = 'BelowNormal' } catch { }
+$env:_JAVA_OPTIONS = '-Xmx1536m -XX:ActiveProcessorCount=2 -XX:+UseSerialGC'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.Encoding]::UTF8
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -87,11 +93,13 @@ function Invoke-Job([string]$id, [string[]]$lines, [string]$log) {
         default     { "unknown action: $action"; $script:Code = 64 }
     }
 }
-Write-Host "TabletCAD test runner watching $Queue (Ctrl+C to stop)"
+Write-Host "TabletCAD test runner watching $Queue (Ctrl+C to stop; exits after $IdleMinutes min without jobs)"
+$lastJob = Get-Date
 while (-not (Test-Path (Join-Path $Base 'STOP'))) {
+    if ($IdleMinutes -gt 0 -and ((Get-Date) - $lastJob).TotalMinutes -ge $IdleMinutes) { Write-Host "$(Get-Date -Format HH:mm:ss) idle for $IdleMinutes min - stopping"; break }
     $jobs = Get-ChildItem $Queue -Filter '*.job' -File -ErrorAction SilentlyContinue | Sort-Object Name
     foreach ($j in $jobs) {
-        $id = $j.BaseName
+        $id = $j.BaseName; $lastJob = Get-Date
         $lines = @(Get-Content $j.FullName -Encoding UTF8)
         Remove-Item $j.FullName -Force
         $log = Join-Path $Results "$id.log"
@@ -102,7 +110,7 @@ while (-not (Test-Path (Join-Path $Base 'STOP'))) {
         } catch { "EXCEPTION: $($_.Exception.Message)" | Out-File -FilePath $log -Encoding UTF8 -Append; $script:Code = 1 }
         $code = $script:Code
         Set-Content -Path (Join-Path $Results "$id.done") -Value $code -Encoding ASCII
-        Write-Host "$(Get-Date -Format HH:mm:ss) job $id done exit=$code"
+        Write-Host "$(Get-Date -Format HH:mm:ss) job $id done exit=$code"; $lastJob = Get-Date
     }
     Start-Sleep -Seconds $PollSeconds
 }

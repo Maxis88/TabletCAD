@@ -30,7 +30,7 @@ Check 'Compile probes'
 # Package probe classes into one jar: passing every .class path exceeds the Windows command-line limit.
 $ProbeJar=Join-Path $Build 'probes.jar';if(Test-Path $ProbeJar){Remove-Item $ProbeJar -Force}
 if(Test-Path (Join-Path $Jdk 'bin\jar.exe')){& (Join-Path $Jdk 'bin\jar.exe') cf $ProbeJar -C $Classes .}else{Add-Type -AssemblyName System.IO.Compression.FileSystem;[IO.Compression.ZipFile]::CreateFromDirectory($Classes,$ProbeJar);$global:LASTEXITCODE=0};Check 'Package probe classes'
-& (Join-Path $BuildTools 'd8.bat') --min-api 34 --lib $AndroidJar --classpath $AppClasses --output $Dex $ProbeJar
+& (Join-Path $BuildTools 'd8.bat') --thread-count 2 --min-api 34 --lib $AndroidJar --classpath $AppClasses --output $Dex $ProbeJar
 Check 'DEX probes'
 $Apk=Join-Path $Build 'TabletCAD-ui-tests.apk'
 & (Join-Path $BuildTools 'aapt2.exe') link -o $Apk -I $AndroidJar --manifest (Join-Path $Root 'tools\AndroidManifest-ui-test.xml')
