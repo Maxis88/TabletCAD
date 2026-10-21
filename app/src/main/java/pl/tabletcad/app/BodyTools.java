@@ -24,11 +24,11 @@ final class BodyTools {
         List<String> choices=new ArrayList<>(java.util.Arrays.asList("Płaszczyzna YZ (normalna X)","Płaszczyzna XZ (normalna Y)","Płaszczyzna XY (normalna Z)"));if(face!=null)choices.add("Płaszczyzna zaznaczonej ściany (stała)");
         final List<Datum> splitPlanes=v.datumTools.datumsOf(Datum.PLANE);for(Datum d:splitPlanes)choices.add("Konstrukcja: "+d.name+" (odsunięcie)");
         final int surfaceStart=choices.size();final List<SweepLoft.Placed> curves=new ArrayList<>();
-        for(SweepLoft.Placed e:SweepLoft.elements(v.project))if(SurfaceSplit.usable(e.shape)){curves.add(e);choices.add("Powierzchnia z krzywej: "+e.sketchName+" · "+v.sketchEntityName(e.shape));}
+        for(SweepLoft.Placed e:SweepLoft.elements(v.project))if(SurfaceSplit.usable(e.shape)){curves.add(e);choices.add("Powierzchnia z krzywej: "+e.sketchName+" · "+v.sketchPositionTools.sketchEntityName(e.shape));}
         String originalRef=surfaceOriginal&&editIndex<v.project.committedProfileIds.size()?v.project.committedProfileIds.get(editIndex):null;
         final int loftChoice=choices.size();if(curves.size()>=2)choices.add("Powierzchnia przez kilka krzywych (zaznacz poniżej, w kolejności)");
         final List<android.widget.CheckBox> loftBoxes=new ArrayList<>();final LinearLayout loftList=new LinearLayout(v.getContext());loftList.setOrientation(LinearLayout.VERTICAL);
-        for(SweepLoft.Placed e:curves){android.widget.CheckBox box=new android.widget.CheckBox(v.getContext());box.setText(e.sketchName+" · "+v.sketchEntityName(e.shape));
+        for(SweepLoft.Placed e:curves){android.widget.CheckBox box=new android.widget.CheckBox(v.getContext());box.setText(e.sketchName+" · "+v.sketchPositionTools.sketchEntityName(e.shape));
             if(loftOriginal&&originalRef!=null)for(String part:originalRef.substring(SurfaceSplit.LOFT_REF.length()).split("\\|"))if(part.equals(e.ref()))box.setChecked(true);
             loftBoxes.add(box);loftList.addView(box);}
         android.widget.Spinner plane=new android.widget.Spinner(v.getContext());plane.setAdapter(new android.widget.ArrayAdapter<>(v.getContext(),android.R.layout.simple_spinner_dropdown_item,choices));form.addView(plane);
