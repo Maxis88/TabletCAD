@@ -12,12 +12,13 @@ public final class SketchOffset {
     private static final double EPS=1e-7;
 
     public static SketchPrimitive offset(SketchPrimitive source,String id,double distance) {
-        if(source!=null&&source.isEllipse())throw new IllegalArgumentException("Odsunięcie elipsy nie jest dokładną elipsą – niedostępne");
         if(source==null||id==null||id.isEmpty()||id.equals(source.id))throw new IllegalArgumentException("Odsunięcie wymaga nowej tożsamości");
         if(!Double.isFinite(distance)||Math.abs(distance)<.001||Math.abs(distance)>5000)throw new IllegalArgumentException("Odległość odsunięcia: 0,001–5000 mm");
         SketchPrimitive result;
-        if(SketchSpline.is(source))throw new IllegalArgumentException("Odsunięcie splajnu nie jest jeszcze obsługiwane");
-        if(source.curves!=null)result=source.closedGeometry()?curved(source.curves,id,distance):arc(source.curves,id,distance);
+        if(source.isText())throw new IllegalArgumentException("Napis: zmień wysokość liter albo pogrubienie czcionki zamiast odsunięcia");
+        if(source.isEllipse())result=ellipse(source,id,distance);
+        else if(SketchSpline.is(source))result=spline(source,id,distance);
+        else if(source.curves!=null)result=source.closedGeometry()?curved(source.curves,id,distance):arc(source.curves,id,distance);
         else if(source.vertices!=null)result=polygon(source.vertices,id,distance);
         else switch(source.type) {
             case "Okrąg": {
@@ -41,6 +42,42 @@ public final class SketchOffset {
         }
         check(result);
         return result.withConstruction(source.construction);
+    }
+
+    /**
+     * Offset of an ellipse (not an ellipse itself): an interpolating closed spline through 64 exact
+     * offset points; deviation from the true offset curve far below 0.01 mm at drawing sizes.
+     */
+    private static SketchPrimitive ellipse(SketchPrimitive e,String id,double d) {
+        double a=e.major(),b=e.minor,ux=(e.x2-e.x1)/a,uy=(e.y2-e.y1)/a;
+        if(d<0&&-d>=b*b/a-1e-6)throw new IllegalArgumentException("Odsunięcie do wewnątrz większe niż najmniejszy promień krzywizny elipsy ("+String.format(java.util.Locale.US,"%.3f",b*b/a)+" mm)");
+        int n=64;double[] pts=new double[2*n+2];
+        for(int i=0;i<n;i++){double t=2*Math.PI*i/n,lx=a*Math.cos(t),ly=b*Math.sin(t),nx=b*Math.cos(t),ny=a*Math.sin(t),l=Math.hypot(nx,ny);lx+=nx/l*d;ly+=ny/l*d;
+            pts[2*i]=e.x1+lx*ux-ly*uy;pts[2*i+1]=e.y1+lx*uy+ly*ux;}
+        pts[2*n]=pts[0];pts[2*n+1]=pts[1];return new SketchPrimitive(id,pts,"Splajn");
+    }
+    /**
+     * Offset of a spline: the curve is sampled densely, each sample moved along its normal
+     * (closed: outward for a positive distance; open: to the left of the direction), and a new
+     * interpolating spline goes through the moved points. An inward offset larger than the
+     * smallest curvature radius would loop over itself and is rejected.
+     */
+    private static SketchPrimitive spline(SketchPrimitive sp,String id,double d) {
+        double[] p=sp.vertices;boolean closed=SketchSpline.closed(p);int spans=p.length/2-1;
+        double[] dense=SketchSpline.sample(p,Math.max(4,Math.min(64,4096/Math.max(1,spans))));int m=dense.length/2;
+        if(closed){double area=0;for(int i=0;i<m-1;i++)area+=dense[2*i]*dense[2*i+3]-dense[2*i+2]*dense[2*i+1];if(area<0)d=-d;}
+        // Outward normal of a counter-clockwise loop is the right side; for open curves the left side.
+        double side=closed?-1:1;
+        double[] moved=new double[dense.length];
+        for(int i=0;i<m;i++){int a=closed?(i==0?m-2:i-1):Math.max(0,i-1),b=closed?(i==m-1?1:i+1):Math.min(m-1,i+1);
+            double tx=dense[2*b]-dense[2*a],ty=dense[2*b+1]-dense[2*a+1],l=Math.hypot(tx,ty);if(l<1e-12)throw new IllegalArgumentException("Splajn ma zerowy odcinek");
+            moved[2*i]=dense[2*i]-ty/l*d*side;moved[2*i+1]=dense[2*i+1]+tx/l*d*side;}
+        for(int i=0;i<m-1;i++){double ox=dense[2*i+2]-dense[2*i],oy=dense[2*i+3]-dense[2*i+1],nx=moved[2*i+2]-moved[2*i],ny=moved[2*i+3]-moved[2*i+1];
+            if(ox*nx+oy*ny<=0)throw new IllegalArgumentException("Odsunięcie większe niż promień krzywizny splajnu – krzywa zawinęłaby się");}
+        int k=Math.max(closed?8:4,Math.min(120,spans*4));double[] out=new double[2*(k+1)];
+        for(int j=0;j<=k;j++){int i=(int)Math.round((double)j*(m-1)/k);out[2*j]=moved[2*i];out[2*j+1]=moved[2*i+1];}
+        if(closed){out[2*k]=out[0];out[2*k+1]=out[1];}
+        return new SketchPrimitive(id,out,"Splajn");
     }
 
     private static void check(SketchPrimitive p) {

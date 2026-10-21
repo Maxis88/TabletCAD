@@ -3409,7 +3409,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(first==null||first.id.equals(second.id)){operationMessage="Wybierz dwie różne linie";invalidate();return;}
         if(project.hasCoincidence(first.id)||project.hasCoincidence(second.id)){operationMessage="Usuń więzy wybranych linii przed zastąpieniem narożnika łukiem";invalidate();return;}
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        EditText radius=labeledCoordinate(form,"Promień [mm]",1);slider(form,radius,.1,Math.max(10,modelExtent()/5),.1);
+        EditText radius=labeledCoordinate(form,"Promień [mm]",1);slider(form,radius,.1,Math.max(10,modelExtent()/2),.1);
         post(()->{Runnable ghost=()->{sketchGhost.clear();try{sketchGhost.addAll(SketchFillet.pair(first,second,parseCoordinate(radius)));}catch(IllegalArgumentException ignored){}invalidate();};watchFields(form,ghost);ghost.run();});
         new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle("Zaokrąglij dwie linie").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
             try{List<SketchPrimitive> parts=SketchFillet.pair(first,second,parseCoordinate(radius));commitModelChange(()->{
@@ -3428,7 +3428,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     private void showSketchFilletRadius(SketchPrimitive source) {
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        EditText radius=labeledCoordinate(form,"Promień narożników [mm]",1);slider(form,radius,.1,Math.max(10,modelExtent()/5),.1);
+        EditText radius=labeledCoordinate(form,"Promień narożników [mm]",1);slider(form,radius,.1,Math.max(10,modelExtent()/2),.1);
         new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle("Zaokrąglij wszystkie narożniki").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
             try{replaceSketchEntity(source,SketchFillet.apply(source,parseCoordinate(radius)));}
             catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
@@ -3585,17 +3585,26 @@ if (isInsideViewport(e.getX(), e.getY())) {
         android.widget.CheckBox inward=new android.widget.CheckBox(getContext());
         inward.setText(selected.closedGeometry()?"Do wewnątrz":selected.type.equals("Linia")||selected.type.equals("Pomocnicza")?"Na drugą stronę linii":"Zmniejsz promień");
         form.addView(inward);
+        android.widget.CheckBox replace=new android.widget.CheckBox(getContext());replace.setText("Zastąp oryginał (obrys: powiększ / pomniejsz kształt)");replace.setChecked(selected.closedGeometry());form.addView(replace);
         android.widget.TextView status=new android.widget.TextView(getContext());status.setText("Kopia odsunięta o stałą odległość. Narożniki ostre, łuki współśrodkowe.");form.addView(status);
-        slider(form,distance,.1,Math.max(20,modelExtent()/2),.1);
+        slider(form,distance,.1,Math.max(20,modelExtent()),.1);
         Runnable ghost=()->{sketchGhost.clear();try{double value=parseCoordinate(distance);if(inward.isChecked())value=-value;sketchGhost.add(SketchOffset.offset(selected,"ghost",value));status.setText("Kopia odsunięta o stałą odległość. Narożniki ostre, łuki współśrodkowe.");}catch(IllegalArgumentException error){status.setText(error.getMessage());}invalidate();};
         new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle("Odsunięcie · "+selected.type).setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
             try {
                 double value=parseCoordinate(distance);if(inward.isChecked())value=-value;
                 SketchPrimitive copy=SketchOffset.offset(selected,UUID.randomUUID().toString(),value);
+                if(replace.isChecked()) {
+                    // Same identity: operations built on this profile follow the new outline.
+                    org.json.JSONObject json=copy.toJson();json.put("id",selected.id);SketchPrimitive outline=SketchPrimitive.fromJson(json);
+                    replaceSketchEntity(selected,outline,true);selectedSketchId=selected.id;mode="Edytuj szkic";
+                    boolean applied=false;for(SketchPrimitive e:project.sketch)if(e.id.equals(selected.id)&&Math.abs(e.x1-outline.x1)<1e-6&&Math.abs(e.y2-outline.y2)<1e-6)applied=true;
+                    if(applied)operationMessage=(value>0?"Powiększono":"Pomniejszono")+" obrys o "+formatMm(Math.abs(value))+(selected.driving!=null?" (wymiary elementu usunięte – nadaj je ponownie)":"")+". Zakończ zatwierdza szkic.";
+                    invalidate();return;
+                }
                 checkpoint();project.sketch.add(copy);selectedSketchId=copy.id;mode="Edytuj szkic";
                 projectRepository.save(project);
                 operationMessage="Utworzono odsunięcie "+formatMm(Math.abs(value))+". Zakończ zatwierdza szkic.";
-            }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
+            }catch(IllegalArgumentException|org.json.JSONException error){operationMessage=error.getMessage();}
             invalidate();
         }).show();
         watchFields(form,ghost);ghost.run();
@@ -4521,7 +4530,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         android.widget.TextView selectionCount=new android.widget.TextView(getContext());
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         form.addView(radius);form.addView(selectionCount);form.addView(status);
-        slider(form,radius,.1,Math.max(10,modelExtent()/8),.1);
+        slider(form,radius,.1,Math.max(10,modelExtent()/2),.1);
         new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle(chamfer?(index<0?"Fazuj · wskaż krawędź":"Fazowanie · równe odległości [mm]"):(index<0?"Zaokrąglij · wskaż krawędź":"Zaokrąglenie · promień [mm]")).setView(form)
             .setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)-> {
                 try {
@@ -5857,7 +5866,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         EditText content=new EditText(getContext());content.setSingleLine(true);content.setHint("Treść napisu");content.setText(existing!=null?existing.text():"");form.addView(content);
         android.widget.Spinner layout=new android.widget.Spinner(getContext());layout.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,SketchText.LAYOUTS));layout.setSelection((int)p[3]);form.addView(layout);
-        EditText height=labeledCoordinate(form,"Wysokość liter [mm]",p[2]);slider(form,height,1,50,.5);
+        EditText height=labeledCoordinate(form,"Wysokość liter [mm]",p[2]);slider(form,height,1,Math.max(50,modelExtent()/2),.5);
         EditText radius=labeledCoordinate(form,"Promień okręgu [mm]",p[5]);
         EditText angle=labeledCoordinate(form,"Kąt [°] (płasko: obrót; okrąg: środek napisu)",p[4]);slider(form,angle,-180,180,1);
         android.widget.Spinner font=new android.widget.Spinner(getContext());font.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,SketchText.FONTS));font.setSelection((int)p[6]);form.addView(font);
@@ -5892,7 +5901,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         String[] labels={"Połącz (wypukły)","Wytnij (grawer)","Nowa bryła","Część wspólna"},ops={"join","cut","new","common"};
         android.widget.Spinner operation=new android.widget.Spinner(getContext());operation.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,labels));form.addView(operation);
-        EditText depth=labeledCoordinate(form,"Głębokość [mm]",1);slider(form,depth,.1,30,.1);
+        EditText depth=labeledCoordinate(form,"Głębokość [mm]",1);slider(form,depth,.1,Math.max(30,modelExtent()),.1);
         android.widget.CheckBox reverse=new android.widget.CheckBox(getContext());reverse.setText("Odwróć kierunek");form.addView(reverse);
         android.widget.CheckBox symmetric=new android.widget.CheckBox(getContext());symmetric.setText("Symetrycznie");form.addView(symmetric);
         // Engraving goes into the face the text was drawn on: the default direction is reversed for a cut.
@@ -5998,15 +6007,20 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     /** Slider under a numeric field (two-way): integer counts or lengths/angles with the given step. */
     private android.widget.SeekBar slider(LinearLayout form,EditText field,double min,double max,double step) {
-        android.widget.SeekBar bar=new android.widget.SeekBar(getContext());int steps=(int)Math.max(1,Math.round((max-min)/step));bar.setMax(steps);
+        android.widget.SeekBar bar=new android.widget.SeekBar(getContext());
+        final SliderRange range=new SliderRange(min,max,SliderRange.angleLike(min,max),step>=1&&min==Math.rint(min)?1000:5000);
+        final double[] unitBox={step};Runnable rescale=()->{unitBox[0]=Math.max(step,(range.max-range.min)/200000);bar.setMax((int)Math.max(1,Math.round((range.max-range.min)/unitBox[0])));};rescale.run();
         bar.setMinimumHeight((int)dp(40));bar.setPadding((int)dp(18),(int)dp(10),(int)dp(18),(int)dp(10));
         int at=form.indexOfChild(field);if(at>=0)form.addView(bar,at+1);else form.addView(bar);
         final boolean[] syncing={false};final boolean length=LENGTH_INPUT.equals(field.getTag());final boolean integer=step>=1&&min==Math.rint(min);
-        Runnable fromField=()->{if(syncing[0])return;try{double v=parseCoordinate(field);syncing[0]=true;bar.setProgress((int)Math.round((Math.max(min,Math.min(max,v))-min)/step));}catch(IllegalArgumentException ignored){}finally{syncing[0]=false;}};
+        final double[] unit=unitBox;
+        Runnable fromField=()->{if(syncing[0])return;try{double v=parseCoordinate(field);syncing[0]=true;if(range.include(v))rescale.run();
+            bar.setProgress((int)Math.round((Math.max(range.min,Math.min(range.max,v))-range.min)/unit[0]));}catch(IllegalArgumentException ignored){}finally{syncing[0]=false;}};
         bar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
-            public void onProgressChanged(android.widget.SeekBar b,int progress,boolean fromUser){if(!fromUser||syncing[0])return;double v=min+progress*step;syncing[0]=true;
+            public void onProgressChanged(android.widget.SeekBar b,int progress,boolean fromUser){if(!fromUser||syncing[0])return;double v=range.min+progress*unit[0];syncing[0]=true;
                 if(length)setLengthText(field,v);else field.setText(integer?String.valueOf((long)Math.rint(v)):java.math.BigDecimal.valueOf(Math.rint(v/step)*step).stripTrailingZeros().toPlainString());syncing[0]=false;}
-            public void onStartTrackingTouch(android.widget.SeekBar b){}public void onStopTrackingTouch(android.widget.SeekBar b){}});
+            public void onStartTrackingTouch(android.widget.SeekBar b){}
+            public void onStopTrackingTouch(android.widget.SeekBar b){double v=range.min+b.getProgress()*unit[0];if(range.released(v)){rescale.run();syncing[0]=true;b.setProgress((int)Math.round((v-range.min)/unit[0]));syncing[0]=false;}}});
         field.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence a,int b,int c,int d){}public void onTextChanged(CharSequence a,int b,int c,int d){fromField.run();}public void afterTextChanged(android.text.Editable e){}});
         fromField.run();return bar;
     }
@@ -6017,7 +6031,15 @@ if (isInsideViewport(e.getX(), e.getY())) {
             for(int v=0;v<3;v++)for(int k=0;k<3;k++){double c=nativeMesh[offset+v*3+k];b[k]=Math.min(b[k],c);b[k+3]=Math.max(b[k+3],c);}}
         return any?b:null;
     }
-    private double modelExtent(){return Math.max(50,Math.max(modelWidth,Math.max(modelHeight,modelDepth)));}
+    /** Largest size of what is on screen: all bodies of the evaluated model and the sketch, at least 50 mm. */
+    private double modelExtent() {
+        double e=Math.max(modelWidth,Math.max(modelHeight,modelDepth));
+        if(nativeMesh!=null&&nativeMesh.length>=13){double[] lo={1e18,1e18,1e18},hi={-1e18,-1e18,-1e18};
+            for(int o=0;o+12<nativeMesh.length;o+=13)for(int v=0;v<3;v++)for(int k=0;k<3;k++){double c=nativeMesh[o+3*v+k];lo[k]=Math.min(lo[k],c);hi[k]=Math.max(hi[k],c);}
+            for(int k=0;k<3;k++)if(hi[k]>=lo[k])e=Math.max(e,hi[k]-lo[k]);}
+        for(SketchPrimitive p:project.sketch)e=Math.max(e,Math.max(Math.abs(p.x2-p.x1),Math.abs(p.y2-p.y1)));
+        return Math.max(50,e);
+    }
 
     /** Live B-Rep preview of a candidate document for a parameter dialog; every field, check box and spinner re-runs it. */
     private void attachLivePreview(View form,java.util.function.Supplier<CadProject> candidate,android.widget.TextView status,String ready) {
@@ -7173,7 +7195,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         android.widget.TextView info=new android.widget.TextView(getContext());
         info.setText(shellSelections.isEmpty()?"Dotknij płaskich ścian, które mają zostać otwarte. Bez wskazanych ścian bryła zostanie wydrążona z zamkniętą pustką.":"Usuwane ściany: "+shellSelections.size()+". Ponowne dotknięcie usuwa wybór.");form.addView(info);
-        EditText thickness=labeledCoordinate(form,"Grubość ścianki [mm]",original!=null?original[2]:2);slider(form,thickness,.1,Math.max(5,modelExtent()/10),.1);
+        EditText thickness=labeledCoordinate(form,"Grubość ścianki [mm]",original!=null?original[2]:2);slider(form,thickness,.1,Math.max(5,modelExtent()/2),.1);
         android.widget.CheckBox outside=new android.widget.CheckBox(getContext());outside.setText("Grubość na zewnątrz bryły");outside.setChecked(original!=null&&original[3]==1);form.addView(outside);
         android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
         final int editIndex=shellEditIndex;
@@ -7202,7 +7224,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private void showShellEditor(int index) {
         double[] f=project.committedFeatures.get(index);LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         android.widget.TextView info=new android.widget.TextView(getContext());info.setText(ShellFeature.describe(f));form.addView(info);
-        EditText thickness=labeledCoordinate(form,"Grubość ścianki [mm]",f[2]);slider(form,thickness,.1,Math.max(5,modelExtent()/10),.1);
+        EditText thickness=labeledCoordinate(form,"Grubość ścianki [mm]",f[2]);slider(form,thickness,.1,Math.max(5,modelExtent()/2),.1);
         android.widget.CheckBox outside=new android.widget.CheckBox(getContext());outside.setText("Grubość na zewnątrz bryły");outside.setChecked(f[3]==1);form.addView(outside);
         android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
         java.util.function.Supplier<CadProject> candidate=()->{CadProject next=copyProject(project,false);next.committedFeatures.set(index,ShellFeature.withThickness(f,parseCoordinate(thickness),outside.isChecked()));return next;};
