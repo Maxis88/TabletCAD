@@ -1287,7 +1287,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(inSketch())return null;
         if(NEEDS_SOLID.contains(command)&&(!project.hasSolid()||project.importedMeshSource!=null))return project.importedMeshSource!=null?"siatka STL/OBJ bez geometrii B-Rep":"najpierw utwórz bryłę";
         if(NEEDS_TWO_BODIES.contains(command)&&BodyGraph.bodies(project).size()<2)return "potrzebne co najmniej dwie bryły";
-        if(command.equals("Gwint")&&holeCylinders.isEmpty())return "brak otworu walcowego";
+        if(command.equals("Gwint")&&holeCylinders.isEmpty())return "brak otworu ani wałka walcowego";
         return null;
     }
     /** Runs a toolbar command; when it neither opened a panel nor changed the mode, its message is shown as a toast. */
@@ -1967,12 +1967,33 @@ if (isInsideViewport(e.getX(), e.getY())) {
             canvas.drawLine(a.x,a.y,b.x,b.y,paint);return;
         }
         if(!AppOptions.showGrid)return;
-        float step = dp(28) * zoom;
-        float ox = (panX % step + step) % step;
-        float oy = (panY % step + step) % step;
-        for (float x = left + ox; x < right; x += step) canvas.drawLine(x, top, x, bottom, paint);
-        for (float y = top + oy; y < bottom; y += step) canvas.drawLine(left, y, right, y, paint);
+        drawGroundGrid(canvas);
     }
+    private double[] gridSource;private double gridExtent=100;
+    /**
+     * Ground grid on the model's XZ plane (Y up): it turns, tilts, pans and zooms with the model
+     * instead of being a flat screen pattern. Drawn before the solid, so the model covers it.
+     */
+    private void drawGroundGrid(Canvas canvas) {
+        if(gridSource!=nativeMesh){gridSource=nativeMesh;gridExtent=Math.max(50,modelExtent());}
+        double nominal=gridExtent/8,power=Math.pow(10,Math.floor(Math.log10(nominal))),fraction=nominal/power;
+        double step=(fraction<2?1:fraction<5?2:5)*power;int n=(int)Math.min(60,Math.ceil(gridExtent*1.6/step));double half=n*step;
+        int base=AppOptions.grid();
+        for(int axis=0;axis<2;axis++)for(int i=-n;i<=n;i++) {
+            double c=i*step;boolean major=i%5==0,zero=i==0;
+            paint.setStrokeWidth(zero?dp(1.4f):major?dp(1.1f):1f);
+            paint.setColor(zero?(axis==0?Color.argb(170,205,95,95):Color.argb(170,70,120,215)):major?darker(base):base);
+            // Segments: a line partly behind the camera is drawn only where it is in front.
+            double[] prev=null;
+            for(int k=0;k<=12;k++) {
+                double t=-half+2*half*k/12;double[] q=axis==0?projectWorldPoint(t,0,c):projectWorldPoint(c,0,t);
+                if(q[2]<=1e-6||!Double.isFinite(q[0])||!Double.isFinite(q[1])){prev=null;continue;}
+                if(prev!=null)canvas.drawLine((float)prev[0],(float)prev[1],(float)q[0],(float)q[1],paint);prev=q;
+            }
+        }
+    }
+    /** Major grid line: darker on light backgrounds, lighter on dark ones. */
+    private static int darker(int c){int d=(Color.red(c)+Color.green(c)+Color.blue(c))/3<110?-22:26;return Color.rgb(Math.min(255,Math.max(0,Color.red(c)-d)),Math.min(255,Math.max(0,Color.green(c)-d)),Math.min(255,Math.max(0,Color.blue(c)-d)));}
 
     private void drawNativeSolid(Canvas canvas, float cx, float cy) {
         if(sectionPlane!=null&&sectionSource!=nativeMesh)requestSection();
@@ -2348,11 +2369,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private void drawExtrusionRegions(Canvas canvas) {
         if(extrusionSelections.isEmpty())return;
         Path region=new Path();region.setFillType(Path.FillType.EVEN_ODD);
-        for(String ref:extrusionSelections)for(double[] loop:SketchRegion.outlines(project.sketch,ref)) {
+        for(String ref:extrusionSelections)for(double[] loop:SketchArea.isSeed(ref)?areaLoops(ref):SketchRegion.outlines(project.sketch,ref)) {
             for(int i=0;i<loop.length;i+=2){PointF p=projectSketchPoint(loop[i],loop[i+1]);if(i==0)region.moveTo(p.x,p.y);else region.lineTo(p.x,p.y);}region.close();
         }
         paint.setPathEffect(null);paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(70,245,145,20));canvas.drawPath(region,paint);paint.setStyle(Paint.Style.STROKE);
     }
+    private List<double[]> areaLoops(String seed){double[] q=SketchArea.seed(seed);SketchArea.Area a=SketchArea.at(sketchAreas(),q[0],q[1]);return a==null?new ArrayList<>():a.loops;}
     private boolean extrusionSelected(String id){for(String ref:extrusionSelections)if(SketchRegion.mentions(ref,id))return true;return false;}
 
     private void drawSketchEntity(Canvas canvas, SketchPrimitive entity) {
@@ -4320,7 +4342,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             CadModelResult result;
             try {result=new CadModelResult(NativeCadEngine.evaluateModelChecked(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),project.importedStep?importedSourceFile().getAbsolutePath():null));}
             catch(IllegalArgumentException error){operationMessage=kernelFailureMessage(project,error);return false;}
-            candidateMesh=result.mesh;faceBodies=result.bodies;faceFeatures=result.features;holeCylinders=result.holes;
+            candidateMesh=result.mesh;faceBodies=result.bodies;faceFeatures=result.features;holeCylinders=result.cylinders;
         }
         if (!CadMesh.isValid(candidateMesh, !project.hasSolid())) {
             operationMessage = "Nie można przebudować bryły. Poprzednia geometria została zachowana.";
@@ -4474,7 +4496,18 @@ if (isInsideViewport(e.getX(), e.getY())) {
         // (the frame between two nested squares is one region, the inner square another).
         String chosenRef=SketchRegion.pick(project.sketch,point[0],point[1]);
         for(SketchPrimitive p:project.sketch)if(p.construction&&p.closedGeometry()&&!p.isText()&&SketchRegion.contains(SketchRegion.outline(p),point[0],point[1]))overConstruction=true;
+        // Areas bounded by overlapping profiles or lines (kernel split of the sketch plane): used when
+        // the tapped area is not simply a profile or a profile with whole islands.
+        SketchArea.Area area=SketchArea.at(sketchAreas(),point[0],point[1]);
+        if(area!=null) {
+            double expected=chosenRef==null?Double.NaN:SketchArea.regionArea(project.sketch,chosenRef);
+            if(chosenRef==null||!(Math.abs(expected-area.area)<=1e-4*Math.max(1,area.area))) {
+                for(String s:new ArrayList<>(extrusionSelections))if(SketchArea.isSeed(s)){double[] q=SketchArea.seed(s);if(SketchArea.at(sketchAreas(),q[0],q[1])==area){extrusionSelections.remove(s);if(extrusionSelectionChanged!=null)extrusionSelectionChanged.run();invalidate();return;}}
+                chosenRef=SketchArea.seedRef(point[0],point[1]);
+            }
+        }
         final String chosen=chosenRef;
+        if(chosen!=null)extrusionSeeds.put(chosen,new double[]{point[0],point[1]});
         if(chosen!=null){
             // A profile picked automatically is replaced by the first one the user taps (no accidental double selection).
             if(extrusionAutoSelected&&!extrusionSelections.contains(chosen))extrusionSelections.clear();extrusionAutoSelected=false;
@@ -4484,8 +4517,48 @@ if (isInsideViewport(e.getX(), e.getY())) {
         else operationMessage="Dotknij wnętrza zamkniętego obszaru szkicu";
         invalidate();
     }
+    /** Tap point of each extrusion selection (seed of the area it stands for). */
+    private final java.util.Map<String,double[]> extrusionSeeds=new java.util.HashMap<>();
+    private double[] areaInput;private List<SketchArea.Area> areaCache=new ArrayList<>();
+    /** Kernel areas of the open sketch (cached while the sketch geometry is unchanged). */
+    List<SketchArea.Area> sketchAreas() {
+        List<SketchPrimitive> elements=SketchArea.elements(project.sketch);double[] packed=elements.isEmpty()?new double[0]:SketchArea.pack(elements);
+        if(!java.util.Arrays.equals(packed,areaInput)){areaInput=packed;areaCache=elements.isEmpty()?new ArrayList<>():SketchArea.areas(NativeCadEngine.sketchAreas(packed,elements.size()));}
+        return areaCache;
+    }
+    /** Point inside the area a selection stands for (arrow anchor, area seed). */
+    private double[] selectionSeed(String ref) {
+        if(SketchArea.isSeed(ref))return SketchArea.seed(ref);
+        double[] tapped=extrusionSeeds.get(ref);if(tapped!=null)return tapped;
+        for(SketchPrimitive p:project.sketch)if(p.id.equals(SketchRegion.outer(ref)))return profileCenter(p);
+        return null;
+    }
+    private static boolean anyArea(List<String> refs){for(String r:refs)if(SketchArea.isSeed(r))return true;return false;}
+    private int candidateRecords(List<String> refs){return anyArea(refs)?1:SketchRegion.merge(refs).size();}
+    /** All selections as seeds of one area record: adjacent areas become one solid. */
+    private CadProject areaCandidate(List<String> profiles,String operation,double first,double second,boolean reverse,boolean symmetric,int target) {
+        List<double[]> seeds=new ArrayList<>();for(String r:profiles){double[] q=selectionSeed(r);if(q==null)throw new IllegalArgumentException("Profil źródłowy nie jest dostępny");seeds.add(q);}
+        CadProject current=project;
+        try {
+            project=CadProject.fromJson(current.toJson());preserveExtrudedBase();commitActiveFeature();BodyGraph.begin(project);
+            List<SketchPrimitive> elements=SketchArea.elements(project.sketch);if(elements.isEmpty())throw new IllegalArgumentException("Szkic nie ma elementów ograniczających obszar");
+            String ref=SketchArea.ref(elements);
+            if(!project.hasSolid()) {
+                if(!operation.equals("new"))throw new IllegalArgumentException("Pierwsze wyciągnięcie musi tworzyć nową bryłę");
+                project.featureBase=SketchArea.base(project,elements,seeds,first,second,reverse,symmetric);project.featureBaseProfileId=ref;project.featureProfileId=null;project.sketchExtruded=true;project.depth=first+second;project.filletRadius=0;
+                project.extrusionExtents.put(-1,new double[]{FeatureDirection.signed(first,reverse,symmetric),second,symmetric?1:0});
+            } else {
+                int index=project.committedFeatures.size();project.committedFeatures.add(SketchArea.record(project,elements,seeds,operation,first,second,reverse,symmetric));project.committedProfileIds.add(ref);
+                project.featureBodyTargets.add(operation.equals("new")?0:target);project.featureBodyOutputs.add(operation.equals("new")?BodyGraph.allocate(project):target);
+                project.extrusionExtents.put(index,new double[]{FeatureDirection.signed(first,reverse,symmetric),second,symmetric?1:0});
+            }
+            BodyGraph.reconcile(project);return project;
+        }catch(org.json.JSONException error){throw new IllegalArgumentException(error);}
+        finally {project=current;}
+    }
     private CadProject extrusionCandidate(List<String> profiles,String operation,double first,double second,boolean reverse,boolean symmetric,int target) {
         if(profiles.isEmpty())throw new IllegalArgumentException("Zaznacz obszary szkicu bezpośrednio na rysunku");
+        if(anyArea(profiles))return areaCandidate(profiles,operation,first,second,reverse,symmetric,target);
         profiles=SketchRegion.merge(profiles);
         if(operation.equals("common")&&profiles.size()>1)throw new IllegalArgumentException("Część wspólna wymaga jednego obszaru; dla wielu wybierz Dodaj, Połącz lub Wytnij");
         CadProject current=project;
@@ -4640,22 +4713,21 @@ if (isInsideViewport(e.getX(), e.getY())) {
         Runnable preview=()->{
             if(propertyEditor!=owner)return;resolved[0]=null;confirm.setEnabled(false);selected.setText("Wybrane profile: "+extrusionSelections.size());target.setVisibility(operation.getSelectedItemPosition()!=1&&project.hasSolid()&&bodies.size()>1?View.VISIBLE:View.GONE);second.setVisibility(both.isChecked()?View.VISIBLE:View.GONE);secondLabel.setVisibility(both.isChecked()?View.VISIBLE:View.GONE);toFace.setVisibility(project.hasSolid()?View.VISIBLE:View.GONE);if(extrusionSelections.isEmpty()){invalidateGeometryPreview();featurePreview=null;extrusionDimension=null;extrusionHandle=null;invalidate();return;}
             // The arrow sits on the profile picked last (the one the user is working with).
-            String anchorId=lastExtrusionProfile!=null&&extrusionSelections.contains(lastExtrusionProfile)?SketchRegion.outer(lastExtrusionProfile):null;
-            java.util.Set<String> outers=new java.util.HashSet<>();for(String ref:extrusionSelections)outers.add(SketchRegion.outer(ref));
-            for(SketchPrimitive shape:project.sketch)if(outers.contains(shape.id)&&(anchorId==null||shape.id.equals(anchorId))){
-                double[] center=profileCenter(shape),origin=sketchToWorld(center[0],center[1]);double sign=operation.getSelectedItemPosition()==3?-1:1;
+            String anchorRef=lastExtrusionProfile!=null&&extrusionSelections.contains(lastExtrusionProfile)?lastExtrusionProfile:extrusionSelections.iterator().next();
+            double[] anchorSeed=selectionSeed(anchorRef);
+            if(anchorSeed!=null){
+                double[] center=anchorSeed,origin=sketchToWorld(center[0],center[1]);double sign=operation.getSelectedItemPosition()==3?-1:1;
                 // Principal XZ base extrusions follow native +Y, whereas placed features follow U×V.
                 if(!project.hasSolid()&&project.sketchPlane.equals("XZ"))sign=-sign;
                 double[] axis={sign*(project.sketchUy*project.sketchVz-project.sketchUz*project.sketchVy),sign*(project.sketchUz*project.sketchVx-project.sketchUx*project.sketchVz),sign*(project.sketchUx*project.sketchVy-project.sketchUy*project.sketchVx)};
                 if(extrusionDimension!=first){bindExtrusionManipulator(first,reverse,symmetric,origin,axis,extrusionSelectionChanged);extrusionOperation=operation;}
                 else {extrusionOrigin=origin;extrusionAxis=axis;}
-                break;
             }
             try {
                 boolean automatic=operation.getSelectedItemPosition()==0,hasBody=project.hasSolid();
                 String baseline=project.toJson().toString(),currentSpec=spec.get();
                 CadProject next=extrusionCandidate(new ArrayList<>(extrusionSelections),automatic?"new":new String[]{"auto","new","add","cut","common"}[operation.getSelectedItemPosition()],parseCoordinate(first),both.isChecked()?parseCoordinate(second):0,reverse.isChecked(),symmetric.isChecked(),bodies.get(target.getSelectedItemPosition()));
-                int start=next.committedFeatures.size()-SketchRegion.merge(new ArrayList<>(extrusionSelections)).size(),body=bodies.get(target.getSelectedItemPosition());
+                int start=next.committedFeatures.size()-candidateRecords(new ArrayList<>(extrusionSelections)),body=bodies.get(target.getSelectedItemPosition());
                 String source=next.importedStep?new File(projectRepository.importedStepFile().getParentFile(),next.importedStepSource).getAbsolutePath():null;
                 String[] recognized={automatic?"Nowa bryła":String.valueOf(operation.getSelectedItem())};
                 CadProject[] evaluatedResult={null};
@@ -4770,7 +4842,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             try {
                 if(error!=null)throw new IllegalArgumentException(error.getMessage());CadModelResult result=new CadModelResult(packed);
                 if(!project.toJson().toString().equals(baseline))throw new IllegalArgumentException("Dokument zmienił się podczas obliczania. Wynik nie został zastosowany.");
-                projectRepository.save(next);project=next;nativeMesh=result.mesh;faceBodies=result.bodies;faceFeatures=result.features;holeCylinders=result.holes;
+                projectRepository.save(next);project=next;nativeMesh=result.mesh;faceBodies=result.bodies;faceFeatures=result.features;holeCylinders=result.cylinders;
                 modelWidth=next.width;modelHeight=next.height;modelDepth=next.depth;nativePrism=NativeCadEngine.createPrism(modelWidth,modelHeight,modelDepth);modelSnapGeometry=null;updateMeshCenter();technicalSheet=null;scheduleThumbnail();
                 undoStack.push(baseline);while(undoStack.size()>50)undoStack.removeLast();redoStack.clear();mode="Wybierz";selectedFace=-1;threadSelections.clear();highlightBody=0;highlightFeature=next.committedFeatures.size()-1;operationMessage=message;
             }catch(Exception failure){operationMessage="Nie zatwierdzono operacji: "+kernelFailureMessage(next,error!=null?error:failure);}

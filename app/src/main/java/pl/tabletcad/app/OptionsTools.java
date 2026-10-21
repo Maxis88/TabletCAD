@@ -28,6 +28,11 @@ final class OptionsTools {
         CheckBox dims=check(form,"Wymiary w szkicu widoczne",AppOptions.showSketchDimensions);
         int unitIndex=0;for(int i=0;i<Units.CODES.length;i++)if(Units.CODES[i].equals(AppOptions.defaultUnits))unitIndex=i;
         Spinner units=choice(form,"Jednostki nowych projektów",Units.NAMES,unitIndex);
+        // O programie: author and website (tapping the address opens the browser).
+        TextView aboutTitle=new TextView(ws.getContext());aboutTitle.setText("O programie");aboutTitle.setTextColor(PanelStyle.INK);aboutTitle.setTextSize(15);aboutTitle.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);aboutTitle.setPadding(0,(int)ws.dp(18),0,0);form.addView(aboutTitle);
+        TextView about=new TextView(ws.getContext());about.setText("TabletCAD v"+ws.appVersion()+"\nAutor: Łukasz · 3D Art Garage\nProgram CAD do projektowania części na tablecie, działa bez internetu.");about.setTextColor(PanelStyle.MUTED);form.addView(about);
+        TextView site=new TextView(ws.getContext());site.setText("www.3dartgarage.pl");site.setTextColor(PanelStyle.ACCENT);site.setTextSize(15);site.setPaintFlags(site.getPaintFlags()|android.graphics.Paint.UNDERLINE_TEXT_FLAG);site.setPadding(0,(int)ws.dp(6),0,(int)ws.dp(6));site.setMinHeight((int)ws.dp(40));site.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        site.setOnClickListener(x->{try{ws.getContext().startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse("https://www.3dartgarage.pl")));}catch(RuntimeException error){ws.operationMessage="Brak przeglądarki do otwarcia www.3dartgarage.pl";ws.invalidate();}});form.addView(site);
         ws.new PropertyBuilder().setTitle("Opcje").setView(form).setNegativeButton("Anuluj",null).setNeutralButton("Domyślne",(d,w)->{
             boolean threadsChanged=!AppOptions.showThreads;themeChanged=AppOptions.theme!=0;
             AppOptions.theme=0;AppOptions.showThreads=true;AppOptions.showGrid=true;AppOptions.showViewCube=true;AppOptions.showSketchDimensions=true;AppOptions.background=0;AppOptions.accent=0;AppOptions.modelColor=0;AppOptions.defaultUnits="mm";

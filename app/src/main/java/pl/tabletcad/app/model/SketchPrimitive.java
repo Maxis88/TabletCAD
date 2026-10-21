@@ -143,6 +143,7 @@ public final class SketchPrimitive {
         return result;
     }
     public static SketchPrimitive fromFeature(String id,String type,double[] data,int offset,int prefixLength) {
+        if(pl.tabletcad.app.SketchArea.is(data))return pl.tabletcad.app.SketchArea.anchor(id,data);
         if(pl.tabletcad.app.SketchRegion.is(data))return pl.tabletcad.app.SketchRegion.outerProfile(id,data);
         if(pl.tabletcad.app.ExtrusionPlan.placedBase(data))return pl.tabletcad.app.ExtrusionPlan.baseProfile(id,data);
         if(pl.tabletcad.app.Revolve.is(data))return pl.tabletcad.app.Revolve.profile(id,data);

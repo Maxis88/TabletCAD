@@ -25,7 +25,7 @@ public final class ExtrusionPlan {
         if(!placedBase(f)||!Double.isFinite(f[1])||Math.abs(f[1])<.1||f[2]<0||f[2]>5000||Math.abs(Math.abs(f[6])-Math.abs(f[1])-f[2])>1e-6)throw new IllegalArgumentException("Niepoprawne dwukierunkowe wyciągnięcie bazowe");
         for(double value:f)if(!Double.isFinite(value))throw new IllegalArgumentException("Niepoprawne parametry wyciągania");
         if(!FeatureDirection.operation(f[8]).equals("new"))throw new IllegalArgumentException("Baza musi tworzyć nową bryłę");
-        double[] inner=Arrays.copyOfRange(f,7,f.length);if(SketchRegion.is(inner))SketchRegion.validate(inner);
+        double[] inner=Arrays.copyOfRange(f,7,f.length);if(SketchRegion.is(inner))SketchRegion.validate(inner);if(SketchArea.is(inner))SketchArea.validate(inner);
         SketchPrimitive.fromFeature("validate","Prostokąt",inner,2,16);
     }
     public static SketchPrimitive baseProfile(String id,double[] f){return SketchPrimitive.fromFeature(id,f[7]==1?"Okrąg":"Prostokąt",Arrays.copyOfRange(f,7,f.length),2,16);}

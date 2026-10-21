@@ -74,7 +74,7 @@ public final class UserParameters {
             try {
                 if(key.startsWith("depth:")) {
                     int i=Integer.parseInt(key.substring(6));double[] f=feature(p,i);
-                    if((f[0]<0&&!SketchRegion.is(f))||f.length<16)throw new IllegalArgumentException("Operacja nie ma głębokości");
+                    if((f[0]<0&&!SketchRegion.is(f)&&!SketchArea.is(f))||f.length<16)throw new IllegalArgumentException("Operacja nie ma głębokości");
                     double depth=Units.parseLength(expression,p.units,values);if(depth<.1||depth>5000)throw new IllegalArgumentException("Głębokość poza zakresem 0,1–5000 mm");
                     f[6]=Math.copySign(depth,f[6]);
                 } else if(key.startsWith("hole:")) {

@@ -37,6 +37,8 @@
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <ShapeFix_Face.hxx>
+#include <BRepClass_FaceClassifier.hxx>
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Common.hxx>
@@ -613,6 +615,82 @@ TopoDS_Shape regionPrism(const double* f,int length,bool cut,bool symmetric) {
     cutter.SimplifyResult(true,true);const TopoDS_Shape result=cutter.Shape();
     return acceptable(result,false)?result:TopoDS_Shape();
 }
+// Sketch areas (SketchArea.java): the sketch plane split by every element. An element is a
+// closed profile (type, x1, y1, x2, y2, tail) or an open chain (3000+k, 0, 0, 0, 0, k segments of
+// kind 0 line / 1 arc). A rectangle around everything is split by the edges (General Fuse); the
+// face that contains a point near its corner is the outside, every other face is one area.
+int areaElementLength(const double* p,int available) {
+    if(available<5)return 0;const double t=p[0];
+    if(t>=3001&&t<=3128&&t==std::floor(t)){const int len=5+(static_cast<int>(t)-3000)*7;return available>=len?len:0;}
+    const int tail=profileTail(t);if(tail<0||available<5+tail)return 0;return 5+tail;
+}
+bool areaElementEdges(const double* p,const gp_Pnt& o,const gp_Vec& u,const gp_Vec& v,NCollection_List<TopoDS_Shape>& out,double* bounds) {
+    auto at=[&](double x,double y){bounds[0]=std::min(bounds[0],x);bounds[1]=std::min(bounds[1],y);bounds[2]=std::max(bounds[2],x);bounds[3]=std::max(bounds[3],y);return o.Translated(u*x+v*y);};
+    if(p[0]>=3001) {
+        const int n=static_cast<int>(p[0])-3000;
+        for(int i=0;i<n;i++) {
+            const double* s=p+5+i*7;for(int j=1;j<7;j++)if(!std::isfinite(s[j])||std::abs(s[j])>5000)return false;
+            const gp_Pnt a=at(s[1],s[2]),b=at(s[5],s[6]);if(a.Distance(b)<1e-4)return false;
+            if(s[0]==1){GC_MakeArcOfCircle arc(a,at(s[3],s[4]),b);if(!arc.IsDone())return false;out.Append(BRepBuilderAPI_MakeEdge(arc.Value()).Edge());}
+            else if(s[0]==0)out.Append(BRepBuilderAPI_MakeEdge(a,b).Edge());
+            else return false;
+        }
+        return true;
+    }
+    TopoDS_Wire w=placedProfileWire(p,o,u,v);if(w.IsNull())return false;
+    Bnd_Box box;BRepBndLib::Add(w,box);if(box.IsVoid())return false;double x0,y0,z0,x1,y1,z1;box.Get(x0,y0,z0,x1,y1,z1);
+    for(int c=0;c<8;c++){gp_Pnt q((c&1)?x1:x0,(c&2)?y1:y0,(c&4)?z1:z0);gp_Vec d(o,q);at(d.Dot(u),d.Dot(v));}
+    for(TopExp_Explorer e(w,TopAbs_EDGE);e.More();e.Next())out.Append(e.Current());
+    return true;
+}
+bool sketchAreaFaces(const double* elements,int n,int length,const gp_Pnt& o,const gp_Vec& u,const gp_Vec& v,std::vector<TopoDS_Face>& faces) {
+    NCollection_List<TopoDS_Shape> edges;int at=0;double bounds[4]={1e300,1e300,-1e300,-1e300};
+    for(int i=0;i<n;i++){const int len=areaElementLength(elements+at,length-at);if(!len)return false;if(!areaElementEdges(elements+at,o,u,v,edges,bounds))return false;at+=len;}
+    if(at!=length||edges.IsEmpty())return false;
+    const double m=std::max(10.0,0.1*std::max(bounds[2]-bounds[0],bounds[3]-bounds[1]));
+    auto at2=[&](double x,double y){return o.Translated(u*x+v*y);};
+    BRepBuilderAPI_MakePolygon frame(at2(bounds[0]-m,bounds[1]-m),at2(bounds[2]+m,bounds[1]-m),at2(bounds[2]+m,bounds[3]+m),at2(bounds[0]-m,bounds[3]+m),true);
+    const gp_Pln plane(o,gp_Dir(u.Crossed(v)));BRepBuilderAPI_MakeFace big(plane,frame.Wire(),true);if(!big.IsDone())return false;
+    BRepAlgoAPI_Splitter split;NCollection_List<TopoDS_Shape> args;args.Append(big.Face());split.SetArguments(args);split.SetTools(edges);split.SetNonDestructive(true);split.Build();
+    if(!split.IsDone())return false;
+    const gp_Pnt outside=at2(bounds[0]-m*.5,bounds[1]-m*.5);
+    for(TopExp_Explorer e(split.Shape(),TopAbs_FACE);e.More();e.Next()) {
+        const TopoDS_Face face=TopoDS::Face(e.Current());BRepClass_FaceClassifier c(face,outside,1e-7);
+        if(c.State()==TopAbs_IN||c.State()==TopAbs_ON)continue;faces.push_back(face);
+    }
+    return true;
+}
+// Record -31: the faces containing the seeds, swept along the sketch normal and fused.
+TopoDS_Shape areaPrism(const double* f,int length,bool cut,bool symmetric) {
+    const int n=static_cast<int>(f[2]),m=static_cast<int>(f[3]);
+    const gp_Vec u(f[10],f[11],f[12]),v(f[13],f[14],f[15]);gp_Vec normal=u.Crossed(v);double depth=f[6];
+    if(!std::isfinite(depth)||std::abs(depth)<=1e-6||normal.SquareMagnitude()<1e-20)return {};
+    if(depth<0)normal.Reverse();depth=std::abs(depth);normal.Normalize();gp_Pnt start(f[7],f[8],f[9]);
+    if(cut)start.Translate(normal*(-depth));
+    if(symmetric)start.Translate(normal*(cut?depth*.5:-depth*.5));
+    std::vector<TopoDS_Face> faces;if(!sketchAreaFaces(f+16+2*m,n,length-16-2*m,start,u,v,faces)){kernelReason("Elementy szkicu nie tworzą obszarów (sprawdź, czy kontury są poprawne)");return {};}
+    std::vector<TopoDS_Face> chosen;
+    for(int k=0;k<m;k++) {
+        const gp_Pnt seed=start.Translated(u*f[16+2*k]+v*f[17+2*k]);bool found=false;
+        for(const auto& face:faces){BRepClass_FaceClassifier c(face,seed,1e-7);if(c.State()==TopAbs_IN){found=true;bool known=false;for(const auto& x:chosen)if(x.IsSame(face))known=true;if(!known)chosen.push_back(face);break;}}
+        if(!found){kernelReason("Wskazany obszar nie istnieje po zmianie szkicu – wskaż go ponownie");return {};}
+    }
+    NCollection_List<TopoDS_Shape> prisms;
+    for(const auto& face:chosen){BRepPrimAPI_MakePrism prism(face,normal*depth);if(!prism.IsDone())return {};prisms.Append(prism.Shape());}
+    TopoDS_Shape result;
+    if(prisms.Size()==1)result=prisms.First();
+    else {NCollection_List<TopoDS_Shape> first,rest;bool head=true;for(const auto& p:prisms){if(head){first.Append(p);head=false;}else rest.Append(p);}
+        BRepAlgoAPI_Fuse fuse;fuse.SetArguments(first);fuse.SetTools(rest);fuse.Build();if(!fuse.IsDone())return {};fuse.SimplifyResult(true,true);result=fuse.Shape();}
+    if(result.IsNull()||countShapes(result,TopAbs_SOLID)==0||!BRepCheck_Analyzer(result).IsValid())return {};
+    return result;
+}
+int areaRecordLength(const double* f,int available) {
+    if(available<21)return 0;const double n=f[2],m=f[3];
+    if(n!=std::floor(n)||m!=std::floor(m)||n<1||n>512||m<1||m>64||f[4]!=0||f[5]!=0)return 0;
+    int at=16+2*static_cast<int>(m);if(available<at)return 0;
+    for(int i=0;i<static_cast<int>(n);i++){const int len=areaElementLength(f+at,available-at);if(!len)return 0;at+=len;}
+    return at;
+}
 // Section: origin xyz, u xyz, v xyz, profile (type, x1, y1, x2, y2, tail). Returns the length or 0.
 int sectionLength(const double* s,int available){if(available<14)return 0;const int tail=profileTail(s[9]);return tail<0||available<14+tail?0:14+tail;}
 TopoDS_Wire sectionWire(const double* s) {
@@ -1018,9 +1096,11 @@ namespace {
 static std::mutex g_threadToolMutex;static std::map<std::vector<double>,TopoDS_Shape> g_threadTools;
 TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
     if(shape.IsNull()||(f[1]!=1&&f[1]!=-1)||f[8]<=0||f[9]<=f[8]||f[10]<.05||f[11]<.1||f[11]/f[10]>200)return {};
-    if(f[12]!=0&&f[12]<f[11])return {};for(int i=13;i<16;i++)if(f[i]!=0)return {};
+    if(f[12]!=0&&f[12]<f[11])return {};if((f[13]!=0&&f[13]!=1)||f[14]!=0||f[15]!=0)return {};
+    // f[13] = 1: external thread on a shaft (f[9] = shaft radius, f[8] = minor radius): a V groove.
+    const bool external=f[13]==1;
     gp_Vec axis(f[5],f[6],f[7]);if(std::abs(axis.Magnitude()-1)>1e-6)return {};
-    const double pitch=f[10],depth=f[11],inner=f[8]-std::min(.05,pitch*.02),outer=f[9],height=outer-inner;
+    const double pitch=f[10],depth=f[11],inner=external?f[8]:f[8]-std::min(.05,pitch*.02),outer=external?f[9]+std::min(.05,pitch*.02):f[9],height=outer-inner;
     if(inner<=0||height>pitch*.82)return {};
     const double halfWidth=height/std::sqrt(3.0),reference=(inner+outer)/2,start=-pitch,run=depth+2*pitch;
     Handle(Geom_CylindricalSurface) cylinder=new Geom_CylindricalSurface(gp_Ax3(),reference);
@@ -1029,7 +1109,9 @@ TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
     BRepBuilderAPI_MakeEdge edge(helix,cylinder,0,last);if(!edge.IsDone())return {};
     TopoDS_Edge spine=edge.Edge();if(!BRepLib::BuildCurves3d(spine))return {};
     BRepBuilderAPI_MakeWire wire(spine);if(!wire.IsDone())return {};
-    BRepBuilderAPI_MakePolygon profile;profile.Add(gp_Pnt(inner,0,start-halfWidth));profile.Add(gp_Pnt(outer,0,start));profile.Add(gp_Pnt(inner,0,start+halfWidth));profile.Close();
+    // Internal: base on the bore, tip in the material; external: base outside the shaft, tip at the minor radius.
+    const double base=external?outer:inner,tip=external?inner:outer;
+    BRepBuilderAPI_MakePolygon profile;profile.Add(gp_Pnt(base,0,start-halfWidth));profile.Add(gp_Pnt(tip,0,start));profile.Add(gp_Pnt(base,0,start+halfWidth));profile.Close();
     if(!profile.IsDone())return {};
     auto pipeT0=std::chrono::steady_clock::now();
     BRepOffsetAPI_MakePipeShell pipe(wire.Wire());pipe.SetMode(true);pipe.Add(profile.Wire(),false,false);pipe.Build();
@@ -1057,7 +1139,7 @@ TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
         const double inset=at[1];
         // The clipped helical tool depends only on the thread parameters: holes of the same size
         // share it (the clip is ~0.8 s of OCCT work per thread).
-        std::vector<double> key={f[1],f[8],f[9],f[10],f[11],f[12],static_cast<double>(attempt)};TopoDS_Shape clippedShape;
+        std::vector<double> key={f[1],f[8],f[9],f[10],f[11],f[12],f[13],static_cast<double>(attempt)};TopoDS_Shape clippedShape;
         {std::lock_guard<std::mutex> guard(g_threadToolMutex);auto hit=g_threadTools.find(key);if(hit!=g_threadTools.end())clippedShape=hit->second;}
         if(clippedShape.IsNull()){
             BRepAlgoAPI_Common clipped(pipe.Shape(),BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0,0,inset),gp_Dir(0,0,1)),outer+.1,depth-inset-(full?inset:0)).Shape());clipped.Build();if(!clipped.IsDone())continue;
@@ -1665,6 +1747,26 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                 if(shape.IsNull()){kernelFailAt(tag,cut?"Wycięcie napisu nie powiodło się":"Dodanie napisu nie powiodło się");return {};}
                 updateOrigins(prior,shape,tag,origins);i+=16+payload;continue;
             }
+            if(f[0]==-31) {
+                const int stride=areaRecordLength(f,count-i);
+                if(!stride){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                for(int k=0;k<stride;k++)if(!std::isfinite(f[k])){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                if(f[1]!=std::floor(f[1])||!(f[1]==0||f[1]==1||f[1]==2||f[1]==3||f[1]==4||f[1]==6||f[1]==8||f[1]==10)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                const bool cut=(static_cast<int>(f[1])&1)!=0,symmetric=(static_cast<int>(f[1])&2)!=0;
+                const TopoDS_Shape tool=areaPrism(f,stride,cut,symmetric);
+                if(tool.IsNull()){kernelFailAt(tag,"Obszar szkicu nie tworzy poprawnej bryły");return {};}
+                if((static_cast<int>(f[1])&4)!=0) {
+                    BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);
+                    if(shape.IsNull())shape=tool;else {builder.Add(compound,shape);builder.Add(compound,tool);shape=compound;}
+                    if(!BRepCheck_Analyzer(shape).IsValid()){kernelFailAt(tag,"Nowa bryła ma niepoprawną topologię");return {};}
+                } else if((static_cast<int>(f[1])&8)!=0) {
+                    BRepAlgoAPI_Common operation(shape,tool);operation.Build();
+                    if(!operation.IsDone()||operation.Shape().IsNull()||!BRepCheck_Analyzer(operation.Shape()).IsValid()||countShapes(operation.Shape(),TopAbs_SOLID)==0){kernelFailAt(tag,"Bryły nie mają części wspólnej");return {};}
+                    shape=operation.Shape();
+                } else shape=applyProfileFeature(shape,tool,cut);
+                if(shape.IsNull()){kernelFailAt(tag,cut?"Wycięcie obszaru nie powiodło się":"Dodanie obszaru nie powiodło się");return {};}
+                updateOrigins(prior,shape,tag,origins);i+=stride;continue;
+            }
             if(f[0]==-30) {
                 const int stride=regionLength(f,count-i);
                 if(!stride||f[3]!=0||f[4]!=0||f[5]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
@@ -1903,8 +2005,9 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeEvaluateFeatures(
                         // threaded solid took hundreds of milliseconds per face.
                         gp_Pnt on;gp_Vec du,dv;surface.D1((umin+umax)/2,v,on,du,dv);gp_Vec normal=du.Crossed(dv);if(normal.SquareMagnitude()<1e-18)continue;
                         if(e.Current().Orientation()==TopAbs_REVERSED)normal.Reverse();
-                        if(normal.Dot(radial)>=0)continue;
-                        for(double value:{static_cast<double>(face),static_cast<double>(bodyId),cylinder.Radius(),p.X(),p.Y(),p.Z(),axis.X(),axis.Y(),axis.Z(),vmin,vmax,umin,umax,1.0,0.0})cylinders.push_back(value);
+                        // Convex cylinders (shafts, pins) are reported too, flagged 1 in the last value: external threads.
+                        const double external=normal.Dot(radial)>=0?1.0:0.0;
+                        for(double value:{static_cast<double>(face),static_cast<double>(bodyId),cylinder.Radius(),p.X(),p.Y(),p.Z(),axis.X(),axis.Y(),axis.Z(),vmin,vmax,umin,umax,1.0,external})cylinders.push_back(value);
                     }
                 }
             }
@@ -2211,4 +2314,33 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeConvertExchange(JNIEnv* env,jclass,j
         return env->NewStringUTF("IGES: wyjątek jądra CAD");
     }
 #endif
+}
+
+// Areas of a sketch (picking and highlighting): [count, per area: area, loop count, per loop: n, u0, v0, ...].
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_pl_tabletcad_app_NativeCadEngine_nativeSketchAreas(JNIEnv* env,jclass,jdoubleArray javaElements,jint count) {
+    try {
+        if(javaElements==nullptr||count<1||count>512)return env->NewDoubleArray(0);
+        const jsize size=env->GetArrayLength(javaElements);std::vector<double> e(size);env->GetDoubleArrayRegion(javaElements,0,size,e.data());
+        for(double x:e)if(!std::isfinite(x))return env->NewDoubleArray(0);
+        const gp_Pnt o(0,0,0);const gp_Vec u(1,0,0),v(0,1,0);std::vector<TopoDS_Face> faces;
+        if(!sketchAreaFaces(e.data(),count,static_cast<int>(size),o,u,v,faces))return env->NewDoubleArray(0);
+        std::vector<double> out{static_cast<double>(faces.size())};
+        for(const auto& face:faces) {
+            GProp_GProps props;BRepGProp::SurfaceProperties(face,props);out.push_back(std::abs(props.Mass()));
+            std::vector<std::vector<double>> loops;
+            for(TopExp_Explorer w(face,TopAbs_WIRE);w.More();w.Next()) {
+                std::vector<double> loop;
+                for(BRepTools_WireExplorer it(TopoDS::Wire(w.Current()),face);it.More();it.Next()) {
+                    BRepAdaptor_Curve curve(it.Current());const int steps=curve.GetType()==GeomAbs_Line?1:48;const bool reversed=it.Current().Orientation()==TopAbs_REVERSED;
+                    for(int k=0;k<steps;k++){const double t=reversed?curve.LastParameter()-(curve.LastParameter()-curve.FirstParameter())*k/steps:curve.FirstParameter()+(curve.LastParameter()-curve.FirstParameter())*k/steps;
+                        const gp_Pnt q=curve.Value(t);loop.push_back(q.X());loop.push_back(q.Y());}
+                }
+                if(loop.size()>=6)loops.push_back(std::move(loop));
+            }
+            out.push_back(static_cast<double>(loops.size()));
+            for(const auto& l:loops){out.push_back(static_cast<double>(l.size()/2));out.insert(out.end(),l.begin(),l.end());}
+        }
+        jdoubleArray result=env->NewDoubleArray(static_cast<jsize>(out.size()));if(result)env->SetDoubleArrayRegion(result,0,static_cast<jsize>(out.size()),out.data());return result;
+    }catch(const Standard_Failure&){return env->NewDoubleArray(0);}catch(...){return env->NewDoubleArray(0);}
 }

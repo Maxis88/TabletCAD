@@ -55,9 +55,19 @@ public final class SketchTransactions {
     public static void prune(CadProject p) {
         Set<String> ids=new HashSet<>();for(SketchPrimitive entity:p.sketch)ids.add(entity.id);p.sketchLineage.keySet().retainAll(ids);
     }
+    private static Set<String> plainOrigins(CadProject baseline) {
+        Set<String> used=new HashSet<>();for(String r:baseline.committedProfileIds)if(!SketchRegion.isRef(r))used.add(r);
+        if(!SketchRegion.isRef(baseline.featureBaseProfileId))used.add(baseline.featureBaseProfileId);
+        if(!baseline.featureOperation.equals("none"))used.add(baseline.featureProfileId);
+        for(String r:baseline.committedProfileIds)if(SketchRegion.isRef(r)&&!SketchArea.isRef(r))used.addAll(SketchRegion.ids(r));
+        if(SketchRegion.isRef(baseline.featureBaseProfileId)&&!SketchArea.isRef(baseline.featureBaseProfileId))used.addAll(SketchRegion.ids(baseline.featureBaseProfileId));
+        return used;
+    }
     private static SketchPrimitive resolved(CadProject p,String origin) {
         String explicit=p.sketchBindings.get(origin);SketchPrimitive found=null;
-        for(SketchPrimitive entity:p.sketch)if(entity.closedProfile()) {
+        // Elements used only by sketch areas may be open lines/arcs; profiles of plain operations must stay closed.
+        boolean areaOnly=!plainOrigins(baseline(p)).contains(origin);
+        for(SketchPrimitive entity:p.sketch)if(entity.closedProfile()||areaOnly&&SketchArea.element(entity)) {
             if(explicit!=null){if(entity.id.equals(explicit))return entity;}
             else if(origin.equals(p.sketchLineage.get(entity.id))){if(found!=null)return null;found=entity;}
         }

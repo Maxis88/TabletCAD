@@ -24,7 +24,8 @@ public final class ProfileDependencies {
     /** Updates every consumer while preserving depth, direction, frame, axis and body routing. */
     public static void propagate(CadProject p,String oldId,SketchPrimitive shape) {
         if(!uses(p,oldId))return;
-        if(!shape.closedProfile())throw new IllegalArgumentException("Używany profil musi pozostać zamkniętą geometrią zwykłą");
+        boolean plain=oldId.equals(p.featureBaseProfileId)||oldId.equals(p.featureProfileId)&&!p.featureOperation.equals("none")||p.committedProfileIds.contains(oldId);
+        if(plain&&!shape.closedProfile())throw new IllegalArgumentException("Używany profil musi pozostać zamkniętą geometrią zwykłą");
         if(oldId.equals(p.featureBaseProfileId)&&p.featureBase!=null){p.featureBase=replace(p.featureBase,shape,true);p.featureBaseProfileId=shape.id;}
         // Regions (area between nested profiles): the edited element is replaced inside the record.
         if(SketchRegion.isRef(p.featureBaseProfileId)&&SketchRegion.mentions(p.featureBaseProfileId,oldId)&&p.featureBase!=null){

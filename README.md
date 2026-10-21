@@ -1,12 +1,13 @@
 # TabletCAD
 
 Natywna aplikacja CAD offline na tablety ARM64 z Androidem 14 lub nowszym.
-Wersja źródeł: **1.0.0-rc8**, versionCode **117**.
+Wersja źródeł: **1.0.0-rc9**, versionCode **118**.
 Główne repozytorium: https://github.com/Maxis88/TabletCAD, gałąź `main`.
 
 Ikona aplikacji w 0.53 wykorzystuje grafikę dostarczoną przez użytkownika,
 z adaptacyjną maską Androida i granatowym tłem.
 
+Wersja 1.0.0-rc9 — obszary szkicu jak w Fusion: nakładające się kontury i linie/łuki przecinające kontur dzielą płaszczyznę na obszary (jądro OCCT dzieli płaszczyznę wszystkimi elementami, rekord -31 z punktami-ziarnami); dotknięcie wybiera obszar, kilka sąsiednich obszarów daje jedną bryłę, edycja linii lub konturu przelicza operację, utracony obszar jest zgłaszany. Gwint zewnętrzny na wałkach (presety M według średnicy wałka, rowek V 60° o głębokości 0,6134·P). Siatka tła jako siatka podłoża (płaszczyzna XZ) obracająca się i przybliżana razem z modelem, z osiami X/Z. Opcje → O programie: autor i www.3dartgarage.pl. Sondy `SketchAreaKernelProbe` (22) i `AreaUiProbe`; sondy kończące proces przy błędzie są wywoływane przez `run()`, więc błąd jest raportowany.
 Wersja 1.0.0-rc8 — ciemny motyw całego interfejsu (Opcje → Motyw interfejsu): obszar roboczy, drzewo modelu, panele, pola, listy i okna dialogowe; linie szkicu, wymiary i pomiary w jaśniejszych odcieniach czytelnych na ciemnym tle; cztery tła w wersji ciemnej. Motyw obejmuje całość po ponownym uruchomieniu (Opcje proponują restart; projekt pozostaje otwarty). Sonda `RegionUiProbe` sprawdza ciemną paletę.
 Wersja 1.0.0-rc7 — wyciąganie obszaru między konturami: dotknięcie między zagnieżdżonymi profilami (np. kwadrat w kwadracie, płyta z otworami) zaznacza pierścień/ramkę jako jeden obszar; jądro tworzy jedną płaską ścianę B-Rep z wyspami (dokładne okręgi, łuki, elipsy) i wyciąga ją jako jedną operację (rekord -30, także pierwsza bryła, łączenie, wycięcie, część wspólna; zaznaczenie ramki i jej wyspy daje cały kontur). Edycja wymiarów któregokolwiek konturu przelicza operację. Nowe okno **Opcje** (Plik / Projekt → Opcje): ukrywanie gwintów modelowanych w widoku i pomiarach (ściana gwintowanego otworu ma wtedy pomarańczowe paski; eksport zawsze zawiera gwint), tło obszaru roboczego, kolor akcentu, kolor bryły, siatka, kostka widoku, wymiary w szkicu, jednostki nowych projektów. W drzewie modelu jeden przełącznik dla wszystkich szkiców („Wszystkie szkice”) i dla wszystkich elementów konstrukcyjnych (oko przy „Konstrukcja”). Sondy `RegionKernelProbe` (27 sprawdzeń) i `RegionUiProbe`.
 Wersja 1.0.0-rc4 — zamknięty splajn jako gładki profil (wyciągnięcie i wycięcie; krzywe Béziera w jądrze OCCT); podział bryły powierzchnią z krzywej szkicu, także falistej; wybór ściany w punkcie dotknięcia i bez zaznaczania szkiców ukrytych pod bryłą.

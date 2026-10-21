@@ -21,7 +21,8 @@ public final class SketchRegion {
     public static final double TYPE=-30;
     public static final String PREFIX="region:";
     public static boolean is(double[] f){return f!=null&&f.length>=21&&f[0]==TYPE;}
-    public static boolean isRef(String ref){return ref!=null&&ref.startsWith(PREFIX);}
+    /** Region ("region:") or general area ("area:", {@link SketchArea}) reference. */
+    public static boolean isRef(String ref){return ref!=null&&(ref.startsWith(PREFIX)||ref.startsWith(SketchArea.PREFIX));}
 
     // ---- References ----
     public static String ref(String outer,Collection<String> islands) {
@@ -32,7 +33,7 @@ public final class SketchRegion {
     public static List<String> ids(String ref) {
         if(ref==null||ref.isEmpty())return new ArrayList<>();
         if(!isRef(ref))return new ArrayList<>(Collections.singletonList(ref));
-        return new ArrayList<>(Arrays.asList(ref.substring(PREFIX.length()).split("\\|")));
+        return new ArrayList<>(Arrays.asList(ref.substring(ref.indexOf(':')+1).split("\\|")));
     }
     public static String outer(String ref){List<String> ids=ids(ref);return ids.isEmpty()?null:ids.get(0);}
     public static List<String> islands(String ref){List<String> ids=ids(ref);return ids.isEmpty()?ids:new ArrayList<>(ids.subList(1,ids.size()));}
@@ -41,7 +42,7 @@ public final class SketchRegion {
     public static String rename(String ref,String oldId,String newId) {
         if(!isRef(ref))return oldId.equals(ref)?newId:ref;
         List<String> ids=ids(ref);for(int i=0;i<ids.size();i++)if(ids.get(i).equals(oldId))ids.set(i,newId);
-        return ref(ids.get(0),ids.subList(1,ids.size()));
+        return ref.substring(0,ref.indexOf(':')+1)+String.join("|",ids);
     }
 
     // ---- Planar outlines for picking ----
@@ -155,6 +156,8 @@ public final class SketchRegion {
      * and body routing preserved), the same rule as {@link ProfileDependencies#replace} for one profile.
      */
     public static double[] replace(double[] f,String ref,String oldId,SketchPrimitive shape) {
+        if(ExtrusionPlan.placedBase(f)){double[] inner=replace(Arrays.copyOfRange(f,7,f.length),ref,oldId,shape);double[] r=Arrays.copyOf(f,7+inner.length);System.arraycopy(inner,0,r,7,inner.length);ExtrusionPlan.validateBase(r);return r;}
+        if(SketchArea.is(f))return SketchArea.replace(f,ref,oldId,shape);
         if(!usable(shape))throw new IllegalArgumentException("Kontur obszaru musi pozostać zamkniętą geometrią zwykłą");
         if(ExtrusionPlan.placedBase(f)){double[] inner=replace(Arrays.copyOfRange(f,7,f.length),ref,oldId,shape);double[] r=Arrays.copyOf(f,7+inner.length);System.arraycopy(inner,0,r,7,inner.length);ExtrusionPlan.validateBase(r);return r;}
         List<SketchPrimitive> shapes=stored(f,ref);List<String> ids=ids(ref);

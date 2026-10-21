@@ -12,7 +12,7 @@ public final class BodyGraph {
         while(p.featureBodyTargets.size()<p.committedFeatures.size()){p.featureBodyTargets.add(-1);p.featureBodyOutputs.add(1);}
         reconcile(p);
     }
-    public static boolean creates(double[] f){return f.length>=16&&(((f[0]>=0||SketchRegion.is(f))&&(((int)f[1]&4)!=0))||SweepLoft.creates(f));}
+    public static boolean creates(double[] f){return f.length>=16&&(((f[0]>=0||SketchRegion.is(f)||SketchArea.is(f))&&(((int)f[1]&4)!=0))||SweepLoft.creates(f));}
     public static int allocate(CadProject p) {int id=p.nextBodyIndex++;p.bodyUuids.put(id,UUID.randomUUID().toString());return id;}
     public static void reconcile(CadProject p) {
         while(p.featureBodyTargets.size()>p.committedFeatures.size()){p.featureBodyTargets.remove(p.featureBodyTargets.size()-1);p.featureBodyOutputs.remove(p.featureBodyOutputs.size()-1);}
@@ -56,6 +56,7 @@ public final class BodyGraph {
         if(type==SurfaceSplit.TYPE)return SurfaceSplit.length(packed,offset);
         if(type==SketchText.TYPE)return SketchText.length(packed,offset);
         if(type==SketchRegion.TYPE)return SketchRegion.length(packed,offset);
+        if(type==SketchArea.TYPE)return SketchArea.length(packed,offset);
         if(type==SurfaceSplit.LOFT_TYPE)return SurfaceSplit.loftLength(packed,offset);
         if(type==2000)return 17;
         return 16+(type>=1001?((int)type-1000)*7:type>=5?((int)type-2)*2:0);

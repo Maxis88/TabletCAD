@@ -68,7 +68,7 @@ public final class TabletFlowProbe {
             "empty tap clears both thread selections and selected face"));
         selectHoles(view,holes);
         ui(()->check(((Set<?>)field(view,"threadSelections")).size()==2,"physical taps select both cylindrical hole walls"));screenshot(activity,"06-thread-presets");
-        ui(()->{View panel=(View)field(view,"propertyEditor");check(findCheck(panel,"Pełna długość każdego otworu").isChecked(),"thread defaults to the full 10 mm depth of the 5 mm holes");apply[0]=WorkspaceUiProbe.button(panel,"Utwórz gwinty");});click(apply[0]);pending(view);instrumentation.waitForIdleSync();
+        ui(()->{View panel=(View)field(view,"propertyEditor");check(findCheck(panel,"Pełna długość każdego otworu / wałka").isChecked(),"thread defaults to the full 10 mm depth of the 5 mm holes");apply[0]=WorkspaceUiProbe.button(panel,"Utwórz gwinty");});click(apply[0]);pending(view);instrumentation.waitForIdleSync();
         result=parameters(view);check(result.length==7&&result[0]<drilledVolume-2&&result[5]==1,"one apply cuts two real helical threads in the target body");screenshot(activity,"07-real-threads");
         ui(()->{call(view,"undo",new Class<?>[0]);check(((CadProject)field(view,"project")).committedFeatures.size()==2,"one undo removes both threads together");});check(Math.abs(parameters(view)[0]-drilledVolume)<.001,"thread undo restores exact pre-thread volume");
         // A failing operation must name the history entry and the concrete kernel reason, keeping the model intact.

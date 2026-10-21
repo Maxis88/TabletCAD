@@ -220,6 +220,9 @@ public final class NativeCadEngine {
             ox, oy, oz, ux, uy, uz, vx, vy, vz);
     }
 
+    /** Areas bounded by the packed sketch elements ({@link SketchArea}); empty when the kernel cannot split them. */
+    public static double[] sketchAreas(double[] elements,int count){return LOADED?nativeSketchAreas(elements,count):new double[0];}
+    private static native double[] nativeSketchAreas(double[] elements,int count);
     private static native String nativeLastError();
     private static native String nativeKernelStatus();
     private static native double[] nativeCreatePrism(double width, double height, double depth);
