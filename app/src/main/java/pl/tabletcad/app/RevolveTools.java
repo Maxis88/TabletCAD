@@ -30,7 +30,7 @@ final class RevolveTools {
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);axis.setAdapter(adapter);axis.setContentDescription("Oś obrotu profilu");form.addView(axis);
         android.widget.TextView angleLabel=new android.widget.TextView(v.getContext());angleLabel.setText("Kąt obrotu [°] · 0,1–360");form.addView(angleLabel);
         EditText angle=v.coordinateInput("Kąt obrotu [°]",original==null?360:Math.abs(original[6]));form.addView(angle);
-        android.widget.CheckBox reverse=v.directionCheck(original==null?360:original[6]);form.addView(reverse);
+        android.widget.CheckBox reverse=v.extrusionDialogs.directionCheck(original==null?360:original[6]);form.addView(reverse);
         android.widget.CheckBox cut=new android.widget.CheckBox(v.getContext());cut.setText("Wytnij materiał obrotem");cut.setChecked(original!=null&&original[1]==1);
         if(!root)form.addView(cut);
         android.widget.CheckBox newBody=new android.widget.CheckBox(v.getContext());newBody.setText("Nowa bryła (osobno od istniejących)");
