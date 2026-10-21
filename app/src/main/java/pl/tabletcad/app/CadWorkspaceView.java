@@ -147,7 +147,7 @@ public final class CadWorkspaceView extends View {
     CadProject project;
     final Deque<String> undoStack = new ArrayDeque<>();
     final Deque<String> redoStack = new ArrayDeque<>();
-    private final FileRequestListener fileRequestListener;
+    final FileRequestListener fileRequestListener;
     boolean sketchPlaneChosen;
     private String sketchPlane = "Nie wybrano";
     int selectedFace = -1;
@@ -1402,7 +1402,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             Component c=Assembly.find(project,entry.component);if(c==null)return;
             if(x<dp(26)){if(!collapsedBodies.add(entry.body))collapsedBodies.remove(entry.body);}
             else if(x>dp(TREE_EYE)){boolean hide=!project.hiddenBodies.containsAll(c.bodies);if(hide)project.hiddenBodies.addAll(c.bodies);else project.hiddenBodies.removeAll(c.bodies);projectRepository.save(project);}
-            else if(x>dp(TREE_MORE)||edit)showComponentActions(c);
+            else if(x>dp(TREE_MORE)||edit)assemblyTools.showComponentActions(c);
             else {selectedTreeKey=entry.key;highlightBody=c.bodies.isEmpty()?0:c.bodies.iterator().next();highlightFeature=Integer.MIN_VALUE;highlightSketch=false;operationMessage=c.name+" · "+c.bodies.size()+" brył"+(c.instance()?" · powiązana kopia":"")+". Dotknij ⋯, aby zarządzać.";}
         } else if(!entry.sketch()) {
             if(x<dp(26)){if(!collapsedBodies.add(entry.body))collapsedBodies.remove(entry.body);}
@@ -1428,7 +1428,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             labels.add(d.hidden?"Pokaż":"Ukryj");actions.add(()->{if(commitModelChange(()->{Datum x=datumTools.datum(d.id);if(x!=null)x.hidden=!x.hidden;}))operationMessage=(d.hidden?"Ukryto: ":"Pokazano: ")+d.name;});
             labels.add("Usuń");actions.add(()->confirm("Usunąć „"+d.name+"”?","Szkice narysowane na tej płaszczyźnie zachowują swój układ.",()->datumTools.remove(d)));
         } else if(entry.componentHeader()) {
-            Component c=Assembly.find(project,entry.component);if(c!=null)showComponentActions(c);invalidate();return;
+            Component c=Assembly.find(project,entry.component);if(c!=null)assemblyTools.showComponentActions(c);invalidate();return;
         } else if(!entry.sketch()) {
             if(entry.body<=0){invalidate();return;}
             final int body=entry.body;title=BodyGraph.name(project,body);
@@ -4908,180 +4908,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
     final SheetTools sheetTools=new SheetTools(this);
     /** Body properties, materials and densities. */
     final MaterialTools materialTools=new MaterialTools(this);
-    /** Rotates the body of the selected planar face so the face lies on the build plate (Z = 0), as history operations. */
-    private void layFlatSelectedFace() {
-        double[] face=featurePatternTools.selectedPlanarFace();
-        if(face==null||project.importedMeshSource!=null){operationMessage="Zaznacz płaską ścianę bryły, na której ma leżeć na stole drukarki";invalidate();return;}
-        try {
-            int body=faceBodies.getOrDefault(selectedFace,1);String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
-            for(double[] record:PrintExport.layFlat(new double[]{face[0],face[1],face[2]},new double[]{face[3],face[4],face[5]})){next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
-            BodyGraph.validate(next);commitProjectAsync(next,baseline,"Położono "+BodyGraph.name(next,body)+" wskazaną ścianą na stole (Z = 0)");
-        }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-    }
-
-    // ---- Assembly: components, instances, face placement, interference, bill of materials ----
     String mateComponent;double[] mateMovingPoint;double[] mateMovingNormal;
-    private void showNewComponent() {
-        List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(ids.isEmpty()){operationMessage="Brak brył do zgrupowania";invalidate();return;}
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        EditText name=new EditText(getContext());name.setSingleLine(true);name.setText(Component.nextName(project.components));form.addView(name);
-        List<android.widget.CheckBox> boxes=new ArrayList<>();
-        for(int id:ids){Component c=Component.of(project.components,id);android.widget.CheckBox box=new android.widget.CheckBox(getContext());
-            box.setText(BodyGraph.name(project,id)+(c!=null?" · w: "+c.name:""));box.setChecked(id==project.selectedBody&&c==null);box.setEnabled(c==null||!c.instance());boxes.add(box);form.addView(box);}
-        new PropertyBuilder().setTitle("Nowy komponent").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Utwórz",(d,w)->{
-            List<Integer> chosen=new ArrayList<>();for(int i=0;i<ids.size();i++)if(boxes.get(i).isChecked())chosen.add(ids.get(i));
-            try{final String value=name.getText().toString();if(commitModelChange(()->Assembly.group(project,value,chosen)))operationMessage="Utworzono komponent z "+chosen.size()+" brył";}
-            catch(IllegalArgumentException error){operationMessage=error.getMessage();}invalidate();
-        }).show();
-    }
-    /** New instance of a component (or of a single body, grouped first), or a new placement of an existing instance. */
-    private void showInstanceDialog(Component edited) {
-        List<Component> sources=new ArrayList<>();for(Component c:project.components)if(!c.instance()&&!c.bodies.isEmpty())sources.add(c);
-        List<Integer> loose=new ArrayList<>();for(int id:BodyGraph.bodies(project))if(Component.of(project.components,id)==null)loose.add(id);
-        if(edited==null&&sources.isEmpty()&&loose.isEmpty()){operationMessage="Brak bryły do wstawienia";invalidate();return;}
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        List<String> labels=new ArrayList<>();for(Component c:sources)labels.add("Komponent: "+c.name);for(int id:loose)labels.add("Bryła: "+BodyGraph.name(project,id));
-        android.widget.Spinner source=edited==null?datumTools.choice(form,"Źródło",labels,0):null;
-        android.widget.TextView info=new android.widget.TextView(getContext());info.setText(edited==null?"Wystąpienie jest powiązaną kopią: zmiany źródła są przenoszone. Położenie: przesunięcie i obrót.":"Zmiana położenia wystąpienia „"+edited.name+"” względem bieżącego: przesunięcie i obrót.");form.addView(info);
-        EditText dx=labeledCoordinate(form,"Przesunięcie X [mm]",edited==null?Math.max(20,modelWidth*1.2):0),dy=labeledCoordinate(form,"Przesunięcie Y [mm]",0),dz=labeledCoordinate(form,"Przesunięcie Z [mm]",0);
-        android.widget.Spinner axis=datumTools.choice(form,"Oś obrotu",java.util.Arrays.asList("Z","X","Y"),0);
-        EditText angle=labeledCoordinate(form,"Kąt obrotu [°]",0),px=labeledCoordinate(form,"Punkt osi X [mm]",modelCenterX),py=labeledCoordinate(form,"Punkt osi Y [mm]",modelCenterY),pz=labeledCoordinate(form,"Punkt osi Z [mm]",modelCenterZ);
-        android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
-        java.util.function.Supplier<CadProject> candidate=()-> {
-            CadProject next=copyProject(project);int a=axis.getSelectedItemPosition();double[] ax=a==0?new double[]{0,0,1}:a==1?new double[]{1,0,0}:new double[]{0,1,0};
-            double[] t={parseCoordinate(dx),parseCoordinate(dy),parseCoordinate(dz)},pt={parseCoordinate(px),parseCoordinate(py),parseCoordinate(pz)};double deg=parseCoordinate(angle);
-            double[] delta=Assembly.instance(2,t,ax,deg,pt);
-            if(edited!=null) {
-                Component c=Assembly.find(next,edited.id);if(c==null)throw new IllegalArgumentException("Komponent nie istnieje");
-                for(int index:Assembly.instanceRecords(next,c))next.committedFeatures.set(index,Assembly.compose(delta,next.committedFeatures.get(index)));
-                return next;
-            }
-            int pick=source.getSelectedItemPosition();Component src;
-            if(pick<sources.size())src=Assembly.find(next,sources.get(pick).id);
-            else src=Assembly.group(next,BodyGraph.name(next,loose.get(pick-sources.size())),java.util.Collections.singletonList(loose.get(pick-sources.size())));
-            Component inst=Component.create(src.name+" · wystąpienie "+(1+(int)next.components.stream().filter(x->x.instanceOf.equals(src.id)).count()));inst.instanceOf=src.id;
-            for(int body:new ArrayList<>(src.bodies)) {
-                int created=BodyGraph.allocate(next);double[] record=Assembly.compose(delta,BodyInstance.create(created,new double[3],new double[3],0,new double[3]));
-                next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);inst.bodies.add(created);
-                next.bodyNames.put(created,BodyGraph.name(next,body)+" (kopia)");
-            }
-            next.components.add(inst);BodyGraph.validate(next);return next;
-        };
-        new PropertyBuilder().setTitle(edited==null?"Wstaw wystąpienie":"Położenie · "+edited.name).setView(form).setNegativeButton("Anuluj",null).setPositiveButton(edited==null?"Wstaw":"Zastosuj",(d,w)->{
-            try{String baseline=project.toJson().toString();commitProjectAsync(candidate.get(),baseline,edited==null?"Wstawiono wystąpienie (powiązana kopia)":"Zmieniono położenie wystąpienia");}
-            catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-        }).show();
-        attachLivePreview(form,candidate,status,"Podgląd wystąpienia. Zastosuj zapisuje je w historii.");
-    }
     java.util.Set<Integer> mateBodies=new java.util.LinkedHashSet<>();double[] mateMovingAxis;Integer mateMovingCreator;
-    /** Assembly mates: face-to-face, flush, coaxial and angle mates and their editor. */
     final MateTools mateTools=new MateTools(this);
-    private void showComponentActions(Component c) {
-        List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
-        labels.add("Zmień nazwę");actions.add(()->{EditText name=new EditText(getContext());name.setSingleLine(true);name.setText(c.name);
-            new PropertyBuilder().setTitle("Nazwa komponentu").setView(name).setNegativeButton("Anuluj",null).setPositiveButton("Zapisz",(d,w)->{String v=name.getText().toString().trim();if(!v.isEmpty()&&commitModelChange(()->{Component x=Assembly.find(project,c.id);if(x!=null)x.name=v;}))operationMessage="Zmieniono nazwę";invalidate();}).show();});
-        if(c.instance()){labels.add("Zmień położenie…");actions.add(()->showInstanceDialog(c));labels.add("Dosuń ściany…");actions.add(mateTools::begin);
-            labels.add("Usuń wystąpienie");actions.add(()->removeInstance(c));}
-        else {labels.add("Wstaw wystąpienie…");actions.add(()->showInstanceDialog(null));labels.add("Rozgrupuj (bryły zostają)");actions.add(()->{
-            for(Component x:project.components)if(x.instanceOf.equals(c.id)){operationMessage="Komponent ma wystąpienia – usuń je najpierw";invalidate();return;}
-            if(commitModelChange(()->project.components.removeIf(x->x.id.equals(c.id))))operationMessage="Rozgrupowano komponent";invalidate();});}
-        new PropertyBuilder().setTitle(c.name).setItems(labels.toArray(new String[0]),(d,w)->actions.get(w).run()).setNegativeButton("Zamknij",null).show();
-    }
-    private void removeInstance(Component c) {
-        try {
-            String baseline=project.toJson().toString();CadProject next=copyProject(project);Component x=Assembly.find(next,c.id);
-            // Mates of the instance (moving it, or holding something against it) go first.
-            int mates=Assembly.removeMates(next,x.bodies);
-            List<Integer> records=Assembly.instanceRecords(next,x);java.util.Collections.sort(records,java.util.Collections.reverseOrder());
-            for(int index:records)FeatureRemoval.apply(next,FeatureRemoval.plan(next,index));
-            next.components.removeIf(y->y.id.equals(c.id));BodyGraph.validate(next);commitProjectAsync(next,baseline,"Usunięto wystąpienie „"+c.name+"”"+(mates>0?" i jego dosunięcia ("+mates+")":""));
-        }catch(org.json.JSONException|IllegalArgumentException error){operationMessage="Nie usunięto: "+error.getMessage();invalidate();}
-    }
-    private void showInterference() {
-        if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Analiza kolizji wymaga brył B-Rep";invalidate();return;}
-        List<Integer> ids=new ArrayList<>();for(int id:BodyGraph.bodies(project))if(!project.hiddenBodies.contains(id))ids.add(id);
-        if(ids.size()<2){operationMessage="Kolizje sprawdza się między co najmniej dwiema widocznymi bryłami";invalidate();return;}
-        if(ids.size()>24){operationMessage="Za dużo brył naraz (limit 24) – ukryj część brył";invalidate();return;}
-        StringBuilder text=new StringBuilder();int collisions=0;String src=project.importedStep?importedSourceFile().getAbsolutePath():null;
-        for(int i=0;i<ids.size();i++)for(int j=i+1;j<ids.size();j++) {
-            double[] d=NativeCadEngine.bodyDistance(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),src,ids.get(i),ids.get(j));
-            if(d.length!=8)continue;
-            if(d[7]>1e-9){collisions++;text.append("KOLIZJA: ").append(BodyGraph.name(project,ids.get(i))).append(" ↔︎ ").append(BodyGraph.name(project,ids.get(j))).append(" · część wspólna ").append(Units.volume(d[7],project.units,project.displayDecimals)).append('\n');}
-            else if(d[0]<1e-9)text.append("Styk: ").append(BodyGraph.name(project,ids.get(i))).append(" ↔︎ ").append(BodyGraph.name(project,ids.get(j))).append('\n');
-        }
-        android.widget.TextView view=new android.widget.TextView(getContext());view.setTextSize(15);
-        view.setText((collisions==0?"Brak kolizji między "+ids.size()+" bryłami.":"Kolizje: "+collisions)+(text.length()>0?"\n\n"+text:"")+"\n\nWynik dokładny (BRepExtrema + część wspólna B-Rep).");
-        android.widget.ScrollView scroll=new android.widget.ScrollView(getContext());scroll.addView(view);
-        new PropertyBuilder().setTitle("Kolizje w złożeniu").setView(scroll).setNegativeButton("Zamknij",null).show();
-    }
-    private List<BodyAnalysis.Body> analyseBodies() {
-        return BodyAnalysis.read(project,NativeCadEngine.bodyInertia(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),project.importedStep?importedSourceFile().getAbsolutePath():null));
-    }
-    private void showBillOfMaterials() {
-        if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Lista części wymaga brył B-Rep";invalidate();return;}
-        String text;try{text=Assembly.bom(project,analyseBodies(),false);}catch(IllegalArgumentException error){operationMessage=error.getMessage();invalidate();return;}
-        android.widget.TextView view=new android.widget.TextView(getContext());view.setTextSize(15);view.setText(text);
-        new PropertyBuilder().setTitle("Lista części").setView(view).setNegativeButton("Zamknij",null)
-            .setNeutralButton("Eksport CSV",(d,w)->{if(fileRequestListener!=null)fileRequestListener.requestExport("csv");}).show();
-    }
-    public void writeBomCsv(OutputStream output) throws IOException {
-        try{Writer writer=new OutputStreamWriter(output,StandardCharsets.UTF_8);writer.write('﻿');writer.write(Assembly.bom(project,analyseBodies(),true));writer.flush();}
-        catch(IllegalArgumentException error){throw new IOException(error.getMessage());}
-    }
-
-    /** Minimum distance and interference (overlap volume) between two bodies. */
-    private void showBodyDistance() {
-        if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Analiza odległości wymaga brył B-Rep";invalidate();return;}
-        List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(ids.size()<2){operationMessage="Odległość mierzy się między dwiema bryłami dokumentu";invalidate();return;}
-        String[] names=new String[ids.size()];for(int i=0;i<names.length;i++)names[i]=BodyGraph.name(project,ids.get(i));
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.Spinner a=datumTools.choice(form,"Bryła A",java.util.Arrays.asList(names),0),b=datumTools.choice(form,"Bryła B",java.util.Arrays.asList(names),1);
-        android.widget.TextView result=new android.widget.TextView(getContext());result.setTextSize(15);result.setPadding(0,(int)dp(12),0,0);form.addView(result);
-        Runnable compute=()-> {
-            int first=ids.get(a.getSelectedItemPosition()),second=ids.get(b.getSelectedItemPosition());
-            if(first==second){result.setText("Wybierz dwie różne bryły");return;}
-            double[] d=NativeCadEngine.bodyDistance(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),project.importedStep?importedSourceFile().getAbsolutePath():null,first,second);
-            if(d.length!=8){result.setText(previewFailure("Nie można wyznaczyć odległości"));return;}
-            String u=project.units;
-            result.setText("Odległość minimalna: "+formatMm(d[0])+(d[7]>1e-9?"\n\nKOLIZJA · objętość wspólna: "+Units.volume(d[7],u,project.displayDecimals):d[0]<1e-9?"\n\nBryły stykają się":"")
-                +"\n\nNajbliższy punkt A: "+Units.number(d[1],u,project.displayDecimals)+"; "+Units.number(d[2],u,project.displayDecimals)+"; "+Units.number(d[3],u,project.displayDecimals)
-                +"\nNajbliższy punkt B: "+Units.number(d[4],u,project.displayDecimals)+"; "+Units.number(d[5],u,project.displayDecimals)+"; "+Units.number(d[6],u,project.displayDecimals)+"\n\nWynik dokładny (BRepExtrema).");
-        };
-        android.widget.AdapterView.OnItemSelectedListener listener=new android.widget.AdapterView.OnItemSelectedListener(){public void onItemSelected(android.widget.AdapterView<?> parent,View v,int position,long id){compute.run();}public void onNothingSelected(android.widget.AdapterView<?> parent){}};
-        a.setOnItemSelectedListener(listener);b.setOnItemSelectedListener(listener);
-        new PropertyBuilder().setTitle("Odległość i kolizja brył").setView(form).setNegativeButton("Zamknij",null).show();compute.run();
-    }
-
-    void showMaterialDensityEditor() {
-        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
-        if(SketchTransactions.active(project)){operationMessage="Najpierw zakończ lub anuluj aktywną edycję szkicu";invalidate();return;}
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        form.setPadding((int)dp(20),(int)dp(8),(int)dp(20),0);
-        android.widget.TextView hint=new android.widget.TextView(getContext());
-        hint.setText("Jednakowa gęstość wszystkich brył [kg/m³]. Wpisz wartość dla używanego materiału. Puste pole usuwa przypisanie.");form.addView(hint);
-        EditText density=new EditText(getContext());density.setSingleLine(true);density.setSelectAllOnFocus(true);density.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        density.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        density.setKeyListener(android.text.method.DigitsKeyListener.getInstance("0123456789.,"));
-        density.setHint("Gęstość [kg/m³]");
-        density.setText(project.materialDensityKgM3==0?"":java.math.BigDecimal.valueOf(project.materialDensityKgM3).stripTrailingZeros().toPlainString());form.addView(density);
-        android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(getContext()).setTitle("Gęstość materiału")
-            .setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zapisz",null).create();
-        dialog.setOnShowListener(d->dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-            try {
-                double value=MaterialDensity.parse(density.getText().toString());
-                if(value!=project.materialDensityKgM3) {
-                    String baseline=project.toJson().toString();
-                    CadProject candidate=CadProject.fromJson(new org.json.JSONObject(baseline));candidate.materialDensityKgM3=value;
-                    projectRepository.save(candidate);
-                    project=candidate;undoStack.push(baseline);while(undoStack.size()>50)undoStack.removeLast();redoStack.clear();
-                }
-                dialog.dismiss();materialTools.showBodyProperties();invalidate();
-            }catch(IllegalArgumentException error){density.setError(error.getMessage());}
-            catch(Exception error){android.widget.Toast.makeText(getContext(),"Nie zapisano gęstości; poprzedni stan zachowano",android.widget.Toast.LENGTH_LONG).show();}
-        }));
-        dialog.show();
-    }
-
+    /** Assembly: lay flat, components and instances, interference, distances, bill of materials. */
+    final AssemblyTools assemblyTools=new AssemblyTools(this);
+    public void writeBomCsv(OutputStream output) throws IOException {assemblyTools.writeBomCsv(output);}
     private boolean prepareTechnicalSheet() {
         technicalSheet=null;
         if(project.importedMeshSource!=null) {
@@ -5270,7 +5102,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(FaceOffset.is(feature)){showFaceOffsetEditor(index);return;}
         if(MateFeature.is(feature)){mateTools.showEditor(index);return;}
         if(BodyInstance.is(feature)){int created=BodyInstance.created(feature);Component c=Component.of(project.components,created);
-            if(c!=null&&c.instance())showInstanceDialog(c);else{operationMessage="Wystąpienie bez komponentu – usuń je z historii i wstaw ponownie";invalidate();}return;}
+            if(c!=null&&c.instance())assemblyTools.showInstanceDialog(c);else{operationMessage="Wystąpienie bez komponentu – usuń je z historii i wstaw ponownie";invalidate();}return;}
         if(BodyTransform.is(feature)){bodyTools.showTransform((int)feature[1],index);return;}
         if(HoleFeature.is(feature)){holeEditIndex=index;double[] f=feature;holeReference=new double[]{f[2],f[3],f[4],f[5],f[6],f[7],f[8]};mode="Otwór";holeTools.showPanel();return;}
         if(Revolve.is(feature)){String id=project.committedProfileIds.get(index);revolveTools.show(Revolve.profile(id,feature),feature,index,false);return;}
@@ -7054,13 +6886,13 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         if(tool.equals("Obrót profilu")){chooseRevolveProfile();return;}
         if(tool.equals("Właściwości bryły")){materialTools.showBodyProperties();return;}
-        if(tool.equals("Odległość brył")){showBodyDistance();return;}
-        if(tool.equals("Połóż na stole")){layFlatSelectedFace();return;}
-        if(tool.equals("Nowy komponent")){showNewComponent();return;}
-        if(tool.equals("Wstaw wystąpienie")){if(prepareSolidTool(tool))showInstanceDialog(null);return;}
+        if(tool.equals("Odległość brył")){assemblyTools.showBodyDistance();return;}
+        if(tool.equals("Połóż na stole")){assemblyTools.layFlatSelectedFace();return;}
+        if(tool.equals("Nowy komponent")){assemblyTools.showNewComponent();return;}
+        if(tool.equals("Wstaw wystąpienie")){if(prepareSolidTool(tool))assemblyTools.showInstanceDialog(null);return;}
         if(tool.equals("Dosuń ściany")){mateTools.begin();return;}
-        if(tool.equals("Kolizje")){showInterference();return;}
-        if(tool.equals("Lista części")){showBillOfMaterials();return;}
+        if(tool.equals("Kolizje")){assemblyTools.showInterference();return;}
+        if(tool.equals("Lista części")){assemblyTools.showBillOfMaterials();return;}
         for(String command:DATUM_COMMANDS)if(tool.equals(command)){mode="Wybierz";datumTools.showEditor(command,null,null);return;}
         if(tool.equals("Zmierz kąt")||tool.equals("Pole ściany")) {
             if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Pomiar kątów i pól wymaga bryły B-Rep";invalidate();return;}

@@ -63,7 +63,7 @@ final class MaterialTools {
         items[MaterialDensity.NAMES.length]="Własna gęstość…";if(body>0)items[items.length-1]="Jak dokument (usuń przypisanie bryły)";
         ws.new PropertyBuilder().setTitle(body>0?"Materiał · "+BodyGraph.name(ws.project,body):"Materiał dokumentu").setItems(items,(d,w)-> {
             if(w<MaterialDensity.NAMES.length)setDensity(body,MaterialDensity.VALUES[w]);
-            else if(w==MaterialDensity.NAMES.length){if(body>0)showBodyDensityEditor(body);else ws.showMaterialDensityEditor();}
+            else if(w==MaterialDensity.NAMES.length){if(body>0)showBodyDensityEditor(body);else ws.assemblyTools.showMaterialDensityEditor();}
             else setDensity(body,0);
         }).setNegativeButton("Anuluj",null).show();
     }
