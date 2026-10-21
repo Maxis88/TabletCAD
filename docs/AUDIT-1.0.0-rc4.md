@@ -82,3 +82,6 @@
 - **Suwaki** bez sztywnych limitów (zakres z rozmiaru modelu, rozszerzanie przy końcu).
 - **Obrót elipsy** (dokładna elipsa w jądrze); obrót jako nowa bryła obsługiwany w jądrze.
 - Host: 49 zestawów PASS (EllipseArcKernelProbe, SliderRangeHostTest, SketchOffsetCurvesHostTest).
+- **Obrót profilu → Nowa bryła** (podgląd i zapis jako osobna bryła).
+- **Łuk eliptyczny: wymiary na szkicu** a, b i rozwarcie ∠ (dotknięcie → zmiana wartości).
+- **Podział CadWorkspaceView (początek)**: TextTools (napisy) i OutlineTools (obrys) jako osobne moduły.
