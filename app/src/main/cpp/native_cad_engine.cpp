@@ -145,6 +145,20 @@ std::vector<double> tessellatedTriangles(const TopoDS_Shape& shape,double linear
     BRepMesh_IncrementalMesh mesher(shape, linear, false, angular, true);
     mesher.Perform();
     if (!mesher.IsDone()) return {};
+    // Complex faces (helical thread flanks clipped by a bore) are sometimes triangulated with large
+    // triangles spanning the face: the mesh area then differs from the exact B-Rep area. Such a
+    // face is meshed again, finer, on its own until its mesh matches the surface.
+    for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More(); explorer.Next()) {
+        const TopoDS_Face face = TopoDS::Face(explorer.Current());
+        auto meshArea=[&](){TopLoc_Location l;const Handle(Poly_Triangulation) t=BRep_Tool::Triangulation(face,l);if(t.IsNull())return -1.0;double a=0;
+            for(int i=1;i<=t->NbTriangles();i++){int n1,n2,n3;t->Triangle(i).Get(n1,n2,n3);a+=gp_Vec(t->Node(n1),t->Node(n2)).Crossed(gp_Vec(t->Node(n1),t->Node(n3))).Magnitude()/2;}return a;};
+        GProp_GProps props;BRepGProp::SurfaceProperties(face,props);const double exact=std::abs(props.Mass());if(!(exact>1e-9))continue;
+        double area=meshArea();
+        for(int attempt=1;attempt<=3&&(area<0||std::abs(area-exact)>.03*exact);attempt++) {
+            BRepTools::Clean(face);const double f=std::pow(.35,attempt);
+            BRepMesh_IncrementalMesh again(face,linear*f,false,angular*std::pow(.6,attempt),false);again.Perform();area=meshArea();
+        }
+    }
 
     std::vector<double> packed;
     int faceIndex = 0;
