@@ -12,6 +12,7 @@ public final class AndroidTextProbe {
             SketchText.Glyph b=font.glyph("B",f);check(b.loops.size()==3,"font "+f+": B has two islands");check(font.glyph("Ł",f)!=null&&font.glyph("ą",f)!=null,"font "+f+": Polish letters");}
         SketchPrimitive t=SketchText.create("t","TabletCAD 2026 ŻÓŁW",SketchText.params(5,25,6,SketchText.FLAT,0,0,0,0),font);
         SketchPrimitive caps=SketchText.create("c","HELLO",SketchText.params(0,0,6,SketchText.FLAT,0,0,0,0),font);check(Math.abs((caps.y2-caps.y1)-6)<.25,"capital height of HELLO is 6 mm ("+(caps.y2-caps.y1)+")");
+        for(int f=0;f<2;f++){double[] l=SketchText.create("d","S",SketchText.params(0,0,8,SketchText.FLAT,0,0,f,0),font).textLoops();StringBuilder b=new StringBuilder("LOOPS font"+f+":");for(double x:l)b.append(String.format(java.util.Locale.US," %.5f",x));System.out.println(b);}
         // Every character of every font engraves on its own (diagnostics name the failing ones).
         StringBuilder bad=new StringBuilder();
         for(int f=0;f<SketchText.FONTS.length;f++)for(String ch:new String[]{"A","B","O","Ł","Ż","Ó","ą","ę","ś","ć","ź","ń","0","2","6","8","@","&","%","g","Q","R","S"}){
