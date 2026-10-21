@@ -75,7 +75,7 @@ public final class SketchText {
         // Glyphs in text units (height 1), pen positions along the baseline.
         List<double[]> local=new ArrayList<>();double pen=0;List<String> chars=characters(text);
         for(int k=0;k<chars.size();k++){Glyph g=font.glyph(chars.get(k),(int)p[6]);if(g==null)throw new IllegalArgumentException("Czcionka nie zawiera znaku „"+chars.get(k)+"”");
-            for(double[] l:g.loops){double[] m=new double[l.length];for(int i=0;i<l.length;i+=2){m[i]=l[i]+pen;m[i+1]=l[i+1];}local.add(m);}
+            for(double[] raw:g.loops){double[] l=untangle(raw);if(l.length<6)continue;double[] m=new double[l.length];for(int i=0;i<l.length;i+=2){m[i]=l[i]+pen;m[i+1]=l[i+1];}local.add(m);}
             pen+=g.advance+(k<chars.size()-1?spacing:0);}
         if(local.isEmpty())throw new IllegalArgumentException("Napis nie zawiera widocznych znaków");
         double width=pen;List<double[]> placed=new ArrayList<>();
@@ -97,6 +97,29 @@ public final class SketchText {
         for(double[] l:placed){out[at++]=l.length/2;System.arraycopy(l,0,out,at,l.length);at+=l.length;}
         validate(p,out);return out;
     }
+    /**
+     * Removes small self-crossings of a glyph outline (variable fonts leave tiny bow-ties where
+     * outline pieces meet): at each crossing the shorter of the two sub-loops is cut away and the
+     * crossing point kept. The outline otherwise stays unchanged.
+     */
+    static double[] untangle(double[] l) {
+        List<double[]> p=new ArrayList<>();for(int i=0;i<l.length;i+=2)p.add(new double[]{l[i],l[i+1]});
+        for(int guard=0;guard<64&&p.size()>=4;guard++) {
+            int n=p.size(),bi=-1,bj=-1;double[] hit=null;
+            search:for(int i=0;i<n;i++)for(int j=i+2;j<n;j++){if(i==0&&j==n-1)continue;
+                double[] a=p.get(i),b=p.get((i+1)%n),c=p.get(j),d=p.get((j+1)%n);
+                double rx=b[0]-a[0],ry=b[1]-a[1],sx=d[0]-c[0],sy=d[1]-c[1],den=rx*sy-ry*sx;if(Math.abs(den)<1e-15)continue;
+                double t=((c[0]-a[0])*sy-(c[1]-a[1])*sx)/den,u=((c[0]-a[0])*ry-(c[1]-a[1])*rx)/den;
+                if(t>1e-9&&t<1-1e-9&&u>1e-9&&u<1-1e-9){bi=i;bj=j;hit=new double[]{a[0]+t*rx,a[1]+t*ry};break search;}}
+            if(hit==null)break;
+            List<double[]> inner=new ArrayList<>(p.subList(bi+1,bj+1)),outer=new ArrayList<>();
+            for(int k=bj+1;k<n;k++)outer.add(p.get(k));for(int k=0;k<=bi;k++)outer.add(p.get(k));
+            // Keep the sub-loop with the larger area (the real outline), replace the crossing by its point.
+            List<double[]> keep=Math.abs(area(inner))>Math.abs(area(outer))?inner:outer;keep.add(hit);p=keep;
+        }
+        double[] r=new double[p.size()*2];for(int i=0;i<p.size();i++){r[2*i]=p.get(i)[0];r[2*i+1]=p.get(i)[1];}return r;
+    }
+    private static double area(List<double[]> p){double a=0;int n=p.size();for(int i=0;i<n;i++){double[] q=p.get(i),w=p.get((i+1)%n);a+=q[0]*w[1]-w[0]*q[1];}return a/2;}
     /** Closed loop with no edge longer than step. */
     static double[] densify(double[] l,double step) {
         int n=l.length/2;List<Double> out=new ArrayList<>();
