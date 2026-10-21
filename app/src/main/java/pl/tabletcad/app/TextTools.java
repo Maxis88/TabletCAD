@@ -44,7 +44,22 @@ final class TextTools {
                 }catch(IllegalArgumentException error){v.operationMessage=error.getMessage();v.invalidate();}
             });
         if(existing!=null)builder.setNeutralButton("Usuń element",(d,w)->v.deleteSketchEntity(existing.id));
+        android.widget.TextView status=new android.widget.TextView(v.getContext());form.addView(status,0);
         builder.show();
+        // Live preview on the sketch (dashed): the text stays visible while the lower settings are
+        // changed, and a reason is shown instead of silently not inserting.
+        final android.widget.Button confirm=v.panelConfirm;
+        Runnable preview=()->{
+            v.sketchGhost.clear();
+            try {
+                double[] params=SketchText.params(v.parseCoordinate(ax),v.parseCoordinate(ay),v.parseCoordinate(height),layout.getSelectedItemPosition(),v.parseCoordinate(angle),v.parseCoordinate(radius),font.getSelectedItemPosition(),v.parseCoordinate(spacing));
+                String value=content.getText().toString();
+                SketchPrimitive t=existing==null?SketchText.create("preview",value,params,font()):SketchText.with(existing,value,params,font());
+                v.sketchGhost.add(t);status.setText("Podgląd: „"+value+"” · "+SketchText.loopCount(t.textLoops())+" konturów");if(confirm!=null)confirm.setEnabled(true);
+            }catch(RuntimeException error){status.setText(error.getMessage()==null?"Niepoprawne parametry napisu":error.getMessage());if(confirm!=null)confirm.setEnabled(false);}
+            v.invalidate();
+        };
+        v.watchFields(form,preview);preview.run();
     }
     /** Embossing or engraving of a sketch text (or letters as a new body): depth, operation, direction. */
     void showExtrusion(SketchPrimitive text) {

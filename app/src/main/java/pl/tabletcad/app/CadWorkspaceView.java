@@ -571,7 +571,7 @@ public final class CadWorkspaceView extends View {
     }
     /** Dismiss action of the open panel (✕, Anuluj or the system back gesture). */
     private Runnable panelDismiss;
-    private android.widget.Button panelConfirm;
+    android.widget.Button panelConfirm;
     /**
      * System back: closes the tool menu, then the open panel (like Anuluj), then leaves the active tool.
      * Returns false when there is nothing to close, so the activity can handle back itself.
