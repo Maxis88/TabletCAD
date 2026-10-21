@@ -90,3 +90,7 @@
   ExtrusionDialogs, SheetTools, MaterialTools, AssemblyTools, SketchPositionTools, SketchConstraintTools,
   SketchMirrorTools, ProjectFileTools, FeatureEditorTools, MeasureTools. Zachowanie bez zmian (przeniesienie kodu);
   wejścia używane przez sondy UI (refleksja) pozostały w widoku jako delegaty.
+- **Tablet 21.10.2026 (Honor YLE-W09, Android 16): 59/59 sond PASS** (1.0.0-rc6, 826731a). Poprawione po testach:
+  menu Rysuj (≤14 narzędzi), obrys domyślnie jako kopia, pogrubiona czcionka (prawdziwa waga 700 + usuwanie
+  drobnych samoprzecięć konturów fontu zmiennego), łączenie nachodzących konturów liter.
+  Scalone do `main` (fast-forward).
