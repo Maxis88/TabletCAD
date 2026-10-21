@@ -61,16 +61,16 @@ final class ProjectFileTools {
     void showFileMenu() {
         ws.closePropertyEditor();ws.dismissToolPopup();
         ws.new PropertyBuilder().setTitle("Plik")
-            .setItems(new String[]{"Importuj plik (STEP, IGES, STL, OBJ, 3MF, DXF)…","Eksportuj…","Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt"},(d,which)-> {
+            .setItems(new String[]{"Importuj plik (STEP, IGES, STL, OBJ, 3MF, DXF)…","Eksportuj…","Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt","Opcje…"},(d,which)-> {
                 if(which==0){if(ws.fileRequestListener!=null)ws.fileRequestListener.requestOpenStep();}
-                else if(which==1)ws.showExportPicker();else if(which==2)showNewProject();else if(which==3)showProjectLibrary();else if(which==4)showProjectCopy();else showProjectTrash();
+                else if(which==1)ws.showExportPicker();else if(which==2)showNewProject();else if(which==3)showProjectLibrary();else if(which==4)showProjectCopy();else if(which==5)showProjectTrash();else ws.showOptions();
             }).setNegativeButton("Zamknij",null).show();
     }
     void showProjectMenu() {
         ws.closePropertyEditor();
         ws.new PropertyBuilder().setTitle("Projekt · "+ws.project.name+" · TabletCAD v"+ws.appVersion())
-            .setItems(new String[]{"Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt","Dane i nazwa dokumentu","Jednostki i dokładność","Parametry"},(d,which)-> {
-                if(which==0)showNewProject();else if(which==1)showProjectLibrary();else if(which==2)showProjectCopy();else if(which==3)showProjectTrash();else if(which==4)showDrawingMetadataEditor();else if(which==5)showUnitSettings();else showParameters();
+            .setItems(new String[]{"Nowy pusty projekt","Moje projekty","Utwórz kopię projektu","Kosz — przywróć projekt","Dane i nazwa dokumentu","Jednostki i dokładność","Parametry","Opcje programu…"},(d,which)-> {
+                if(which==0)showNewProject();else if(which==1)showProjectLibrary();else if(which==2)showProjectCopy();else if(which==3)showProjectTrash();else if(which==4)showDrawingMetadataEditor();else if(which==5)showUnitSettings();else if(which==6)showParameters();else ws.showOptions();
             }).setNegativeButton("Zamknij",null).show();
     }
 
@@ -221,7 +221,7 @@ final class ProjectFileTools {
     void createNewProject(String title) {
         try {
             ws.projectRepository.save(ws.project);
-            CadProject next=CadProject.blank();next.name=title;if(!activateProject(next))ws.post(this::showStartupProjects);
+            CadProject next=CadProject.blank();next.name=title;next.units=AppOptions.defaultUnits;if(!activateProject(next))ws.post(this::showStartupProjects);
         }catch(RuntimeException error){ws.operationMessage="Nie można utworzyć projektu; poprzedni dokument zachowano";ws.post(this::showStartupProjects);ws.invalidate();}
     }
 

@@ -79,7 +79,8 @@ public final class CadWorkspaceView extends View {
     private static final int CHIP_DARK = Color.argb(235, 38, 50, 56);
     static final int INK = Color.rgb(28, 39, 49);
     static final int MUTED = Color.rgb(101, 116, 130);
-    static final int ACCENT = Color.rgb(13, 148, 136);
+    /** Accent colour chosen in Opcje (see {@link AppOptions}). */
+    static int ACCENT = Color.rgb(13, 148, 136);
     private static final int GRID = Color.rgb(220, 227, 232);
     // Chrome palette: graphite bars around a light work area, teal accent for the active state.
     private static final int CHROME = Color.rgb(20, 26, 33);
@@ -624,7 +625,7 @@ public final class CadWorkspaceView extends View {
         // STEP is deliberately not exercised during Activity construction. A native
         // importer failure must never prevent the workspace from opening.
         stepStatus = "STEP: moduł zainstalowany";
-        setBackgroundColor(BG);
+        setBackgroundColor(AppOptions.background());showSketchDimensions=AppOptions.showSketchDimensions;
         setFocusable(true);
         gestures = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
             @Override public boolean onDown(MotionEvent e) { return true; }
@@ -1378,6 +1379,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 text(canvas,glyph,dp(34),y+dp(23),13,Color.rgb(214,137,16),true);
                 canvas.save();canvas.clipRect(dp(50),y,dp(TREE_MORE),y+dp(36));text(canvas,entry.name,dp(52),y+dp(23),11.5f,INK,entry.key.equals(selectedTreeKey));canvas.restore();
                 drawTreeControls(canvas,y,d!=null&&d.hidden);
+            } else if(entry.body==ModelTree.ALL_SKETCHES) {
+                canvas.save();canvas.translate(dp(30),y+dp(18));canvas.scale(.45f,.45f);drawToolIcon(canvas,"Szkic",0,0,Color.rgb(196,120,24));canvas.restore();
+                canvas.save();canvas.clipRect(dp(42),y,dp(TREE_MORE),y+dp(36));text(canvas,entry.name,dp(44),y+dp(23),12,INK,true);canvas.restore();
+                drawTreeControls(canvas,y,allSketchesHidden());
             } else if(!entry.sketch()) {
                 Glyphs.chevron(canvas,paint,dp(15),y+dp(18),dp(4),collapsedBodies.contains(entry.body)?Glyphs.RIGHT:Glyphs.DOWN,MUTED,dp(1.6f));
                 boolean component=entry.componentHeader();
@@ -1386,6 +1391,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 canvas.save();canvas.clipRect(nameX-dp(2),y,dp(TREE_MORE),y+dp(36));text(canvas,entry.name,nameX,y+dp(23),12,INK,true);canvas.restore();
                 if(component){Component c=Assembly.find(project,entry.component);drawTreeControls(canvas,y,c!=null&&!c.bodies.isEmpty()&&project.hiddenBodies.containsAll(c.bodies));}
                 else if(entry.body>0)drawTreeControls(canvas,y,project.hiddenBodies.contains(entry.body));
+                else if(entry.body==ModelTree.CONSTRUCTION)drawTreeControls(canvas,y,allDatumsHidden());
             } else {
                 canvas.save();canvas.translate(dp(44),y+dp(18));canvas.scale(.45f,.45f);drawToolIcon(canvas,"Szkic",0,0,Color.rgb(196,120,24));canvas.restore();
                 canvas.save();canvas.clipRect(dp(56),y,dp(TREE_MORE),y+dp(36));text(canvas,entry.name+" ("+entry.entities.size()+")",dp(58),y+dp(23),11.5f,INK,entry.key.equals(selectedTreeKey));canvas.restore();
@@ -1394,6 +1400,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         canvas.restore();
     }
+    private boolean allSketchesHidden(){boolean any=false;for(ModelTree.Row r:modelTreeRows)if(r.sketch()){any=true;if(!project.hiddenSketchParts.contains(r.key))return false;}return any;}
+    private boolean allDatumsHidden(){if(project.datums.isEmpty())return false;for(Datum d:project.datums)if(!d.hidden)return false;return true;}
     /** Tree row controls: "⋯" (menu of the element) and the visibility eye; both at least 30 dp wide. */
     private static final float TREE_MORE=156f,TREE_EYE=188f;
     private void drawTreeControls(Canvas canvas,float y,boolean hidden) {
@@ -1421,6 +1429,16 @@ if (isInsideViewport(e.getX(), e.getY())) {
             else if(x>dp(TREE_EYE)){boolean hide=!project.hiddenBodies.containsAll(c.bodies);if(hide)project.hiddenBodies.addAll(c.bodies);else project.hiddenBodies.removeAll(c.bodies);projectRepository.save(project);}
             else if(x>dp(TREE_MORE)||edit)assemblyTools.showComponentActions(c);
             else {selectedTreeKey=entry.key;highlightBody=c.bodies.isEmpty()?0:c.bodies.iterator().next();highlightFeature=Integer.MIN_VALUE;highlightSketch=false;operationMessage=c.name+" · "+c.bodies.size()+" brył"+(c.instance()?" · powiązana kopia":"")+". Dotknij ⋯, aby zarządzać.";}
+        } else if(entry.body==ModelTree.ALL_SKETCHES) {
+            // One switch for every sketch of the document (the eye of each sketch still works on its own).
+            if(x>dp(TREE_MORE)) {
+                boolean show=allSketchesHidden();List<String> keys=new ArrayList<>();for(ModelTree.Row r:ModelTree.rows(project,java.util.Collections.emptySet()))if(r.sketch())keys.add(r.key);
+                if(show)project.hiddenSketchParts.removeAll(keys);else{project.hiddenSketchParts.addAll(keys);if(keys.contains(selectedTreeKey)){selectedTreeKey="";highlightSketch=false;}}
+                projectRepository.save(project);operationMessage=show?"Pokazano wszystkie szkice":"Ukryto wszystkie szkice";
+            } else operationMessage="Oko po prawej pokazuje lub ukrywa wszystkie szkice naraz";
+        } else if(entry.body==ModelTree.CONSTRUCTION&&x>dp(TREE_MORE)) {
+            boolean show=allDatumsHidden();for(Datum d:project.datums)d.hidden=!show;projectRepository.save(project);
+            operationMessage=show?"Pokazano wszystkie elementy konstrukcyjne":"Ukryto wszystkie elementy konstrukcyjne";
         } else if(!entry.sketch()) {
             if(x<dp(26)){if(!collapsedBodies.add(entry.body))collapsedBodies.remove(entry.body);}
             else if(x>dp(TREE_EYE)&&entry.body>0){if(!project.hiddenBodies.add(entry.body))project.hiddenBodies.remove(entry.body);projectRepository.save(project);}
@@ -1927,13 +1945,13 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     private void drawGrid(Canvas canvas, float left, float top, float right, float bottom) {
         paint.setStrokeWidth(1f);
-        paint.setColor(GRID);
+        paint.setColor(AppOptions.grid());
         if(inSketch() && sketchPlaneChosen) {
             double[] center=screenToSketch((left+right)/2,(top+bottom)/2);
             double nominal=10/zoom,power=Math.pow(10,Math.floor(Math.log10(nominal))),fraction=nominal/power;
             double step=(fraction<2?1:fraction<5?2:5)*power;
             double u=Math.floor(center[0]/step)*step,v=Math.floor(center[1]/step)*step;
-            for(int i=-40;i<=40;i++) {
+            for(int i=-40;i<=40&&AppOptions.showGrid;i++) {
                 PointF a=projectSketchPoint(u+i*step,v-400*step),b=projectSketchPoint(u+i*step,v+400*step);
                 canvas.drawLine(a.x,a.y,b.x,b.y,paint);
                 a=projectSketchPoint(u-400*step,v+i*step);b=projectSketchPoint(u+400*step,v+i*step);
@@ -1945,6 +1963,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             a=projectSketchPoint(0,v-400*step);b=projectSketchPoint(0,v+400*step);
             canvas.drawLine(a.x,a.y,b.x,b.y,paint);return;
         }
+        if(!AppOptions.showGrid)return;
         float step = dp(28) * zoom;
         float ox = (panX % step + step) % step;
         float oy = (panY % step + step) % step;
@@ -2180,6 +2199,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         List<SketchPrimitive> displayedSketch=new ArrayList<>(dragSolvedPreview==null?project.sketch:dragSolvedPreview);
         displayedSketch.removeIf(entity->!sketchEntityVisible(entity));
+        if(mode.equals("Profile wyciągnięcia"))drawExtrusionRegions(canvas);
         for (SketchPrimitive entity : displayedSketch) {
             SketchPrimitive shown=dragSolvedPreview==null&&dragPreview!=null&&dragPreview.id.equals(entity.id)?dragPreview:entity;
             drawSketchEntity(canvas,shown);
@@ -2321,9 +2341,20 @@ if (isInsideViewport(e.getX(), e.getY())) {
             }).show();
     }
 
+    /** Selected extrusion areas filled (even-odd), so the frame between nested profiles reads as one region. */
+    private void drawExtrusionRegions(Canvas canvas) {
+        if(extrusionSelections.isEmpty())return;
+        Path region=new Path();region.setFillType(Path.FillType.EVEN_ODD);
+        for(String ref:extrusionSelections)for(double[] loop:SketchRegion.outlines(project.sketch,ref)) {
+            for(int i=0;i<loop.length;i+=2){PointF p=projectSketchPoint(loop[i],loop[i+1]);if(i==0)region.moveTo(p.x,p.y);else region.lineTo(p.x,p.y);}region.close();
+        }
+        paint.setPathEffect(null);paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(70,245,145,20));canvas.drawPath(region,paint);paint.setStyle(Paint.Style.STROKE);
+    }
+    private boolean extrusionSelected(String id){for(String ref:extrusionSelections)if(SketchRegion.mentions(ref,id))return true;return false;}
+
     private void drawSketchEntity(Canvas canvas, SketchPrimitive entity) {
         if(entity.isPoint()){drawSketchPoint(canvas,entity);return;}
-        boolean selected = entity.id.equals(selectedSketchId) || sketchMulti.contains(entity.id) || highlightSketch || extrusionSelections.contains(entity.id)&&mode.equals("Profile wyciągnięcia");
+        boolean selected = entity.id.equals(selectedSketchId) || sketchMulti.contains(entity.id) || highlightSketch || extrusionSelected(entity.id)&&mode.equals("Profile wyciągnięcia");
         PointF p1 = projectSketchPoint(entity.x1, entity.y1);
         PointF p2 = projectSketchPoint(entity.x2, entity.y2);
         paint.setStyle(Paint.Style.STROKE);
@@ -3110,7 +3141,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private String snapKind="";
     boolean isProfileUsed(String id) {
         return id.equals(project.featureProfileId)||id.equals(project.featureBaseProfileId)
-            ||project.committedProfileIds.contains(id);
+            ||ProfileDependencies.usedByRegion(project,id);
     }
 
     private void trimSketchAt(float x,float y) {
@@ -3487,7 +3518,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     void deleteSketchEntity(String id) {
         if (!SketchTransactions.active(project)&&(id.equals(project.featureProfileId) || id.equals(project.featureBaseProfileId)
-                || project.committedProfileIds.contains(id))) {
+                || ProfileDependencies.usedByRegion(project,id))) {
             operationMessage = "Profil jest używany przez operację — edytuj go zamiast usuwać";
             invalidate();
             return;
@@ -3595,7 +3626,22 @@ if (isInsideViewport(e.getX(), e.getY())) {
         double yaw=Math.toRadians(cameraYaw),pitch=Math.toRadians(cameraPitch);
         double rx=triangle.nx*Math.cos(yaw)+triangle.nz*Math.sin(yaw),rz=-triangle.nx*Math.sin(yaw)+triangle.nz*Math.cos(yaw);
         double ry=triangle.ny*Math.cos(pitch)-rz*Math.sin(pitch),cz=triangle.ny*Math.sin(pitch)+rz*Math.cos(pitch);
+        if(!AppOptions.showThreads&&cosmeticThreadFaces().contains(triangle.faceId)) {
+            // Hidden (not modelled) thread: amber bore with alternating stripes, like a cosmetic thread.
+            double t=ShadeModel.intensity(rx,ry,cz);boolean stripe=(triangle.meshIndex/2)%2==0;
+            int r=(int)Math.round((stripe?150:128)+((stripe?255:236)-(stripe?150:128))*t),g=(int)Math.round((stripe?96:78)+((stripe?214:188)-(stripe?96:78))*t),b=(int)Math.round(20+(stripe?120:80)*t);
+            return Color.rgb(Math.min(255,r),Math.min(255,g),Math.min(255,b));
+        }
         return ShadeModel.color(rx,ry,cz);
+    }
+    private List<HoleThread.Cylinder> cosmeticSource;private int cosmeticFeatures=-1;private final java.util.Set<Integer> cosmeticFaces=new java.util.HashSet<>();
+    /** Bore faces that carry a thread operation (shown as a cosmetic thread while threads are hidden). */
+    private java.util.Set<Integer> cosmeticThreadFaces() {
+        if(cosmeticSource!=holeCylinders||cosmeticFeatures!=project.committedFeatures.size()) {
+            cosmeticFaces.clear();cosmeticSource=holeCylinders;cosmeticFeatures=project.committedFeatures.size();
+            for(HoleThread.Cylinder c:holeCylinders)if(HoleThread.threaded(c,project.committedFeatures))cosmeticFaces.add(c.face);
+        }
+        return cosmeticFaces;
     }
 
     int findFaceAt(float x, float y) {
@@ -4370,6 +4416,17 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     double[] kernelFeatures(){return BodyGraph.pack(project,packedFeatures());}
+    /** Records for files leaving the app: threads are always included, whatever the display option. */
+    double[] exportFeatures(){return BodyGraph.pack(project,packedFeatures(),true);}
+    // ---- Program options (Opcje) ----
+    final OptionsTools optionsTools=new OptionsTools(this);
+    void showOptions(){optionsTools.show();}
+    void applyAppOptions(){toolbarState="";setBackgroundColor(AppOptions.background());showSketchDimensions=AppOptions.showSketchDimensions;scheduleToolbarUpdate();invalidate();}
+    /** Re-evaluates the shown model after a display option changed the packed records (threads). */
+    void rebuildForOptions(String label) {
+        if(!project.hasSolid()||project.importedMeshSource!=null){operationMessage="Zapisano opcje";invalidate();return;}
+        warmThen(project,label,()->{if(updateNativeModel())operationMessage="Zapisano opcje · model przeliczony";invalidate();});
+    }
 
     private double[] packedFeatures() {
         double[] active = activeFeatureValues();
@@ -4408,25 +4465,17 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     private boolean extrusionAutoSelected;private String lastExtrusionProfile;
     private void toggleExtrusionProfile(float x,float y) {
-        double[] point=screenToSketch(x,y);SketchPrimitive chosen=null;double area=Double.POSITIVE_INFINITY;boolean overConstruction=false;
+        double[] point=screenToSketch(x,y);boolean overConstruction=false;
         for(SketchPrimitive p:project.sketch)if(p.isText()&&point[0]>=p.x1&&point[0]<=p.x2&&point[1]>=p.y1&&point[1]<=p.y2){showTextExtrusion(p);return;}
-        for(SketchPrimitive p:project.sketch)if(p.closedGeometry()&&!p.isText()) {
-            if(p.isEllipse()) {
-                double a=p.major(),ux=(p.x2-p.x1)/a,uy=(p.y2-p.y1)/a,dx=point[0]-p.x1,dy=point[1]-p.y1,s=(dx*ux+dy*uy)/a,t=(-dx*uy+dy*ux)/p.minor;
-                boolean in=s*s+t*t<1;double size=Math.PI*a*p.minor;
-                if(in&&p.construction)overConstruction=true;
-                if(in&&!p.construction&&size<area){chosen=p;area=size;}
-                continue;
-            }
-            boolean inside=p.type.equals("Okrąg")?Math.hypot(point[0]-p.x1,point[1]-p.y1)<Math.hypot(p.x2-p.x1,p.y2-p.y1):p.vertices!=null?polygonContains(SketchSpline.is(p)?SketchSpline.sample(p.vertices,24):p.vertices,point[0],point[1]):p.curves!=null?polygonContains(SketchCurves.samples(p.curves,96),point[0],point[1]):point[0]>=Math.min(p.x1,p.x2)&&point[0]<=Math.max(p.x1,p.x2)&&point[1]>=Math.min(p.y1,p.y2)&&point[1]<=Math.max(p.y1,p.y2);
-            double size=p.type.equals("Okrąg")?Math.PI*Math.pow(Math.hypot(p.x2-p.x1,p.y2-p.y1),2):SketchSpline.is(p)?Math.abs(SketchContours.area(SketchSpline.sample(p.vertices,24))):Math.abs((p.x2-p.x1)*(p.y2-p.y1));
-            if(inside&&p.construction)overConstruction=true;
-            if(inside&&!p.construction&&size<area){chosen=p;area=size;}
-        }
+        // The tapped area: the smallest profile around the finger minus the profiles lying inside it
+        // (the frame between two nested squares is one region, the inner square another).
+        String chosenRef=SketchRegion.pick(project.sketch,point[0],point[1]);
+        for(SketchPrimitive p:project.sketch)if(p.construction&&p.closedGeometry()&&!p.isText()&&SketchRegion.contains(SketchRegion.outline(p),point[0],point[1]))overConstruction=true;
+        final String chosen=chosenRef;
         if(chosen!=null){
             // A profile picked automatically is replaced by the first one the user taps (no accidental double selection).
-            if(extrusionAutoSelected&&!extrusionSelections.contains(chosen.id))extrusionSelections.clear();extrusionAutoSelected=false;
-            if(!extrusionSelections.add(chosen.id))extrusionSelections.remove(chosen.id);else lastExtrusionProfile=chosen.id;
+            if(extrusionAutoSelected&&!extrusionSelections.contains(chosen))extrusionSelections.clear();extrusionAutoSelected=false;
+            if(!extrusionSelections.add(chosen))extrusionSelections.remove(chosen);else lastExtrusionProfile=chosen;
             if(extrusionSelectionChanged!=null)extrusionSelectionChanged.run();}
         else if(!overConstruction&&findFaceAt(x,y)<0)clearViewportSelection();
         else operationMessage="Dotknij wnętrza zamkniętego obszaru szkicu";
@@ -4434,11 +4483,25 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     private CadProject extrusionCandidate(List<String> profiles,String operation,double first,double second,boolean reverse,boolean symmetric,int target) {
         if(profiles.isEmpty())throw new IllegalArgumentException("Zaznacz obszary szkicu bezpośrednio na rysunku");
-        if(operation.equals("common")&&profiles.size()>1)throw new IllegalArgumentException("Część wspólna wymaga jednego profilu; dla wielu wybierz Dodaj, Połącz lub Wytnij");
+        profiles=SketchRegion.merge(profiles);
+        if(operation.equals("common")&&profiles.size()>1)throw new IllegalArgumentException("Część wspólna wymaga jednego obszaru; dla wielu wybierz Dodaj, Połącz lub Wytnij");
         CadProject current=project;
         try {
             project=CadProject.fromJson(current.toJson());preserveExtrudedBase();commitActiveFeature();BodyGraph.begin(project);
             for(String id:profiles) {
+                if(SketchRegion.isRef(id)) {
+                    // Area with islands: one exact B-Rep face with inner wires, swept as one operation.
+                    List<SketchPrimitive> shapes=SketchRegion.resolve(project.sketch,id);if(shapes==null)throw new IllegalArgumentException("Kontur obszaru nie jest dostępny");
+                    if(!project.hasSolid()) {
+                        if(!operation.equals("new"))throw new IllegalArgumentException("Pierwsze wyciągnięcie musi tworzyć nową bryłę");
+                        project.featureBase=SketchRegion.base(project,shapes,first,second,reverse,symmetric);project.featureBaseProfileId=id;project.featureProfileId=shapes.get(0).id;project.sketchExtruded=true;project.depth=first+second;project.filletRadius=0;
+                        project.extrusionExtents.put(-1,new double[]{FeatureDirection.signed(first,reverse,symmetric),second,symmetric?1:0});continue;
+                    }
+                    int index=project.committedFeatures.size();project.committedFeatures.add(SketchRegion.record(project,shapes,operation,first,second,reverse,symmetric));project.committedProfileIds.add(id);
+                    project.featureBodyTargets.add(operation.equals("new")?0:target);project.featureBodyOutputs.add(operation.equals("new")?BodyGraph.allocate(project):target);
+                    project.extrusionExtents.put(index,new double[]{FeatureDirection.signed(first,reverse,symmetric),second,symmetric?1:0});
+                    continue;
+                }
                 SketchPrimitive shape=null;for(SketchPrimitive p:project.sketch)if(p.id.equals(id)&&p.closedProfile())shape=p;if(shape==null)throw new IllegalArgumentException("Profil źródłowy nie jest dostępny");
                 if(!project.hasSolid()) {
                     if(!operation.equals("new"))throw new IllegalArgumentException("Pierwsze wyciągnięcie musi tworzyć nową bryłę");
@@ -4574,8 +4637,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
         Runnable preview=()->{
             if(propertyEditor!=owner)return;resolved[0]=null;confirm.setEnabled(false);selected.setText("Wybrane profile: "+extrusionSelections.size());target.setVisibility(operation.getSelectedItemPosition()!=1&&project.hasSolid()&&bodies.size()>1?View.VISIBLE:View.GONE);second.setVisibility(both.isChecked()?View.VISIBLE:View.GONE);secondLabel.setVisibility(both.isChecked()?View.VISIBLE:View.GONE);toFace.setVisibility(project.hasSolid()?View.VISIBLE:View.GONE);if(extrusionSelections.isEmpty()){invalidateGeometryPreview();featurePreview=null;extrusionDimension=null;extrusionHandle=null;invalidate();return;}
             // The arrow sits on the profile picked last (the one the user is working with).
-            String anchorId=lastExtrusionProfile!=null&&extrusionSelections.contains(lastExtrusionProfile)?lastExtrusionProfile:null;
-            for(SketchPrimitive shape:project.sketch)if(extrusionSelections.contains(shape.id)&&(anchorId==null||shape.id.equals(anchorId))){
+            String anchorId=lastExtrusionProfile!=null&&extrusionSelections.contains(lastExtrusionProfile)?SketchRegion.outer(lastExtrusionProfile):null;
+            java.util.Set<String> outers=new java.util.HashSet<>();for(String ref:extrusionSelections)outers.add(SketchRegion.outer(ref));
+            for(SketchPrimitive shape:project.sketch)if(outers.contains(shape.id)&&(anchorId==null||shape.id.equals(anchorId))){
                 double[] center=profileCenter(shape),origin=sketchToWorld(center[0],center[1]);double sign=operation.getSelectedItemPosition()==3?-1:1;
                 // Principal XZ base extrusions follow native +Y, whereas placed features follow U×V.
                 if(!project.hasSolid()&&project.sketchPlane.equals("XZ"))sign=-sign;
@@ -4588,7 +4652,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 boolean automatic=operation.getSelectedItemPosition()==0,hasBody=project.hasSolid();
                 String baseline=project.toJson().toString(),currentSpec=spec.get();
                 CadProject next=extrusionCandidate(new ArrayList<>(extrusionSelections),automatic?"new":new String[]{"auto","new","add","cut","common"}[operation.getSelectedItemPosition()],parseCoordinate(first),both.isChecked()?parseCoordinate(second):0,reverse.isChecked(),symmetric.isChecked(),bodies.get(target.getSelectedItemPosition()));
-                int start=next.committedFeatures.size()-extrusionSelections.size(),body=bodies.get(target.getSelectedItemPosition());
+                int start=next.committedFeatures.size()-SketchRegion.merge(new ArrayList<>(extrusionSelections)).size(),body=bodies.get(target.getSelectedItemPosition());
                 String source=next.importedStep?new File(projectRepository.importedStepFile().getParentFile(),next.importedStepSource).getAbsolutePath():null;
                 String[] recognized={automatic?"Nowa bryła":String.valueOf(operation.getSelectedItem())};
                 CadProject[] evaluatedResult={null};
@@ -5260,12 +5324,12 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(project.importedMeshSource != null) return false;
         if (project.importedStep && packedFeatures().length > 0) {
             return NativeCadEngine.evaluateFeatures(modelWidth, modelHeight, modelDepth,
-                0, null, kernelFeatures(), path,
+                0, null, exportFeatures(), path,
                 importedSourceFile().getAbsolutePath()).length > 0;
         }
         if (!project.importedStep && (project.featureBase != null || !project.committedFeatures.isEmpty()||!project.featureOperation.equals("none"))) {
             return NativeCadEngine.evaluateFeatures(modelWidth, modelHeight, modelDepth,
-                project.filletRadius, project.featureBase, kernelFeatures(), path).length > 0;
+                project.filletRadius, project.featureBase, exportFeatures(), path).length > 0;
         }
         if (project.importedStep && importedSourceFile().isFile()) {
             try (FileInputStream input = new FileInputStream(importedSourceFile());
@@ -5641,7 +5705,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private PrintExport.Mesh exportMesh() throws IOException {
         if(SketchTransactions.active(project)) throw new IOException("Zakończ albo anuluj edycję szkicu przed eksportem");
         if(project.importedMeshSource!=null||!project.hasSolid()){double[] copy=nativeMesh.clone();if(copy.length==0)throw new IOException("Brak geometrii do eksportu");return PrintExport.parse(prepend(copy));}
-        double[] packed=NativeCadEngine.exportMesh(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),
+        double[] packed=NativeCadEngine.exportMesh(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),exportFeatures(),
             project.importedStep?importedSourceFile().getAbsolutePath():null,project.exportDeflection,project.exportAngle);
         if(packed.length==0)throw new IOException(previewFailure("Triangulacja eksportu nie powiodła się"));
         PrintExport.Mesh mesh=PrintExport.parse(packed);
@@ -5793,6 +5857,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     /** Navigation cube in the viewport corner: turns with the camera; a face sets that view, ⌂ the isometric one. */
     private void drawViewCube(Canvas canvas,float x,float y) {
         if(inSketch()&&sketchPlaneChosen){viewCubeX=-1;drawAxis(canvas,x-dp(4),y+dp(10));return;}
+        if(!AppOptions.showViewCube){viewCubeX=-1;return;}
         float half=dp(24);viewCubeX=x;viewCubeY=y;viewCubeHalf=half;
         for(ViewCube.Projected f:ViewCube.visible(cameraYaw,cameraPitch,x,y,half)) {
             android.graphics.Path path=new android.graphics.Path();path.moveTo(f.polygon[0],f.polygon[1]);for(int i=1;i<4;i++)path.lineTo(f.polygon[2*i],f.polygon[2*i+1]);path.close();

@@ -17,13 +17,20 @@ public final class ProfileDependencies {
         return shape.appendVertices(result);
     }
     public static boolean uses(CadProject p,String id) {
-        return id!=null&&!id.isEmpty()&&(id.equals(p.featureBaseProfileId)||id.equals(p.featureProfileId)||p.committedProfileIds.contains(id));
+        return id!=null&&!id.isEmpty()&&(SketchRegion.mentions(p.featureBaseProfileId,id)||id.equals(p.featureProfileId)||usedByRegion(p,id));
     }
+    /** Plain or region reference of a committed operation uses the element. */
+    static boolean usedByRegion(CadProject p,String id){for(String ref:p.committedProfileIds)if(SketchRegion.mentions(ref,id))return true;return false;}
     /** Updates every consumer while preserving depth, direction, frame, axis and body routing. */
     public static void propagate(CadProject p,String oldId,SketchPrimitive shape) {
         if(!uses(p,oldId))return;
         if(!shape.closedProfile())throw new IllegalArgumentException("Używany profil musi pozostać zamkniętą geometrią zwykłą");
         if(oldId.equals(p.featureBaseProfileId)&&p.featureBase!=null){p.featureBase=replace(p.featureBase,shape,true);p.featureBaseProfileId=shape.id;}
+        // Regions (area between nested profiles): the edited element is replaced inside the record.
+        if(SketchRegion.isRef(p.featureBaseProfileId)&&SketchRegion.mentions(p.featureBaseProfileId,oldId)&&p.featureBase!=null){
+            p.featureBase=SketchRegion.replace(p.featureBase,p.featureBaseProfileId,oldId,shape);p.featureBaseProfileId=SketchRegion.rename(p.featureBaseProfileId,oldId,shape.id);}
+        for(int i=0;i<p.committedProfileIds.size();i++){String ref=p.committedProfileIds.get(i);if(SketchRegion.isRef(ref)&&SketchRegion.mentions(ref,oldId)){
+            p.committedFeatures.set(i,SketchRegion.replace(p.committedFeatures.get(i),ref,oldId,shape));p.committedProfileIds.set(i,SketchRegion.rename(ref,oldId,shape.id));}}
         for(int i=0;i<p.committedProfileIds.size();i++)if(oldId.equals(p.committedProfileIds.get(i))) {
             p.committedFeatures.set(i,replace(p.committedFeatures.get(i),shape,false));p.committedProfileIds.set(i,shape.id);
         }
@@ -32,7 +39,10 @@ public final class ProfileDependencies {
     public static List<String> consumers(CadProject p,String id) {
         List<String> result=new ArrayList<>();
         if(id==null||id.isEmpty())return result;// operations without a source profile share nothing
+        if(SketchRegion.isRef(p.featureBaseProfileId)&&SketchRegion.mentions(p.featureBaseProfileId,id)&&p.featureBase!=null)result.add("Bryła bazowa · wyciągnięcie obszaru");
         if(id!=null&&id.equals(p.featureBaseProfileId)&&p.featureBase!=null)result.add("Bryła bazowa · "+(Revolve.is(p.featureBase)?"obrót":"wyciągnięcie"));
+        for(int i=0;i<p.committedProfileIds.size();i++)if(SketchRegion.isRef(p.committedProfileIds.get(i))&&SketchRegion.mentions(p.committedProfileIds.get(i),id))
+            result.add("Operacja "+(i+1)+" · "+(FeatureDirection.isCut(p.committedFeatures.get(i)[1])?"wycięcie":"wyciągnięcie")+" obszaru");
         for(int i=0;i<p.committedProfileIds.size();i++)if(id!=null&&id.equals(p.committedProfileIds.get(i)))
             result.add("Operacja "+(i+1)+" · "+(Revolve.is(p.committedFeatures.get(i))?"obrót":FeatureDirection.isCut(p.committedFeatures.get(i)[1])?"wycięcie":"wyciągnięcie"));
         if(id!=null&&id.equals(p.featureProfileId)&&!p.featureOperation.equals("none"))result.add("Aktywna operacja · "+p.featureOperation);

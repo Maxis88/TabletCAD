@@ -18,8 +18,9 @@ import android.widget.TextView;
  */
 public final class PanelStyle {
     private PanelStyle() {}
-    public static final int INK=Color.rgb(28,39,49),MUTED=Color.rgb(101,116,130),ACCENT=Color.rgb(13,148,136),
-        ACCENT_DARK=Color.rgb(10,118,108),LINE=Color.rgb(214,222,228),SURFACE=Color.rgb(246,248,250),DANGER=Color.rgb(196,64,52);
+    public static final int INK=Color.rgb(28,39,49),MUTED=Color.rgb(101,116,130),LINE=Color.rgb(214,222,228),SURFACE=Color.rgb(246,248,250),DANGER=Color.rgb(196,64,52);
+    /** Accent colours chosen in Opcje (see {@link AppOptions}). */
+    public static int ACCENT=Color.rgb(13,148,136),ACCENT_DARK=Color.rgb(10,118,108);
 
     static float dp(Context c,float v){return v*c.getResources().getDisplayMetrics().density;}
     static GradientDrawable shape(Context c,int fill,int stroke,float radius) {

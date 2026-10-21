@@ -54,6 +54,8 @@ public final class TabletFlowProbe {
         ui(()->view.showStartupProjects());instrumentation.waitForIdleSync();screenshot(activity,"04-project-library");View[] newProject={null};ui(()->newProject[0]=((AlertDialog)field(view,"projectChooser")).getButton(AlertDialog.BUTTON_POSITIVE));click(newProject[0]);
         ui(()->{CadProject p=(CadProject)field(view,"project");System.out.println("NEW state "+p.name+" solid="+p.hasSolid()+" sketch="+p.sketch.size()+" mesh="+((double[])field(view,"nativeMesh")).length+" message="+field(view,"operationMessage"));check(!p.hasSolid()&&p.sketch.isEmpty()&&((double[])field(view,"nativeMesh")).length==0,"startup button immediately opens new empty project without old geometry");});screenshot(activity,"05-new-empty-project");
                 ui(()->{CadProject drilled=new CadProject();drilled.width=40;drilled.height=30;drilled.depth=10;for(double x:new double[]{10,30}){drilled.committedFeatures.add(new double[]{1,1,x,15,x+2.5,15,10,0,0,10,1,0,0,0,1,0});drilled.committedProfileIds.add("");}call(view,"activateProject",new Class<?>[]{CadProject.class},drilled);set(view,"zoom",5f);set(view,"cameraYaw",-10f);set(view,"cameraPitch",20f);call(view,"beginThreadTool",new Class<?>[0]);view.invalidate();});instrumentation.waitForIdleSync();
+        // The device owner may hide modelled threads in Opcje (display preference); this flow checks real thread cuts.
+        BodyGraph.displayThreads=true;
         double drilledVolume=parameters(view)[0];
         List<HoleThread.Cylinder> holes=new ArrayList<>();ui(()->holes.addAll((List<HoleThread.Cylinder>)field(view,"holeCylinders")));check(holes.size()==2,"two real cylindrical holes available in visible model");
         selectHoles(view,holes);

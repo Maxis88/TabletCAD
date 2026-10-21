@@ -16,6 +16,7 @@ public final class SketchTransactions {
     private static Set<String> origins(CadProject baseline) {
         Set<String> used=new HashSet<>(baseline.committedProfileIds);used.add(baseline.featureBaseProfileId);
         if(!baseline.featureOperation.equals("none"))used.add(baseline.featureProfileId);
+        for(String ref:new ArrayList<>(used))if(SketchRegion.isRef(ref))used.addAll(SketchRegion.ids(ref));
         Set<String> result=new LinkedHashSet<>();for(SketchPrimitive p:baseline.sketch)if(used.contains(p.id))result.add(p.id);return result;
     }
     public static void begin(CadProject p) {
@@ -86,6 +87,11 @@ public final class SketchTransactions {
                 if(origin.equals(oldBase)&&result.featureBase!=null){result.featureBase=profile(result.featureBase,shape,7,1);result.featureBaseProfileId=shape.id;}
                 for(int i=0;i<oldIds.size();i++)if(origin.equals(oldIds.get(i))){result.committedFeatures.set(i,profile(result.committedFeatures.get(i),shape,16,2));result.committedProfileIds.set(i,shape.id);}
                 if(origin.equals(oldActive))result.featureProfileId=shape.id;
+                // Regions keep their element order; each origin is swapped for its successor inside the record.
+                if(SketchRegion.isRef(result.featureBaseProfileId)&&SketchRegion.mentions(SketchRegion.isRef(oldBase)?oldBase:"",origin)&&result.featureBase!=null&&SketchRegion.mentions(result.featureBaseProfileId,origin)){
+                    result.featureBase=SketchRegion.replace(result.featureBase,result.featureBaseProfileId,origin,shape);result.featureBaseProfileId=SketchRegion.rename(result.featureBaseProfileId,origin,shape.id);}
+                for(int i=0;i<oldIds.size();i++){String ref=result.committedProfileIds.get(i);if(SketchRegion.isRef(oldIds.get(i))&&SketchRegion.mentions(oldIds.get(i),origin)&&SketchRegion.mentions(ref,origin)){
+                    result.committedFeatures.set(i,SketchRegion.replace(result.committedFeatures.get(i),ref,origin,shape));result.committedProfileIds.set(i,SketchRegion.rename(ref,origin,shape.id));}}
             }
             result.sketchExtruded=before.sketchExtruded;
             result.sketchEditBaseline=null;result.sketchLineage.clear();result.sketchBindings.clear();

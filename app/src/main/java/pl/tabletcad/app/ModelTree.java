@@ -9,6 +9,8 @@ public final class ModelTree {
     private ModelTree() {}
     /** Pseudo body id of the construction geometry group. */
     public static final int CONSTRUCTION=-1;
+    /** Pseudo row with one visibility switch for every sketch of the document. */
+    public static final int ALL_SKETCHES=-2;
     public static final class Row {
         public final int body;public final String sketchId,name,key,datum,component;public final JSONObject snapshot;public final Set<String> entities;
         Row(int body,String id,String name,JSONObject snapshot,Set<String> ids){this(body,id,name,snapshot,ids,null,null);}
@@ -21,8 +23,8 @@ public final class ModelTree {
         public boolean datum(){return datum!=null;}
     }
     private static Set<Integer> uses(CadProject p,String id) {
-        Set<Integer> result=new LinkedHashSet<>();if(id.equals(p.featureBaseProfileId))result.add(1);
-        for(int i=0;i<p.committedProfileIds.size();i++)if(id.equals(p.committedProfileIds.get(i)))result.add(i<p.featureBodyOutputs.size()?p.featureBodyOutputs.get(i):1);
+        Set<Integer> result=new LinkedHashSet<>();if(SketchRegion.mentions(p.featureBaseProfileId,id))result.add(1);
+        for(int i=0;i<p.committedProfileIds.size();i++)if(SketchRegion.mentions(p.committedProfileIds.get(i),id))result.add(i<p.featureBodyOutputs.size()?p.featureBodyOutputs.get(i):1);
         if(id.equals(p.featureProfileId)&&!p.featureOperation.equals("none"))result.add(p.activeBodyOutput>0?p.activeBodyOutput:1);
         return result;
     }
@@ -49,6 +51,8 @@ public final class ModelTree {
                 int body=entry.getKey();if(placed.contains(body))continue;if(body==0&&entry.getValue().isEmpty())continue;
                 addBody(p,result,body,entry.getValue(),collapsed);
             }
+            int sketchRows=0;for(List<Row> l:parts.values())sketchRows+=l.size();
+            if(sketchRows>1)result.add(0,new Row(ALL_SKETCHES,null,"Wszystkie szkice ("+sketchRows+")",null,new LinkedHashSet<>()));
             if(!p.datums.isEmpty()) {
                 result.add(new Row(CONSTRUCTION,null,"Konstrukcja",null,new LinkedHashSet<>()));
                 if(!collapsed.contains(CONSTRUCTION))for(Datum d:p.datums)result.add(new Row(CONSTRUCTION,null,d.name,null,new LinkedHashSet<>(),d.id));

@@ -36,6 +36,7 @@
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <ShapeFix_Face.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Common.hxx>
@@ -561,6 +562,56 @@ TopoDS_Shape profilePrism(const double* profile,double depth,const gp_Pnt& origi
     BRepBuilderAPI_MakeFace face(wire,true);if(!face.IsDone())return {};
     TopoDS_Shape result=BRepPrimAPI_MakePrism(face.Face(),normal*depth).Shape();
     return result.IsNull()||!BRepCheck_Analyzer(result).IsValid()?TopoDS_Shape():result;
+}
+// Region with islands: record -30 (see SketchRegion.java). f[2] = k islands, then k+1 placed
+// profiles (type, x1, y1, x2, y2, tail): the outer boundary first, then the islands inside it.
+// One planar face with inner wires keeps circles, arcs and ellipses exact; when OCCT cannot build
+// that face (touching or overlapping islands) the islands are cut from the outer prism instead.
+int regionLength(const double* f,int available) {
+    if(available<21)return 0;const double k=f[2];if(k!=std::floor(k)||k<1||k>256)return 0;
+    int at=16;
+    for(int i=0;i<=static_cast<int>(k);i++){if(available<at+5)return 0;const int tail=profileTail(f[at]);if(tail<0||available<at+5+tail)return 0;at+=5+tail;}
+    return at;
+}
+TopoDS_Shape regionPrism(const double* f,int length,bool cut,bool symmetric) {
+    const int k=static_cast<int>(f[2]);
+    const gp_Vec u(f[10],f[11],f[12]),v(f[13],f[14],f[15]);gp_Vec normal=u.Crossed(v);double depth=f[6];
+    if(!std::isfinite(depth)||std::abs(depth)<=1e-6||normal.SquareMagnitude()<1e-20)return {};
+    if(depth<0)normal.Reverse();depth=std::abs(depth);normal.Normalize();gp_Pnt start(f[7],f[8],f[9]);
+    if(cut)start.Translate(normal*(-depth));
+    if(symmetric)start.Translate(normal*(cut?depth*.5:-depth*.5));
+    const gp_Pln plane(start,gp_Dir(u.Crossed(v)));
+    std::vector<TopoDS_Wire> wires;std::vector<double> areas;int at=16;
+    for(int i=0;i<=k;i++) {
+        TopoDS_Wire w=placedProfileWire(f+at,start,u,v);if(w.IsNull())return {};
+        BRepBuilderAPI_MakeFace single(plane,w,true);if(!single.IsDone())return {};
+        GProp_GProps props;BRepGProp::SurfaceProperties(single.Face(),props);const double a=std::abs(props.Mass());if(!std::isfinite(a)||a<1e-8)return {};
+        wires.push_back(w);areas.push_back(a);at+=5+profileTail(f[at]);
+    }
+    if(at!=length)return {};
+    double expected=areas[0];for(int i=1;i<=k;i++){if(areas[i]>=areas[0])return {};expected-=areas[i];}
+    if(expected<=1e-8)return {};
+    const double volume=expected*depth;
+    auto acceptable=[&](const TopoDS_Shape& s,bool exact){if(s.IsNull()||countShapes(s,TopAbs_SOLID)==0||!BRepCheck_Analyzer(s).IsValid())return false;
+        const double got=shapeVolume(s);return exact?std::abs(got-volume)<=std::max(1e-6,volume*1e-6):(got>1e-9&&got<areas[0]*depth*(1-1e-9));};
+    {
+        BRepBuilderAPI_MakeFace maker(plane,wires[0],true);
+        for(int i=1;i<=k&&maker.IsDone();i++)maker.Add(wires[i]);
+        if(maker.IsDone()) {
+            ShapeFix_Face fix(maker.Face());fix.FixOrientationMode()=1;fix.Perform();const TopoDS_Face face=fix.Face();
+            if(!face.IsNull()&&BRepCheck_Analyzer(face).IsValid()) {
+                BRepPrimAPI_MakePrism prism(face,normal*depth);
+                if(prism.IsDone()&&acceptable(prism.Shape(),true))return prism.Shape();
+            }
+        }
+    }
+    auto prismOf=[&](int i)->TopoDS_Shape{BRepBuilderAPI_MakeFace face(plane,wires[i],true);if(!face.IsDone())return {};BRepPrimAPI_MakePrism prism(face.Face(),normal*depth);return prism.IsDone()?prism.Shape():TopoDS_Shape();};
+    TopoDS_Shape outer=prismOf(0);if(outer.IsNull())return {};
+    NCollection_List<TopoDS_Shape> args,tools;args.Append(outer);
+    for(int i=1;i<=k;i++){TopoDS_Shape p=prismOf(i);if(p.IsNull())return {};tools.Append(p);}
+    BRepAlgoAPI_Cut cutter;cutter.SetArguments(args);cutter.SetTools(tools);cutter.Build();if(!cutter.IsDone())return {};
+    cutter.SimplifyResult(true,true);const TopoDS_Shape result=cutter.Shape();
+    return acceptable(result,false)?result:TopoDS_Shape();
 }
 // Section: origin xyz, u xyz, v xyz, profile (type, x1, y1, x2, y2, tail). Returns the length or 0.
 int sectionLength(const double* s,int available){if(available<14)return 0;const int tail=profileTail(s[9]);return tail<0||available<14+tail?0:14+tail;}
@@ -1613,6 +1664,26 @@ TopoDS_Shape evaluateRecords(TopoDS_Shape shape,const std::vector<double>& value
                 }
                 if(shape.IsNull()){kernelFailAt(tag,cut?"Wycięcie napisu nie powiodło się":"Dodanie napisu nie powiodło się");return {};}
                 updateOrigins(prior,shape,tag,origins);i+=16+payload;continue;
+            }
+            if(f[0]==-30) {
+                const int stride=regionLength(f,count-i);
+                if(!stride||f[3]!=0||f[4]!=0||f[5]!=0){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                for(int k=0;k<stride;k++)if(!std::isfinite(f[k])){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                if(f[1]!=std::floor(f[1])||!(f[1]==0||f[1]==1||f[1]==2||f[1]==3||f[1]==4||f[1]==6||f[1]==8||f[1]==10)){kernelFailAt(featureNumber-1,"Niepoprawne parametry operacji w historii");return {};}
+                const bool cut=(static_cast<int>(f[1])&1)!=0,symmetric=(static_cast<int>(f[1])&2)!=0;
+                const TopoDS_Shape tool=regionPrism(f,stride,cut,symmetric);
+                if(tool.IsNull()){kernelFailAt(tag,"Obszar między konturami nie tworzy poprawnej bryły (kontury wewnętrzne muszą leżeć wewnątrz zewnętrznego)");return {};}
+                if((static_cast<int>(f[1])&4)!=0) {
+                    BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);
+                    if(shape.IsNull())shape=tool;else {builder.Add(compound,shape);builder.Add(compound,tool);shape=compound;}
+                    if(!BRepCheck_Analyzer(shape).IsValid()){kernelFailAt(tag,"Nowa bryła ma niepoprawną topologię");return {};}
+                } else if((static_cast<int>(f[1])&8)!=0) {
+                    BRepAlgoAPI_Common operation(shape,tool);operation.Build();
+                    if(!operation.IsDone()||operation.Shape().IsNull()||!BRepCheck_Analyzer(operation.Shape()).IsValid()||countShapes(operation.Shape(),TopAbs_SOLID)==0){kernelFailAt(tag,"Bryły nie mają części wspólnej");return {};}
+                    shape=operation.Shape();
+                } else shape=applyProfileFeature(shape,tool,cut);
+                if(shape.IsNull()){kernelFailAt(tag,cut?"Wycięcie obszaru nie powiodło się":"Dodanie obszaru nie powiodło się");return {};}
+                updateOrigins(prior,shape,tag,origins);i+=stride;continue;
             }
             int vertices=0,curves=0;const bool ellipse=f[0]==2000;
             if(ellipse){}

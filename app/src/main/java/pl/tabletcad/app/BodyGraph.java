@@ -12,7 +12,7 @@ public final class BodyGraph {
         while(p.featureBodyTargets.size()<p.committedFeatures.size()){p.featureBodyTargets.add(-1);p.featureBodyOutputs.add(1);}
         reconcile(p);
     }
-    public static boolean creates(double[] f){return f.length>=16&&((f[0]>=0&&(((int)f[1]&4)!=0))||SweepLoft.creates(f));}
+    public static boolean creates(double[] f){return f.length>=16&&(((f[0]>=0||SketchRegion.is(f))&&(((int)f[1]&4)!=0))||SweepLoft.creates(f));}
     public static int allocate(CadProject p) {int id=p.nextBodyIndex++;p.bodyUuids.put(id,UUID.randomUUID().toString());return id;}
     public static void reconcile(CadProject p) {
         while(p.featureBodyTargets.size()>p.committedFeatures.size()){p.featureBodyTargets.remove(p.featureBodyTargets.size()-1);p.featureBodyOutputs.remove(p.featureBodyOutputs.size()-1);}
@@ -55,18 +55,22 @@ public final class BodyGraph {
         if(type==MateFeature.TYPE)return MateFeature.LENGTH;
         if(type==SurfaceSplit.TYPE)return SurfaceSplit.length(packed,offset);
         if(type==SketchText.TYPE)return SketchText.length(packed,offset);
+        if(type==SketchRegion.TYPE)return SketchRegion.length(packed,offset);
         if(type==SurfaceSplit.LOFT_TYPE)return SurfaceSplit.loftLength(packed,offset);
         if(type==2000)return 17;
         return 16+(type>=1001?((int)type-1000)*7:type>=5?((int)type-2)*2:0);
     }
-    public static double[] pack(CadProject p,double[] raw) {
+    /** Display preference (Opcje): false leaves thread cuts out of view/measurement evaluation; exports pass true. */
+    public static volatile boolean displayThreads=true;
+    public static double[] pack(CadProject p,double[] raw){return pack(p,raw,displayThreads);}
+    public static double[] pack(CadProject p,double[] raw,boolean threads) {
         if(p.bodyGraphStart<0){for(double[] f:p.committedFeatures)if(FeaturePattern.is(f)||ShellFeature.is(f)||SweepLoft.loft(f)||SweepLoft.sweep(f)||SweepLoft.bodyPattern(f)||MateFeature.is(f))throw new IllegalArgumentException("Szyk i powłoka wymagają grafu brył");return raw.clone();}
         List<double[]> records=new ArrayList<>();int length=0,index=0;
         for(int offset=0;offset<raw.length;index++) {
             int size=recordLength(raw,offset);if(size<16||size>raw.length-offset)throw new IllegalArgumentException("Niepoprawna długość operacji");
             double[] record=Arrays.copyOfRange(raw,offset,offset+size);offset+=size;
             // Suppressed operations, operations past the rollback marker and patterns of inactive sources keep their index as placeholders.
-            if(index<p.committedFeatures.size()&&FeatureHistory.inactive(p,index)){records.add(FeatureHistory.placeholder());length+=16;continue;}
+            if(index<p.committedFeatures.size()&&(FeatureHistory.inactive(p,index)||!threads&&HoleThread.is(record))){records.add(FeatureHistory.placeholder());length+=16;continue;}
             // Loft/sweep geometry is refreshed from the referenced sketch elements before every evaluation.
             if(SurfaceSplit.isLoft(record)&&index<p.committedFeatures.size())record=SurfaceSplit.refreshLoft(p,record,index<p.committedProfileIds.size()?p.committedProfileIds.get(index):null);
             if(SketchText.is(record)&&index<p.committedFeatures.size())record=SketchText.refresh(p,record,index<p.committedProfileIds.size()?p.committedProfileIds.get(index):null);

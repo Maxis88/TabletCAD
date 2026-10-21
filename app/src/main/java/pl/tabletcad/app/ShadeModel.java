@@ -11,10 +11,13 @@ public final class ShadeModel {
         double key=Math.max(0,nx*KEY[0]+ny*KEY[1]+nz*KEY[2]),fill=Math.max(0,nx*FILL[0]+ny*FILL[1]+nz*FILL[2]);
         return Math.min(1,0.22+0.62*key+0.22*fill);
     }
-    /** ARGB colour: from a dark slate teal in shadow to an almost white teal in full light. */
+    private static int[] shadow={70,98,104},light={232,245,243};
+    /** Model colour chosen in Opcje: RGB in full shadow and in full light. */
+    public static void setPalette(int[] dark,int[] bright){shadow=dark.clone();light=bright.clone();}
+    /** ARGB colour: from the shadow tone (default dark slate teal) to the light tone (almost white teal). */
     public static int color(double nx,double ny,double nz) {
-        double t=intensity(nx,ny,nz);
-        int r=(int)Math.round(70+(232-70)*t),g=(int)Math.round(98+(245-98)*t),b=(int)Math.round(104+(243-104)*t);
+        double t=intensity(nx,ny,nz);int[] s=shadow,l=light;
+        int r=(int)Math.round(s[0]+(l[0]-s[0])*t),g=(int)Math.round(s[1]+(l[1]-s[1])*t),b=(int)Math.round(s[2]+(l[2]-s[2])*t);
         return 0xFF000000|(r<<16)|(g<<8)|b;
     }
 }
