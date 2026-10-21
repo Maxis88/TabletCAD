@@ -102,19 +102,19 @@ public final class CadWorkspaceView extends View {
     private float zoom = 1f;
     private float panX;
     private float panY;
-    private float cameraYaw = -28f;
-    private float cameraPitch = 22f;
+    float cameraYaw = -28f;
+    float cameraPitch = 22f;
     String mode = "Wybierz";
     private final String kernelStatus;
     private double[] nativePrism = new double[0];
     private double[] nativeMesh = new double[0];
-    private java.util.Map<Integer,Integer> faceBodies=new java.util.HashMap<>(),faceFeatures=new java.util.HashMap<>();
-    private int highlightBody,highlightFeature=Integer.MIN_VALUE;
-    private List<HoleThread.Cylinder> holeCylinders=new ArrayList<>();
-    private final java.util.Set<Integer> threadSelections=new java.util.LinkedHashSet<>();
+    java.util.Map<Integer,Integer> faceBodies=new java.util.HashMap<>(),faceFeatures=new java.util.HashMap<>();
+    int highlightBody,highlightFeature=Integer.MIN_VALUE;
+    List<HoleThread.Cylinder> holeCylinders=new ArrayList<>();
+    final java.util.Set<Integer> threadSelections=new java.util.LinkedHashSet<>();
     /** Faces removed by the shell being created or re-picked, keyed by display face index. */
-    private final java.util.Map<Integer,ShellFeature.Face> shellSelections=new java.util.LinkedHashMap<>();
-    private int shellEditIndex=-1;
+    final java.util.Map<Integer,ShellFeature.Face> shellSelections=new java.util.LinkedHashMap<>();
+    int shellEditIndex=-1;
     private final java.util.Map<Integer,ShellFeature.Face> draftSelections=new java.util.LinkedHashMap<>();private int draftEditIndex=-1;
     /** Face reference (point xyz, outward normal xyz, creator tag) of the hole being placed. */
     private double[] holeReference;private int holeEditIndex=-1;
@@ -127,14 +127,14 @@ public final class CadWorkspaceView extends View {
     private String modelInfo = "Nie można odtworzyć geometrii dokumentu";
     String operationMessage = "";
     private final String stepStatus;
-    private double modelWidth = 80.0;
-    private double modelHeight = 48.0;
-    private double modelDepth = 32.0;
+    double modelWidth = 80.0;
+    double modelHeight = 48.0;
+    double modelDepth = 32.0;
     /** World-space camera pivot; geometry bounds below are tracked separately. */
     private double meshCenterX;
     private double meshCenterY;
     private double meshCenterZ;
-    private double modelCenterX,modelCenterY,modelCenterZ;
+    double modelCenterX,modelCenterY,modelCenterZ;
     private boolean cameraAnchorSet;
     private RectF sketchRect;
     private float sketchStartX;
@@ -150,13 +150,13 @@ public final class CadWorkspaceView extends View {
     private final FileRequestListener fileRequestListener;
     private boolean sketchPlaneChosen;
     private String sketchPlane = "Nie wybrano";
-    private int selectedFace = -1;
-    private double selectedNormalX;
-    private double selectedNormalY;
-    private double selectedNormalZ = 1.0;
-    private double selectedPointX;
-    private double selectedPointY;
-    private double selectedPointZ;
+    int selectedFace = -1;
+    double selectedNormalX;
+    double selectedNormalY;
+    double selectedNormalZ = 1.0;
+    double selectedPointX;
+    double selectedPointY;
+    double selectedPointZ;
     private final List<ProjectedTriangle> projectedTriangles = new ArrayList<>();
     /** Back-facing triangles, collected only for the edge and transparent display modes. */
     private final List<ProjectedTriangle> backTriangles = new ArrayList<>();
@@ -245,16 +245,16 @@ public final class CadWorkspaceView extends View {
     private boolean dragConstraintRejected;
     private boolean polylineTouch;
     private double[] polylinePreview;
-    private android.widget.ScrollView propertyEditor;
+    android.widget.ScrollView propertyEditor;
     private android.widget.ScrollView contextEditor;
     private String contextPanelKey="";
     private boolean contextPanelPosted;
     private android.app.AlertDialog projectChooser;
     private double[] featurePreview;
     private CadProject featurePreviewDocument;
-    private double[] filletEdges=new double[0];
-    private final java.util.Map<Integer,Integer> filletSelections=new java.util.LinkedHashMap<>();
-    private Runnable filletSelectionChanged;
+    double[] filletEdges=new double[0];
+    final java.util.Map<Integer,Integer> filletSelections=new java.util.LinkedHashMap<>();
+    Runnable filletSelectionChanged;
     private android.widget.HorizontalScrollView nativeToolbar;
     private android.widget.PopupWindow toolbarPopup;
     private String toolbarState="";
@@ -382,14 +382,14 @@ public final class CadWorkspaceView extends View {
     private float topToolWidth() {return dp(64);}
 
     /** Clear visual picks without changing the document or leaving an active tool. */
-    private void clearViewportSelection() {
+    void clearViewportSelection() {
         selectedFace=-1;selectedSketchId=null;highlightBody=0;highlightFeature=Integer.MIN_VALUE;
         highlightSketch=false;selectedTreeKey="";selectedTimelineIndex=-1;
         measureA=measureB=null;measuredCurve=null;measuredEdgeText="";
         coincidenceFirst=null;cornerFirst=null;
         threadSelections.clear();extrusionSelections.clear();filletSelections.clear();shellSelections.clear();draftSelections.clear();
-        if(mode.equals("Gwint"))showThreadPanel();
-        else if(mode.equals("Powłoka"))showShellPanel();
+        if(mode.equals("Gwint"))threadTools.showPanel();
+        else if(mode.equals("Powłoka"))shellTools.showPanel();
         else if(mode.equals("Pochyl ściany"))showDraftPanel();
         else if(mode.equals("Odsuń ścianę")){faceOffsetRef=null;showFaceOffsetPanel();}
         else if(extrusionSelectionChanged!=null)extrusionSelectionChanged.run();
@@ -399,7 +399,7 @@ public final class CadWorkspaceView extends View {
         operationMessage="Odznaczono wszystkie elementy";invalidate();
     }
 
-    private void closePropertyEditor() {
+    void closePropertyEditor() {
         panelDismiss=null;panelConfirm=null;compactEditor=false;
         lastPreviewQuery=null;lastPreviewDisplay=null;
         previewControlsRefresh=null;removeCallbacks(sectionRefresh);
@@ -747,9 +747,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     if((mode.equals("Wybierz")||mode.equals("Szkic")&&!sketchPlaneChosen)&&datumTap(e.getX(),e.getY()))return true;
                     if(mode.equals("Wybierz")&&editVisibleSketchAt(e.getX(),e.getY()))return true;
                     int face = findFaceAt(e.getX(), e.getY());
-                    if(mode.equals("Gwint")) {threadTap(face);return true;}
-                    if(mode.equals("Dosuń")) {mateTap(face);return true;}
-                    if(mode.equals("Powłoka")) {shellTap(face);return true;}
+                    if(mode.equals("Gwint")) {threadTools.tap(face);return true;}
+                    if(mode.equals("Dosuń")) {mateTools.tap(face);return true;}
+                    if(mode.equals("Powłoka")) {shellTools.tap(face);return true;}
                     if(mode.equals("Otwór")) {holeTap(face);return true;}
                     if(mode.equals("Pochyl ściany")) {draftTap(face);return true;}
                     if(mode.equals("Odsuń ścianę")) {faceOffsetTap(face);return true;}
@@ -1731,7 +1731,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     /** Face actions for the selected face; returns the label of the selection. */
     private String selectionActions(List<String> names,List<String> icons,List<Runnable> actions) {
         final int face=selectedFace;boolean planar=isFacePlanar(face);int body=faceBodies.getOrDefault(face,1);Integer origin=faceFeatures.get(face);
-        HoleThread.Cylinder cylinder=selectedCylinder();
+        HoleThread.Cylinder cylinder=featurePatternTools.selectedCylinder();
         final double px=selectedPointX,py=selectedPointY,pz=selectedPointZ,nx=selectedNormalX,ny=selectedNormalY,nz=selectedNormalZ;
         Runnable restore=()->{selectedFace=face;selectedPointX=px;selectedPointY=py;selectedPointZ=pz;selectedNormalX=nx;selectedNormalY=ny;selectedNormalZ=nz;project.selectedBody=body;};
         if(planar) {
@@ -1740,7 +1740,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             names.add("Otwór");icons.add("Otwór");actions.add(()->{restore.run();beginHoleTool();});
             names.add("Płaszczyzna");icons.add("Płaszczyzna odsunięta");actions.add(()->{restore.run();showDatumEditor(DATUM_COMMANDS[0],null,null);});
         } else if(cylinder!=null) {
-            names.add("Gwint");icons.add("Gwint");actions.add(()->{restore.run();beginThreadTool();});
+            names.add("Gwint");icons.add("Gwint");actions.add(()->{restore.run();threadTools.begin();});
         }
         if(origin!=null&&(origin>=0||origin==-1&&project.featureBase!=null&&!project.importedStep)){names.add("Edytuj operację");icons.add("Edytuj");actions.add(()->{restore.run();editFaceOrigin(face);});}
         if(BodyGraph.bodies(project).size()>1){names.add("Połącz bryły");icons.add("Połącz");actions.add(()->{restore.run();activateTopTool("Połącz bryły");});}
@@ -2002,7 +2002,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
     private void showSectionDialog() {
         if(project.importedMeshSource!=null||!project.hasSolid()){operationMessage="Przekrój wymaga bryły B-Rep";invalidate();return;}
-        final double[] face=selectedPlanarFace();
+        final double[] face=featurePatternTools.selectedPlanarFace();
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Przekrój jest tylko widokiem: nie zmienia modelu, historii ani eksportu. Pokazywana jest część za płaszczyzną.");form.addView(info);
         List<String> choices=new ArrayList<>(java.util.Arrays.asList("Płaszczyzna YZ (prostopadła do X)","Płaszczyzna XZ (prostopadła do Y)","Płaszczyzna XY (prostopadła do Z)"));
@@ -2571,7 +2571,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private static final String GROUP_ID="\u0000group";
     /** "Położenie" chosen without a selection: the next touched element opens it. */
     private boolean positionNext;
-    private String sketchEntityName(SketchPrimitive p) {
+    String sketchEntityName(SketchPrimitive p) {
         if(p.type.equals("Okrąg")&&p.vertices==null&&p.curves==null)return "Okrąg Ø"+formatMm(2*Math.hypot(p.x2-p.x1,p.y2-p.y1));
         if(p.type.equals("Prostokąt")&&p.vertices==null)return "Prostokąt "+formatMm(Math.abs(p.x2-p.x1))+" × "+formatMm(Math.abs(p.y2-p.y1));
         return p.type;
@@ -2897,7 +2897,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             drawSketchDimension(canvas,projectSketchPoint(from[0],from[1]),projectSketchPoint(to[0],to[1]),null,formatMm(Math.abs(link.x)));drawingDimension=null;
         }
     }
-    private static String formatAngle(double degrees){return (Math.abs(degrees-Math.rint(degrees))<1e-9?String.valueOf((long)Math.rint(degrees)):String.format(java.util.Locale.US,"%.2f",degrees).replace('.',','))+"°";}
+    static String formatAngle(double degrees){return (Math.abs(degrees-Math.rint(degrees))<1e-9?String.valueOf((long)Math.rint(degrees)):String.format(java.util.Locale.US,"%.2f",degrees).replace('.',','))+"°";}
     /** Driving angles: an arc between the two lines at their intersection with the value; tap to edit. */
     private void drawAngleDimensions(Canvas canvas,List<SketchPrimitive> geometry) {
         for(int index=0;index<project.coincidences.size();index++) {
@@ -3538,74 +3538,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(entity!=null)showSketchEntityEditor(entity);invalidate();
     }
 
-    /** Linear/rectangular or circular pattern of the selected sketch element (independent copies). */
-    private void showSketchPattern(boolean circular){showSketchPattern(circular,null,null,null);}
-    /** Linked copies of one pattern: link group id → source id; null when the entity is in no pattern. */
-    private SketchConstraints.Link patternLink(String entity) {
-        for(SketchConstraints.Link l:project.coincidences)if(l.kind.equals("rigid")&&NonlinearConstraints.meta(l.axis,"g")!=null&&(l.a.equals(entity)||l.b.equals(entity)))return l;
-        return null;
-    }
-    /** "Edytuj szyk": reopens the pattern of the selected source or copy with its parameters and regenerates the copies. */
-    private void editSketchPattern() {
-        SketchConstraints.Link link=selectedSketchId==null?null:patternLink(selectedSketchId);
-        if(link==null){operationMessage="Zaznacz element powiązanego szyku albo lustra (Edytuj), a następnie wybierz Edytuj szyk";invalidate();return;}
-        String[] p=NonlinearConstraints.meta(link.axis,"p").split(",");String group=NonlinearConstraints.meta(link.axis,"g");
-        SketchPrimitive source=null;for(SketchPrimitive e:project.sketch)if(e.id.equals(link.a))source=e;if(source==null)return;
-        if(p[0].equals("M")){operationMessage="Lustro nie ma parametrów do edycji – usuń kopię i utwórz lustro ponownie";invalidate();return;}
-        double[] values=new double[4];for(int i=0;i<4;i++)values[i]=Double.parseDouble(p[i+1]);
-        selectedSketchId=source.id;showSketchPattern(p[0].equals("C"),source,group,values);
-    }
-    private void showSketchPattern(boolean circular,SketchPrimitive edited,String group,double[] previous) {
-        SketchPrimitive source=edited;
-        if(source==null)for(SketchPrimitive entity:project.sketch)if(entity.id.equals(selectedSketchId))source=entity;
-        if(source==null){operationMessage="Zaznacz element szkicu (Edytuj), a następnie wybierz szyk";return;}
-        final SketchPrimitive selected=source;
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        final EditText first,second,third,fourth;
-        double[] v=previous!=null?previous:circular?new double[]{6,360,0,0}:new double[]{3,20,1,20};
-        if(circular) {
-            first=coordinateInput("Liczba elementów (z oryginałem)",v[0]);second=coordinateInput("Kąt całkowity [°]",v[1]);
-            third=coordinateInput("Środek X [mm]",v[2]);fourth=coordinateInput("Środek Y [mm]",v[3]);
-        }else {
-            first=coordinateInput("Liczba w kierunku X",v[0]);second=coordinateInput("Odstęp X [mm]",v[1]);
-            third=coordinateInput("Liczba w kierunku Y",v[2]);fourth=coordinateInput("Odstęp Y [mm]",v[3]);
-        }
-        form.addView(first);form.addView(second);form.addView(third);form.addView(fourth);
-        if(circular){slider(form,first,2,36,1);slider(form,second,1,360,1);}
-        else {slider(form,first,1,30,1);slider(form,second,-2*modelExtent(),2*modelExtent(),.5);slider(form,third,1,30,1);slider(form,fourth,-2*modelExtent(),2*modelExtent(),.5);}
-        android.widget.TextView status=new android.widget.TextView(getContext());
-        status.setText(circular?"Kąt 360° dzieli okrąg równo. Środek w układzie szkicu.":"Liczby obejmują oryginał. Ujemny odstęp zmienia kierunek.");form.addView(status);
-        new PropertyBuilder().setTitle((group!=null?"Edytuj szyk · ":circular?"Szyk kołowy · ":"Szyk liniowy · ")+selected.type).setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
-            try {
-                List<SketchPrimitive> copies;
-                double a=parseCoordinate(first),b=parseCoordinate(second),c=parseCoordinate(third),e=parseCoordinate(fourth);
-                if(a!=Math.rint(a)||(!circular&&c!=Math.rint(c)))throw new IllegalArgumentException("Liczba elementów musi być całkowita");
-                copies=circular?SketchPattern.circular(selected,(int)a,c,e,b):SketchPattern.grid(selected,(int)a,(int)c,b,e);
-                checkpoint();
-                if(group!=null) {
-                    // Regenerate: the old copies of this pattern (and their links) are replaced.
-                    java.util.Set<String> old=new java.util.HashSet<>();for(SketchConstraints.Link l:project.coincidences)if(l.kind.equals("rigid")&&group.equals(NonlinearConstraints.meta(l.axis,"g")))old.add(l.b);
-                    for(String id:old)if(project.committedProfileIds.contains(id)||id.equals(project.featureProfileId)||id.equals(project.featureBaseProfileId))throw new IllegalArgumentException("Kopia szyku jest profilem operacji – nie można jej zastąpić");
-                    project.sketch.removeIf(p->old.contains(p.id));project.pruneCoincidences();
-                }
-                project.sketch.addAll(copies);mode="Edytuj szkic";
-                final double pcx=c,pcy=e;final String patternGroup=group!=null?group:UUID.randomUUID().toString();
-                final String parameters=(circular?"C,":"L,")+a+","+b+","+c+","+e;
-                int linked=linkCopies(selected,copies,copy->{double[] p0=firstPoint(selected),q0=firstPoint(copy);
-                    if(!circular)return NonlinearConstraints.withGroup(NonlinearConstraints.translation(q0[0]-p0[0],q0[1]-p0[1]),patternGroup,parameters);
-                    double[] p=p0,q=q0;if(Math.hypot(p[0]-pcx,p[1]-pcy)<1e-9){p=secondPoint(selected);q=secondPoint(copy);}
-                    return NonlinearConstraints.withGroup(NonlinearConstraints.rotation(pcx,pcy,Math.toDegrees(Math.atan2(q[1]-pcy,q[0]-pcx)-Math.atan2(p[1]-pcy,p[0]-pcx))),patternGroup,parameters);});
-                projectRepository.save(project);
-                operationMessage="Utworzono szyk: "+(copies.size()+1)+" elementów"+(linked==copies.size()?"; kopie powiązane ze źródłem ⧉.":linked>0?"; powiązano "+linked+" kopii.":"; kopie niezależne (tego typu geometrii nie można powiązać).")+" Zakończ zatwierdza szkic.";
-            }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
-            invalidate();
-        }).show();
-        // Live preview of the copies (dashed green) while the values change.
-        Runnable ghost=()->{sketchGhost.clear();try{double a=parseCoordinate(first),b=parseCoordinate(second),c=parseCoordinate(third),e=parseCoordinate(fourth);
-            if(a==Math.rint(a)&&(circular||c==Math.rint(c)))sketchGhost.addAll(circular?SketchPattern.circular(selected,(int)a,c,e,b):SketchPattern.grid(selected,(int)a,(int)c,b,e));}catch(IllegalArgumentException ignored){}invalidate();};
-        watchFields(form,ghost);ghost.run();
-    }
-
+    /** Sketch patterns (linear, rectangular, circular) with linked copies, and their editing. */
+    final SketchPatternTools sketchPatternTools=new SketchPatternTools(this);
     /** Extends the selected line to the nearest sketch geometry along its direction. */
     private void extendSelectedLine() {
         SketchPrimitive source=null;
@@ -3623,10 +3557,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private final OutlineTools outlineTools=new OutlineTools(this);
     private void showSketchOffset(){outlineTools.show();}
 
-    private static double[] firstPoint(SketchPrimitive p){return p.vertices!=null?new double[]{p.vertices[0],p.vertices[1]}:new double[]{p.x1,p.y1};}
-    private static double[] secondPoint(SketchPrimitive p){return p.vertices!=null?new double[]{p.vertices[2],p.vertices[3]}:new double[]{p.x2,p.y2};}
+    static double[] firstPoint(SketchPrimitive p){return p.vertices!=null?new double[]{p.vertices[0],p.vertices[1]}:new double[]{p.x1,p.y1};}
+    static double[] secondPoint(SketchPrimitive p){return p.vertices!=null?new double[]{p.vertices[2],p.vertices[3]}:new double[]{p.x2,p.y2};}
     /** Adds a "rigid" relation source → copy for every copy whose geometry satisfies it exactly; returns how many were linked. */
-    private int linkCopies(SketchPrimitive source,List<SketchPrimitive> copies,java.util.function.Function<SketchPrimitive,String> transform) {
+    int linkCopies(SketchPrimitive source,List<SketchPrimitive> copies,java.util.function.Function<SketchPrimitive,String> transform) {
         int linked=0;
         for(SketchPrimitive copy:copies) {
             try {
@@ -4189,7 +4123,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return -1;
     }
 
-    private boolean isFacePlanar(int faceId) {
+    boolean isFacePlanar(int faceId) {
         ProjectedTriangle reference = null;
         for (ProjectedTriangle triangle : projectedTriangles) {
             if (triangle.faceId != faceId) continue;
@@ -4315,7 +4249,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             invalidate();return;
         }
         if(project.featureBase!=null) {
-            if(Revolve.is(project.featureBase)){showRevolveEditor(Revolve.profile(project.featureBaseProfileId,project.featureBase),project.featureBase,-1,true);return;}
+            if(Revolve.is(project.featureBase)){revolveTools.show(Revolve.profile(project.featureBaseProfileId,project.featureBase),project.featureBase,-1,true);return;}
             showBaseExtrusionEditor(project.featureBase,project.featureBaseProfileId);return;
         }
         if(project.sketchExtruded&&featureProfile()!=null) {
@@ -4345,7 +4279,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             .show();
     }
 
-    private double[] evaluationBase() {
+    double[] evaluationBase() {
         if(project.featureBase!=null)return project.featureBase;
         SketchPrimitive profile=featureProfile();
         if(!project.importedStep&&project.sketchExtruded&&project.featureOperation.equals("none")&&profile!=null)
@@ -4354,11 +4288,11 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return null;
     }
 
-    private double[] evaluateFillet(double[] candidate,int index) {
+    double[] evaluateFillet(double[] candidate,int index) {
         return evaluateQuery(filletPreviewQuery(candidate,index));
     }
 
-    private java.util.concurrent.Callable<double[]> filletPreviewQuery(double[] candidate,int index) {
+    java.util.concurrent.Callable<double[]> filletPreviewQuery(double[] candidate,int index) {
         double[] packed=packedFeatures();
         if(index<0) {
             int length=packed.length;packed=java.util.Arrays.copyOf(packed,length+candidate.length);
@@ -4379,31 +4313,31 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(project.importedMeshSource!=null){operationMessage="Obrót wymaga modelu B-Rep, nie siatki STL";invalidate();return;}
         List<SketchPrimitive> profiles=new ArrayList<>();List<String> labels=new ArrayList<>();
         for(SketchPrimitive p:project.sketch)if(p.closedProfile()&&!p.isText()) {
-            if(p.id.equals(selectedSketchId)){showRevolveEditor(p,null,-1,!project.hasSolid());return;}
+            if(p.id.equals(selectedSketchId)){revolveTools.show(p,null,-1,!project.hasSolid());return;}
             profiles.add(p);labels.add("Profil "+profiles.size()+" · "+p.type);
         }
         if(profiles.isEmpty()){operationMessage="Najpierw narysuj i zakończ zamknięty profil szkicu";invalidate();return;}
-        if(profiles.size()==1){showRevolveEditor(profiles.get(0),null,-1,!project.hasSolid());return;}
+        if(profiles.size()==1){revolveTools.show(profiles.get(0),null,-1,!project.hasSolid());return;}
         new PropertyBuilder().setTitle("Obrót · wybierz profil").setItems(labels.toArray(new String[0]),
-            (d,w)->showRevolveEditor(profiles.get(w),null,-1,!project.hasSolid())).setNegativeButton("Anuluj",null).show();
+            (d,w)->revolveTools.show(profiles.get(w),null,-1,!project.hasSolid())).setNegativeButton("Anuluj",null).show();
     }
 
-    private double[] evaluateRevolve(double[] f,int index,boolean root) {
+    double[] evaluateRevolve(double[] f,int index,boolean root) {
         return evaluateQuery(revolvePreviewQuery(f,index,root));
     }
     /** Candidate document with a new revolved body (the record routed to a new body id). */
-    private CadProject revolvedBodyProject(double[] f,String profileId) {
+    CadProject revolvedBodyProject(double[] f,String profileId) {
         try {
             CadProject next=CadProject.fromJson(new org.json.JSONObject(project.toJson().toString()));BodyGraph.begin(next);
             next.committedFeatures.add(f);next.committedProfileIds.add(profileId);next.featureBodyTargets.add(0);next.featureBodyOutputs.add(BodyGraph.allocate(next));return next;
         }catch(org.json.JSONException e){throw new IllegalArgumentException(e.getMessage());}
     }
-    private java.util.concurrent.Callable<double[]> newBodyRevolveQuery(double[] f,String profileId) {
+    java.util.concurrent.Callable<double[]> newBodyRevolveQuery(double[] f,String profileId) {
         CadProject next=revolvedBodyProject(f,profileId);int n=0;for(double[] r:next.committedFeatures)n+=r.length;double[] raw=new double[n];int at=0;for(double[] r:next.committedFeatures){System.arraycopy(r,0,raw,at,r.length);at+=r.length;}
         return packedPreviewQuery(evaluationBase(),BodyGraph.pack(next,raw),project.importedStep?0:project.filletRadius,modelDepth);
     }
 
-    private java.util.concurrent.Callable<double[]> revolvePreviewQuery(double[] f,int index,boolean root) {
+    java.util.concurrent.Callable<double[]> revolvePreviewQuery(double[] f,int index,boolean root) {
         double[] base=root?f:evaluationBase(),packed=packedFeatures();
         if(!root) {
             if(index<0){int offset=packed.length;packed=java.util.Arrays.copyOf(packed,offset+f.length);System.arraycopy(f,0,packed,offset,f.length);}
@@ -4431,7 +4365,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     /** Last preview failure reason from the kernel, or the given fallback text. */
     private volatile String previewFailureReason;
-    private String previewFailure(String fallback) {
+    String previewFailure(String fallback) {
         String reason=previewFailureReason;
         return reason==null||reason.isEmpty()?fallback:reason+". Model nie został zmieniony.";
     }
@@ -4441,14 +4375,14 @@ if (isInsideViewport(e.getX(), e.getY())) {
         catch(Exception error){throw new IllegalStateException(error);}
     }
 
-    private void invalidateGeometryPreview() {
+    void invalidateGeometryPreview() {
         // Keep the last successfully calculated geometry visible while a new
         // (possibly expensive) B-Rep preview is computed during arrow dragging.
         // Closing the editor explicitly discards this temporary geometry.
         if(geometryPreviewWorker!=null)geometryPreviewWorker.cancel();
     }
 
-    private void submitGeometryPreview(android.widget.ScrollView owner,java.util.concurrent.Callable<double[]> query,
+    void submitGeometryPreview(android.widget.ScrollView owner,java.util.concurrent.Callable<double[]> query,
             java.util.function.Consumer<double[]> display) {
         if(owner==null||propertyEditor!=owner||previewViewDetached)return;
         lastPreviewQuery=query;lastPreviewDisplay=display;
@@ -4471,157 +4405,15 @@ if (isInsideViewport(e.getX(), e.getY())) {
         });
     }
 
-    private void showRevolveEditor(SketchPrimitive profile,double[] original,int index,boolean root) {
-        mode="Wybierz";
-        if(original==null){cameraYaw=-28;cameraPitch=22;}
-        List<double[]> axes=new ArrayList<>();List<String> labels=new ArrayList<>();
-        if(original!=null){axes.add(java.util.Arrays.copyOfRange(original,16,20));labels.add("Zapisana oś operacji");}
-        axes.add(new double[]{0,0,1,0});labels.add("Oś X szkicu");axes.add(new double[]{0,0,0,1});labels.add("Oś Y szkicu");
-        boolean sameFrame=true;
-        if(original!=null){double[] frame={project.sketchOriginX,project.sketchOriginY,project.sketchOriginZ,project.sketchUx,project.sketchUy,project.sketchUz,project.sketchVx,project.sketchVy,project.sketchVz};
-            for(int i=0;i<9;i++)if(Math.abs(frame[i]-original[7+i])>1e-8)sameFrame=false;}
-        int guides=0;
-        if(sameFrame)for(SketchPrimitive p:project.sketch)if(p.type.equals("Pomocnicza")) {
-            axes.add(new double[]{p.x1,p.y1,p.x2,p.y2});labels.add("Linia pomocnicza "+(++guides));
-        }
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView axisLabel=new android.widget.TextView(getContext());axisLabel.setText("Oś w płaszczyźnie profilu");form.addView(axisLabel);
-        android.widget.Spinner axis=new android.widget.Spinner(getContext());
-        android.widget.ArrayAdapter<String> adapter=new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_item,labels);
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);axis.setAdapter(adapter);axis.setContentDescription("Oś obrotu profilu");form.addView(axis);
-        android.widget.TextView angleLabel=new android.widget.TextView(getContext());angleLabel.setText("Kąt obrotu [°] · 0,1–360");form.addView(angleLabel);
-        EditText angle=coordinateInput("Kąt obrotu [°]",original==null?360:Math.abs(original[6]));form.addView(angle);
-        android.widget.CheckBox reverse=directionCheck(original==null?360:original[6]);form.addView(reverse);
-        android.widget.CheckBox cut=new android.widget.CheckBox(getContext());cut.setText("Wytnij materiał obrotem");cut.setChecked(original!=null&&original[1]==1);
-        if(!root)form.addView(cut);
-        android.widget.CheckBox newBody=new android.widget.CheckBox(getContext());newBody.setText("Nowa bryła (osobno od istniejących)");
-        if(!root&&original==null)form.addView(newBody);
-        newBody.setOnCheckedChangeListener((b,c)->{if(c)cut.setChecked(false);cut.setEnabled(!c);});
-        android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
-        java.util.function.Supplier<double[]> candidate=()-> {
-            double value=parseCoordinate(angle);if(!Double.isFinite(value)||value<.1||value>360)throw new IllegalArgumentException("Kąt: 0,1–360 stopni");
-            value=reverse.isChecked()?-value:value;double[] selected=axes.get(axis.getSelectedItemPosition());
-            if(original==null)return Revolve.create(profile,project,selected,value,!root&&cut.isChecked());
-            double[] f=original.clone();f[6]=value;f[1]=!root&&cut.isChecked()?1:0;System.arraycopy(selected,0,f,16,4);Revolve.validate(f);return f;
-        };
-        new PropertyBuilder().setTitle(root?"Obrót profilu · bryła bazowa":"Obrót profilu · dodanie / wycięcie").setView(form)
-            .setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)-> {
-                try {
-                    double[] f=candidate.get();
-                    if(newBody.isChecked()){String baseline;try{baseline=project.toJson().toString();}catch(org.json.JSONException e){throw new IllegalArgumentException(e.getMessage());}commitProjectAsync(revolvedBodyProject(f,profile.id),baseline,"Obrót profilu → nowa bryła");selectedSketchId=null;invalidate();return;}
-                    if(evaluateRevolve(f,index,root).length==0)throw new IllegalArgumentException(previewFailure("Nie można zbudować obrotu lub odtworzyć dalszych operacji"));
-                    if (commitModelChange(() -> {
-                        if(root){project.featureBase=f;project.featureBaseProfileId=profile.id;}
-                        else if(index<0){preserveExtrudedBase();commitActiveFeature();project.committedFeatures.add(f);project.committedProfileIds.add(profile.id);}
-                        else project.committedFeatures.set(index,f);
-                    })) {
-                        selectedSketchId=null;
-                        operationMessage="Zapisano obrót profilu "+String.format(java.util.Locale.US,"%.3f°",f[6])+" w historii modelu";
-                    }
-                }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
-                invalidate();
-            }).show();
-        android.widget.ScrollView owner=propertyEditor;
-        Runnable preview=()-> {
-            if(propertyEditor!=owner)return;invalidateGeometryPreview();
-            try {
-                status.setText("Obliczanie podglądu…");
-                submitGeometryPreview(owner,newBody.isChecked()?newBodyRevolveQuery(candidate.get(),profile.id):revolvePreviewQuery(candidate.get(),index,root),mesh->{
-                    if(mesh.length==0)status.setText(previewFailure("Brak poprawnej bryły. Sprawdź oś, profil i przecięcie z modelem. Dokument pozostaje bez zmian."));
-                    else status.setText("Podgląd obrotu. Zastosuj zapisuje edytowalną operację w historii.");
-                });
-            }catch(IllegalArgumentException error){status.setText(error.getMessage());}invalidate();
-        };
-        angle.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int n){}
-            public void onTextChanged(CharSequence s,int a,int b,int c){invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,180);}public void afterTextChanged(android.text.Editable s){} });
-        reverse.setOnCheckedChangeListener((button,checked)->preview.run());cut.setOnCheckedChangeListener((button,checked)->preview.run());
-        newBody.setOnCheckedChangeListener((button,checked)->{if(checked)cut.setChecked(false);cut.setEnabled(!checked);preview.run();});
-        axis.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
-            public void onItemSelected(android.widget.AdapterView<?> parent,View view,int position,long id){preview.run();}
-            public void onNothingSelected(android.widget.AdapterView<?> parent){} });
-        preview.run();
-    }
+    /** Revolve dialog: axis, angle, join / cut / new body, live preview. */
+    final RevolveTools revolveTools=new RevolveTools(this);
+    private void showFilletEditor(){edgeTools.showFillet(-1);}
 
-    private void showFilletEditor(){showEdgeFilletEditor(-1);}
-
-    private void showEdgeFilletEditor(int index) {
-        showEdgeTreatmentEditor(index,index>=0&&EdgeChamfer.is(project.committedFeatures.get(index)));
-    }
-
-    private void showEdgeTreatmentEditor(int index,boolean chamfer) {
-        if(!project.hasSolid()||project.importedMeshSource!=null) {
-            operationMessage="Obróbka krawędzi wymaga bryły B-Rep, nie siatki STL";invalidate();return;
-        }
-        mode="Wybierz";
-        final double[][] candidate={index>=0?project.committedFeatures.get(index).clone():null};
-        double[] root=evaluationBase();
-        final double[] rootReference=root==null?new double[]{0,0,0,modelWidth,modelHeight,0,modelDepth}:root.clone();
-        final double[] rootEdges=(index<0||candidate[0].length==16)&&!project.importedStep&&RootEdgeReference.supports(rootReference)
-            ?NativeCadEngine.modelEdges(modelWidth,modelHeight,modelDepth,0,rootReference,new double[0],null):new double[0];
-        if(index>=0&&candidate[0].length==16)candidate[0]=RootEdgeReference.anchor(candidate[0],rootReference,rootEdges);
-        EditText radius=coordinateInput(chamfer?"Wielkość fazy [mm]":"Promień [mm]",index>=0?candidate[0][11]:3);
-        android.widget.TextView status=new android.widget.TextView(getContext());status.setTextSize(13);
-        android.widget.TextView selectionCount=new android.widget.TextView(getContext());
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        form.addView(radius);form.addView(selectionCount);form.addView(status);
-        slider(form,radius,.1,Math.max(10,modelExtent()/2),.1);
-        new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle(chamfer?(index<0?"Fazuj · wskaż krawędź":"Fazowanie · równe odległości [mm]"):(index<0?"Zaokrąglij · wskaż krawędź":"Zaokrąglenie · promień [mm]")).setView(form)
-            .setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)-> {
-                try {
-                    if(candidate[0]==null)throw new IllegalArgumentException("Najpierw dotknij widocznej krawędzi bryły");
-                    double[] value=EdgeGroup.withRadius(candidate[0],parseCoordinate(radius));
-                    if(chamfer)EdgeChamfer.validate(value);else EdgeFillet.validate(value);
-                    if(evaluateFillet(value,index).length==0)throw new IllegalArgumentException(previewFailure("Nie można wykonać operacji na tej krawędzi z podaną wartością lub przebudować kolejnych cech"));
-                    if (commitModelChange(() -> {
-                        if(index<0) {
-                            preserveExtrudedBase();commitActiveFeature();
-                            project.committedFeatures.add(value);project.committedProfileIds.add("");
-                        } else project.committedFeatures.set(index,value);
-                    })) operationMessage=chamfer?"Gotowe: fazowanie wskazanej krawędzi "+formatMm(value[11]):"Gotowe: zaokrąglenie wskazanej krawędzi R"+formatMm(value[11]);
-                }catch(IllegalArgumentException e){operationMessage=e.getMessage();}
-                invalidate();
-            }).show();
-        android.widget.ScrollView owner=propertyEditor;
-        Runnable preview=()-> {
-            if(propertyEditor!=owner)return;
-            invalidateGeometryPreview();
-            try {
-                double dimension=parseCoordinate(radius);
-                if(index<0) {
-                    candidate[0]=null;
-                    selectionCount.setText("Wybrane krawędzie: "+filletSelections.size());
-                    java.util.List<double[]> selected=new java.util.ArrayList<>();
-                    for(int segment:filletSelections.values())selected.add(RootEdgeReference.anchor(
-                        chamfer?EdgeChamfer.create(filletEdges,segment,dimension):EdgeFillet.create(filletEdges,segment,dimension),rootReference,rootEdges));
-                    candidate[0]=selected.isEmpty()?null:selected.size()==1?selected.get(0):EdgeGroup.create(selected,dimension,chamfer);
-                }
-                selectionCount.setText("Wybrane krawędzie: "+(candidate[0]==null?0:EdgeGroup.is(candidate[0])?(int)candidate[0][1]:1));
-                if(candidate[0]==null){status.setText("Dotykaj kolejnych krawędzi. Ponowne dotknięcie odznacza; przeciągnięcie obraca model.");invalidate();return;}
-                candidate[0]=EdgeGroup.withRadius(candidate[0],dimension);
-                if(chamfer)EdgeChamfer.validate(candidate[0]);else EdgeFillet.validate(candidate[0]);
-                double proposedRadius=candidate[0][11];status.setText("Obliczanie podglądu…");
-                submitGeometryPreview(owner,filletPreviewQuery(candidate[0],index),mesh->{
-                    if(mesh.length==0)status.setText(previewFailure("Brak poprawnego wyniku. Zmniejsz wartość lub wskaż inną krawędź. Model nie został zmieniony."));
-                    else status.setText("Podgląd "+(chamfer?"fazy ":"R")+formatMm(proposedRadius)+". "+(chamfer?"Równe odsunięcia na obu ścianach. ":"")+"Zastosuj zapisuje operację w historii.");
-                });
-            }catch(IllegalArgumentException e){status.setText(chamfer?"Wielkość fazy: 0,1–1000 mm":"Promień: 0,1–1000 mm");}
-            invalidate();
-        };
-        if(index<0) {
-            filletEdges=NativeCadEngine.modelEdges(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,
-                evaluationBase(),kernelFeatures(),project.importedStep?importedSourceFile().getAbsolutePath():null);
-            filletSelectionChanged=preview;
-            if(filletEdges.length==0)status.setText("Nie można odczytać krawędzi bryły");
-        }
-        radius.addTextChangedListener(new android.text.TextWatcher(){
-            public void beforeTextChanged(CharSequence s,int start,int count,int after){}
-            public void onTextChanged(CharSequence s,int start,int before,int count){invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,180);}
-            public void afterTextChanged(android.text.Editable s){}
-        });
-        preview.run();
-    }
-
-    private double[] projectWorldPoint(double x,double y,double z) {
+    /** Fillet and chamfer of model edges: edge picking, radius / size with live preview, editing. */
+    final EdgeTools edgeTools=new EdgeTools(this);
+    /** Kept for the device UI probes (reflection). */
+    private void showEdgeTreatmentEditor(int index,boolean chamfer){edgeTools.show(index,chamfer);}
+    double[] projectWorldPoint(double x,double y,double z) {
         double yaw=Math.toRadians(cameraYaw),pitch=Math.toRadians(cameraPitch);
         x-=meshCenterX;y-=meshCenterY;z-=meshCenterZ;
         double rx=x*Math.cos(yaw)+z*Math.sin(yaw),rz=-x*Math.sin(yaw)+z*Math.cos(yaw);
@@ -5305,7 +5097,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     /** Rotates the body of the selected planar face so the face lies on the build plate (Z = 0), as history operations. */
     private void layFlatSelectedFace() {
-        double[] face=selectedPlanarFace();
+        double[] face=featurePatternTools.selectedPlanarFace();
         if(face==null||project.importedMeshSource!=null){operationMessage="Zaznacz płaską ścianę bryły, na której ma leżeć na stole drukarki";invalidate();return;}
         try {
             int body=faceBodies.getOrDefault(selectedFace,1);String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
@@ -5315,7 +5107,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     // ---- Assembly: components, instances, face placement, interference, bill of materials ----
-    private String mateComponent;private double[] mateMovingPoint,mateMovingNormal;
+    String mateComponent;double[] mateMovingPoint;double[] mateMovingNormal;
     private void showNewComponent() {
         List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(ids.isEmpty()){operationMessage="Brak brył do zgrupowania";invalidate();return;}
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
@@ -5368,107 +5160,14 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }).show();
         attachLivePreview(form,candidate,status,"Podgląd wystąpienia. Zastosuj zapisuje je w historii.");
     }
-    private java.util.Set<Integer> mateBodies=new java.util.LinkedHashSet<>();private double[] mateMovingAxis;private Integer mateMovingCreator;
-    /** Gap and kind of a persistent mate from the history. */
-    private void showMateEditor(int index) {
-        double[] original=project.committedFeatures.get(index);
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Dosunięcie jest przeliczane przy każdej zmianie modelu: bryła podąża za ścianą, do której ją dosunięto.");form.addView(info);
-        final boolean coaxial=original[1]==MateFeature.AXIS,angled=original[1]==MateFeature.ANGLE;
-        EditText gap=labeledCoordinate(form,angled?"Kąt [°]":"Odstęp [mm]",original[3]);if(angled)slider(form,gap,0,180,.5);else slider(form,gap,-modelExtent()/2,modelExtent()/2,.5);
-        android.widget.CheckBox flush=new android.widget.CheckBox(getContext());flush.setText("Wyrównaj (ściany w jednej płaszczyźnie)");flush.setChecked(original[1]==MateFeature.FLUSH);form.addView(flush);
-        if(angled){flush.setEnabled(false);flush.setVisibility(View.GONE);info.setText("Kąt między ścianami jest przeliczany przy każdej zmianie modelu.");}
-        if(coaxial){gap.setEnabled(false);flush.setEnabled(false);info.setText("Współosiowość jest przeliczana przy każdej zmianie modelu. Położenie wzdłuż osi ustawisz dosunięciem płaskich ścian.");}
-        android.content.DialogInterface.OnClickListener apply=(d,w)->{
-            try{double[] updated=coaxial?original.clone():angled?MateFeature.withGap(original,MateFeature.ANGLE,Double.parseDouble(gap.getText().toString().replace(',','.'))):MateFeature.withGap(original,flush.isChecked()?MateFeature.FLUSH:MateFeature.CONTACT,parseCoordinate(gap));String baseline=project.toJson().toString();CadProject next=copyProject(project);next.committedFeatures.set(index,updated);commitProjectAsync(next,baseline,"Zaktualizowano: "+MateFeature.describe(updated,BodyGraph.name(next,MateFeature.other(updated))));}
-            catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-        };
-        new PropertyBuilder().setTitle("Edytuj dosunięcie").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",apply).show();
-        capturedPreview(form,apply,"Podgląd położenia bryły.");
-    }
-    private void beginMate() {
-        if(!project.hasSolid()||BodyGraph.bodies(project).size()<2){operationMessage="Dosuń ściany łączy dwie bryły – potrzebne są co najmniej dwie bryły (np. wyciągnięcie jako „Nowa bryła” albo wystąpienie)";invalidate();return;}
-        closePropertyEditor();mode="Dosuń";mateComponent=null;mateBodies.clear();mateMovingAxis=null;mateMovingPoint=null;
-        operationMessage="Dotknij płaskiej lub walcowej ściany bryły, która ma się przesunąć";invalidate();
-    }
-    /** Axis {point, direction} of a cylindrical/conical face. */
-    private double[] faceAxis(int face){int old=selectedFace;selectedFace=face;try{return selectedSurfaceAxis();}finally{selectedFace=old;}}
-    private void mateTap(int face) {
-        if(face<0){operationMessage="Dotknij ściany bryły";invalidate();return;}
-        boolean planar=isFacePlanar(face);double[] axis=planar?null:faceAxis(face);
-        if(!planar&&axis==null){operationMessage="Dotknij płaskiej ściany albo walcowej ściany (otwór, wałek)";invalidate();return;}
-        double l=Math.sqrt(selectedNormalX*selectedNormalX+selectedNormalY*selectedNormalY+selectedNormalZ*selectedNormalZ);
-        double[] point={selectedPointX,selectedPointY,selectedPointZ},normal={selectedNormalX/l,selectedNormalY/l,selectedNormalZ/l};int body=faceBodies.getOrDefault(face,1);
-        if(mateComponent==null&&mateBodies.isEmpty()) {
-            Component c=Component.of(project.components,body);
-            if(c!=null&&c.instance())mateComponent=c.id;else if(c!=null)mateBodies.addAll(c.bodies);else mateBodies.add(body);
-            mateMovingAxis=axis;mateMovingPoint=point;mateMovingNormal=normal;mateMovingCreator=faceFeatures.get(face);selectedFace=face;
-            operationMessage=(axis!=null?"Teraz dotknij walcowej ściany, z którą oś ma być współosiowa":"Teraz dotknij ściany, do której ta ściana ma przylegać")+" (inna bryła)";invalidate();return;
-        }
-        java.util.Set<Integer> moving=new java.util.LinkedHashSet<>(mateBodies);if(mateComponent!=null){Component c=Assembly.find(project,mateComponent);if(c!=null)moving.addAll(c.bodies);}
-        if(moving.contains(body)){operationMessage="Wybierz ścianę innej bryły";invalidate();return;}
-        if((mateMovingAxis!=null)!=(axis!=null)){operationMessage=mateMovingAxis!=null?"Pierwsza ściana była walcowa – dotknij walcowej ściany drugiej bryły":"Pierwsza ściana była płaska – dotknij płaskiej ściany drugiej bryły";invalidate();return;}
-        final double[] tp=point,tn=normal,ta=axis,mp=mateMovingPoint,mn=mateMovingNormal,ma=mateMovingAxis;final String component=mateComponent;final java.util.Set<Integer> bodies=new java.util.LinkedHashSet<>(mateBodies);
-        final Integer movingCreator=mateMovingCreator,targetCreator=faceFeatures.get(face);final int targetBody=body;
-        // A plane mate of one ordinary body is stored as a persistent mate (re-solved when either body changes).
-        // Single-body instances are mated persistently too: their faces are created by the instance record.
-        Component instanceComponent=component==null?null:Assembly.find(project,component);
-        final Integer instanceBody=instanceComponent!=null&&instanceComponent.bodies.size()==1?instanceComponent.bodies.iterator().next():null;
-        final boolean persistent=(component==null&&bodies.size()==1||instanceBody!=null)&&movingCreator!=null&&targetCreator!=null&&project.bodyGraphStart>=0;
-        mode="Wybierz";selectedFace=face;
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView info=new android.widget.TextView(getContext());form.addView(info);
-        EditText gap=null;android.widget.CheckBox flush=new android.widget.CheckBox(getContext());
-        if(ta==null){info.setText("Ściany zostaną ustawione naprzeciw siebie (styk) albo w jednej płaszczyźnie (wyrównanie).");gap=labeledCoordinate(form,"Odstęp [mm]",0);slider(form,gap,-modelExtent()/2,modelExtent()/2,.5);flush.setText("Wyrównaj (ściany w jednej płaszczyźnie, ten sam kierunek)");form.addView(flush);}
-        else info.setText("Osie walcowych ścian zostaną wyrównane (współosiowo). Położenie wzdłuż osi ustawisz kolejnym dosunięciem płaskich ścian.");
-        final EditText gapField=gap;
-        final android.widget.CheckBox angleMode=new android.widget.CheckBox(getContext());final EditText angleField;
-        if(ta==null){angleMode.setText("Kąt między ścianami (zamiast styku)");form.addView(angleMode);angleField=labeledCoordinate(form,"Kąt [°]",90);angleField.setTag(null);}else angleField=null;
-        android.content.DialogInterface.OnClickListener apply=(d,w)->{
-            try {
-                if(angleField!=null&&angleMode.isChecked()) {
-                    if(!persistent||component!=null&&instanceBody==null)throw new IllegalArgumentException("Kąt między ścianami wymaga zwykłej bryły lub wystąpienia jednej bryły");
-                    double angle=Double.parseDouble(angleField.getText().toString().replace(',','.'));
-                    String baseline=project.toJson().toString();CadProject next=copyProject(project);
-                    int movingBody=component!=null?instanceBody:bodies.iterator().next();
-                    double[] mate=MateFeature.create(MateFeature.ANGLE,targetBody,angle,mp,mn,movingCreator,tp,tn,targetCreator);
-                    next.committedFeatures.add(mate);next.committedProfileIds.add("");next.featureBodyTargets.add(movingBody);next.featureBodyOutputs.add(movingBody);
-                    BodyGraph.validate(next);commitProjectAsync(next,baseline,"Ustawiono kąt "+formatAngle(angle)+" między ścianami");return;
-                }
-                double[][] delta=ta==null?Assembly.planeDelta(mp,mn,tp,tn,parseCoordinate(gapField),flush.isChecked()):Assembly.axisDelta(new double[]{ma[0],ma[1],ma[2]},new double[]{ma[3],ma[4],ma[5]},new double[]{ta[0],ta[1],ta[2]},new double[]{ta[3],ta[4],ta[5]});
-                String baseline=project.toJson().toString();CadProject next=copyProject(project);String name;
-                if(component!=null&&persistent) {
-                    Component c=Assembly.find(next,component);name=c.name;
-                    double[] mate=ta!=null?MateFeature.create(MateFeature.AXIS,targetBody,0,new double[]{ma[0],ma[1],ma[2]},new double[]{ma[3],ma[4],ma[5]},movingCreator,new double[]{ta[0],ta[1],ta[2]},new double[]{ta[3],ta[4],ta[5]},targetCreator)
-                        :MateFeature.create(flush.isChecked()?MateFeature.FLUSH:MateFeature.CONTACT,targetBody,parseCoordinate(gapField),mp,mn,movingCreator,tp,tn,targetCreator);
-                    next.committedFeatures.add(mate);next.committedProfileIds.add("");next.featureBodyTargets.add(instanceBody);next.featureBodyOutputs.add(instanceBody);
-                } else if(component!=null) {
-                    Component c=Assembly.find(next,component);name=c.name;
-                    for(int index:Assembly.instanceRecords(next,c))next.committedFeatures.set(index,Assembly.composeDelta(delta,next.committedFeatures.get(index)));
-                } else {
-                    if(persistent) {
-                        int movingBody=bodies.iterator().next();
-                        double[] mate=ta!=null?MateFeature.create(MateFeature.AXIS,targetBody,0,new double[]{ma[0],ma[1],ma[2]},new double[]{ma[3],ma[4],ma[5]},movingCreator,new double[]{ta[0],ta[1],ta[2]},new double[]{ta[3],ta[4],ta[5]},targetCreator)
-                            :MateFeature.create(flush.isChecked()?MateFeature.FLUSH:MateFeature.CONTACT,targetBody,parseCoordinate(gapField),mp,mn,movingCreator,tp,tn,targetCreator);
-                        next.committedFeatures.add(mate);next.committedProfileIds.add("");next.featureBodyTargets.add(movingBody);next.featureBodyOutputs.add(movingBody);
-                    } else {
-                    List<double[]> records=Assembly.transformRecords(delta);if(records.isEmpty())throw new IllegalArgumentException("Bryła już jest w tym położeniu");
-                    for(int b:bodies)for(double[] r:records){next.committedFeatures.add(r);next.committedProfileIds.add("");next.featureBodyTargets.add(b);next.featureBodyOutputs.add(b);}
-                    }
-                    name=bodies.size()==1?BodyGraph.name(next,bodies.iterator().next()):bodies.size()+" brył";
-                }
-                if(previewSink==null){mateComponent=null;mateBodies.clear();mateMovingAxis=null;}
-                commitProjectAsync(next,baseline,ta!=null?"Ustawiono współosiowo: "+name:"Dosunięto „"+name+"” do wskazanej ściany"+(flush.isChecked()?" (wyrównanie)":"")+(gapField!=null&&parseCoordinate(gapField)!=0?" z odstępem "+formatMm(parseCoordinate(gapField)):""));
-            }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-        };
-        new PropertyBuilder().setTitle(ta!=null?"Dosuń · współosiowo":"Dosuń ściany").setView(form).setNegativeButton("Anuluj",(d,w)->{mateComponent=null;mateBodies.clear();mateMovingAxis=null;}).setPositiveButton("Dosuń",apply).show();
-        capturedPreview(form,apply,"Podgląd położenia bryły.");
-    }
+    java.util.Set<Integer> mateBodies=new java.util.LinkedHashSet<>();double[] mateMovingAxis;Integer mateMovingCreator;
+    /** Assembly mates: face-to-face, flush, coaxial and angle mates and their editor. */
+    final MateTools mateTools=new MateTools(this);
     private void showComponentActions(Component c) {
         List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
         labels.add("Zmień nazwę");actions.add(()->{EditText name=new EditText(getContext());name.setSingleLine(true);name.setText(c.name);
             new PropertyBuilder().setTitle("Nazwa komponentu").setView(name).setNegativeButton("Anuluj",null).setPositiveButton("Zapisz",(d,w)->{String v=name.getText().toString().trim();if(!v.isEmpty()&&commitModelChange(()->{Component x=Assembly.find(project,c.id);if(x!=null)x.name=v;}))operationMessage="Zmieniono nazwę";invalidate();}).show();});
-        if(c.instance()){labels.add("Zmień położenie…");actions.add(()->showInstanceDialog(c));labels.add("Dosuń ściany…");actions.add(this::beginMate);
+        if(c.instance()){labels.add("Zmień położenie…");actions.add(()->showInstanceDialog(c));labels.add("Dosuń ściany…");actions.add(mateTools::begin);
             labels.add("Usuń wystąpienie");actions.add(()->removeInstance(c));}
         else {labels.add("Wstaw wystąpienie…");actions.add(()->showInstanceDialog(null));labels.add("Rozgrupuj (bryły zostają)");actions.add(()->{
             for(Component x:project.components)if(x.instanceOf.equals(c.id)){operationMessage="Komponent ma wystąpienia – usuń je najpierw";invalidate();return;}
@@ -5727,7 +5426,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         project.featureBaseProfileId = p.id;
     }
 
-    private double[] kernelFeatures(){return BodyGraph.pack(project,packedFeatures());}
+    double[] kernelFeatures(){return BodyGraph.pack(project,packedFeatures());}
 
     private double[] packedFeatures() {
         double[] active = activeFeatureValues();
@@ -5747,22 +5446,22 @@ if (isInsideViewport(e.getX(), e.getY())) {
         double[] feature = project.committedFeatures.get(index);
         if(project.extrusionExtents.containsKey(index)){showExtrusionExtentEditor(index);return;}
         if(HoleThread.is(feature)){showThreadFeatureEditor(index);return;}
-        if(FeaturePattern.is(feature)){showPatternEditor(index);return;}
-        if(ShellFeature.is(feature)){showShellEditor(index);return;}
+        if(FeaturePattern.is(feature)){featurePatternTools.showEditor(index);return;}
+        if(ShellFeature.is(feature)){shellTools.showEditor(index);return;}
         if(BodyCombine.is(feature)){beginBodyCombine((int)feature[1],index);return;}
-        if(BodySplit.is(feature)){showBodySplit(index);return;}
-        if(SurfaceSplit.is(feature)||SurfaceSplit.isLoft(feature)){showBodySplit(index);return;}
+        if(BodySplit.is(feature)){bodyTools.showSplit(index);return;}
+        if(SurfaceSplit.is(feature)||SurfaceSplit.isLoft(feature)){bodyTools.showSplit(index);return;}
         if(SweepLoft.bodyPattern(feature)){showBodyPatternDialog((int)feature[1],index);return;}
         if(SweepLoft.loft(feature)||SweepLoft.sweep(feature)){showLoftSweepEditor(index);return;}
         if(DraftFeature.is(feature)){showDraftEditor(index);return;}
         if(FaceOffset.is(feature)){showFaceOffsetEditor(index);return;}
-        if(MateFeature.is(feature)){showMateEditor(index);return;}
+        if(MateFeature.is(feature)){mateTools.showEditor(index);return;}
         if(BodyInstance.is(feature)){int created=BodyInstance.created(feature);Component c=Component.of(project.components,created);
             if(c!=null&&c.instance())showInstanceDialog(c);else{operationMessage="Wystąpienie bez komponentu – usuń je z historii i wstaw ponownie";invalidate();}return;}
-        if(BodyTransform.is(feature)){showBodyTransform((int)feature[1],index);return;}
+        if(BodyTransform.is(feature)){bodyTools.showTransform((int)feature[1],index);return;}
         if(HoleFeature.is(feature)){holeEditIndex=index;double[] f=feature;holeReference=new double[]{f[2],f[3],f[4],f[5],f[6],f[7],f[8]};mode="Otwór";showHolePanel();return;}
-        if(Revolve.is(feature)){String id=project.committedProfileIds.get(index);showRevolveEditor(Revolve.profile(id,feature),feature,index,false);return;}
-        if(EdgeFillet.is(feature)||EdgeChamfer.is(feature)){showEdgeFilletEditor(index);return;}
+        if(Revolve.is(feature)){String id=project.committedProfileIds.get(index);revolveTools.show(Revolve.profile(id,feature),feature,index,false);return;}
+        if(EdgeFillet.is(feature)||EdgeChamfer.is(feature)){edgeTools.showFillet(index);return;}
         String linkedProfileId=index<project.committedProfileIds.size()?project.committedProfileIds.get(index):null;
         if(feature[0]>=5 || project.isProfileDimensioned(linkedProfileId) || ProfileDependencies.consumers(project,linkedProfileId).size()>1) {
             EditText depth=bound(coordinateInput("Głębokość [mm]",Math.abs(feature[6])),UserParameters.depthKey(index));
@@ -5967,7 +5666,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     /** Construction element previewed while its panel is open; tap on a face while it is set feeds the listener. */
     private Datum datumGhost;private java.util.function.IntConsumer datumFaceListener;
     /** While non-null, commitProjectAsync stores the candidate here instead of committing (preview capture). */
-    private CadProject[] previewSink;
+    CadProject[] previewSink;
     /** Runs a panel's apply action in capture mode to obtain its candidate document for a live preview. */
     private CadProject capture(android.content.DialogInterface.OnClickListener apply) {
         String message=operationMessage;previewSink=new CadProject[1];CadProject result;
@@ -6018,7 +5717,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     /** Live B-Rep preview of a candidate document for a parameter dialog; every field, check box and spinner re-runs it. */
-    private void attachLivePreview(View form,java.util.function.Supplier<CadProject> candidate,android.widget.TextView status,String ready) {
+    void attachLivePreview(View form,java.util.function.Supplier<CadProject> candidate,android.widget.TextView status,String ready) {
         android.widget.ScrollView owner=propertyEditor;if(owner==null)return;
         Runnable preview=()-> {
             if(propertyEditor!=owner)return;
@@ -6043,8 +5742,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         else if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++)watchFields(group.getChildAt(i),changed);}
     }
-    private static CadProject copyProject(CadProject source){return copyProject(source,true);}
-    private static CadProject copyProject(CadProject source,boolean graph) {
+    static CadProject copyProject(CadProject source){return copyProject(source,true);}
+    static CadProject copyProject(CadProject source,boolean graph) {
         try{CadProject next=CadProject.fromJson(new org.json.JSONObject(source.toJson().toString()));if(graph)BodyGraph.begin(next);return next;}
         catch(org.json.JSONException error){throw new IllegalArgumentException("Nie można skopiować dokumentu: "+error.getMessage());}
     }
@@ -6175,52 +5874,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return new double[]{(shape.x1+shape.x2)*.5,(shape.y1+shape.y2)*.5};
     }
 
-    private boolean holeFromMaximum(HoleThread.Cylinder hole) {
-        double[] a=hole.end(false),b=hole.end(true),pa=projectWorldPoint(a[0],a[1],a[2]),pb=projectWorldPoint(b[0],b[1],b[2]);return pb[2]>pa[2];
-    }
-    private void beginThreadTool() {
-        if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
-        if(inSketch()){finishSketchThenRetry();return;}
-        if(project.importedMeshSource!=null||!project.hasSolid()){operationMessage="Gwint wymaga otworu w bryle B-Rep";invalidate();return;}
-        closePropertyEditor();preserveExtrudedBase();commitActiveFeature();BodyGraph.begin(project);mode="Gwint";threadSelections.clear();
-        for(HoleThread.Cylinder hole:holeCylinders)if(hole.face==selectedFace&&!HoleThread.threaded(hole,project.committedFeatures))threadSelections.add(hole.face);showThreadPanel();
-    }
-    private void threadTap(int face) {
-        if(face<0){clearViewportSelection();return;}
-        for(HoleThread.Cylinder hole:holeCylinders)if(hole.face==face){if(HoleThread.threaded(hole,project.committedFeatures)){operationMessage="Ten otwór ma już gwint – zmień go z historii operacji";invalidate();return;}if(!threadSelections.add(face))threadSelections.remove(face);showThreadPanel();invalidate();return;}
-        operationMessage="Dotknij wewnętrznej, walcowej ściany otworu. Obróć model, jeśli nie jest widoczna.";invalidate();
-    }
-    private void showThreadPanel() {
-        List<HoleThread.Cylinder> picked=new ArrayList<>();for(HoleThread.Cylinder hole:holeCylinders)if(threadSelections.contains(hole.face)&&!HoleThread.threaded(hole,project.committedFeatures))picked.add(hole);
-        List<HoleThread.Cylinder> selected=HoleThread.unique(picked);
-        if(selected.isEmpty()) {android.widget.TextView message=new android.widget.TextView(getContext());message.setText("Dotknij walcowych ścian jednego lub kilku otworów. Ponowne dotknięcie usuwa wybór.");new PropertyBuilder().setTitle("Gwint · wybierz otwory").setView(message).setNegativeButton("Anuluj",(d,w)->{mode="Wybierz";threadSelections.clear();}).show();return;}
-        List<HoleThread.Preset> presets=HoleThread.nearest(selected.get(0).radius*2);
-        if(presets.isEmpty()){operationMessage="Brak pasującego presetu dla średnicy wskazanego otworu";invalidate();return;}
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView info=new android.widget.TextView(getContext());info.setText(String.format(java.util.Locale.US,"Wybrane otwory: %d · pierwszy Ø %s. Rzeczywisty profil V 60°.",selected.size(),formatMm(selected.get(0).radius*2)));form.addView(info);
-        android.widget.Spinner preset=new android.widget.Spinner(getContext());List<String> labels=new ArrayList<>();for(HoleThread.Preset p:presets)labels.add(p.label());preset.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,labels));form.addView(preset);
-        android.widget.CheckBox automatic=new android.widget.CheckBox(getContext());automatic.setText("Dobierz preset osobno do każdego otworu");automatic.setChecked(selected.size()>1);form.addView(automatic);
-        double min=Double.POSITIVE_INFINITY;for(HoleThread.Cylinder hole:selected)min=Math.min(min,hole.max-hole.min);
-        EditText depth=labeledCoordinate(form,"Głębokość gwintu [mm]",min);slider(form,depth,.5,Math.max(1,min),.5);
-        android.widget.CheckBox full=new android.widget.CheckBox(getContext());full.setText("Pełna długość każdego otworu");full.setChecked(true);form.addView(full);fieldVisible(depth,false);full.setOnCheckedChangeListener((button,checked)->fieldVisible(depth,!checked));
-        android.widget.CheckBox left=new android.widget.CheckBox(getContext());left.setText("Gwint lewy");form.addView(left);
-        android.widget.CheckBox otherEnd=new android.widget.CheckBox(getContext());otherEnd.setText("Od przeciwnego końca otworu");form.addView(otherEnd);
-        android.content.DialogInterface.OnClickListener apply=(d,w)->{
-                try {
-                    String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
-                    for(HoleThread.Cylinder hole:selected) {
-                        List<HoleThread.Preset> choices=automatic.isChecked()?HoleThread.nearest(hole.radius*2):presets;if(choices.isEmpty())throw new IllegalArgumentException("Brak presetu dla jednego z otworów");
-                        HoleThread.Preset chosen=choices.get(automatic.isChecked()?0:preset.getSelectedItemPosition());
-                        double[] feature=HoleThread.create(hole,chosen,full.isChecked()?hole.max-hole.min:parseCoordinate(depth),holeFromMaximum(hole)^otherEnd.isChecked(),left.isChecked());
-                        next.committedFeatures.add(feature);next.committedProfileIds.add("");next.featureBodyTargets.add(hole.body);next.featureBodyOutputs.add(hole.body);
-                    }
-                    commitProjectAsync(next,baseline,"Utworzono gwinty: "+selected.size());
-                }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-            };
-        new PropertyBuilder().setTitle("Gwint · "+selected.size()+" otworów").setView(form).setNegativeButton("Anuluj",(d,w)->{mode="Wybierz";threadSelections.clear();})
-            .setPositiveButton("Utwórz gwinty",apply).show();
-        capturedPreview(form,apply,"Podgląd gwintów.");
-    }
+    /** Threads in holes: picking bores (one or many) and the thread dialog. */
+    final ThreadTools threadTools=new ThreadTools(this);
     /** Human-readable kernel failure naming the history operation that could not be rebuilt. */
     private String kernelFailureMessage(CadProject model,Exception error) {
         if(!(error instanceof NativeCadEngine.KernelException))return error==null?"Nieznany błąd":error.getMessage();
@@ -6329,7 +5984,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     // ---- Parametric mirror / linear / circular patterns of history operations ----
-    private boolean prepareSolidTool(String name) {
+    boolean prepareSolidTool(String name) {
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return false;}
         if(inSketch()){finishSketchThenRetry();return false;}
         if(project.importedMeshSource!=null){operationMessage=name+" wymaga bryły B-Rep – zaimportowana siatka STL/OBJ nie ma dokładnych ścian i krawędzi";invalidate();return false;}
@@ -6337,129 +5992,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(modelOperationPending){operationMessage="Trwa już obliczanie operacji";invalidate();return false;}
         closePropertyEditor();preserveExtrudedBase();commitActiveFeature();BodyGraph.begin(project);return true;
     }
-    private int featureBody(CadProject model,int index){return index<model.featureBodyOutputs.size()&&model.featureBodyOutputs.get(index)>0?model.featureBodyOutputs.get(index):1;}
-    private void beginPatternTool(String tool) {
-        final int kind=tool.startsWith("Lustro")?FeaturePattern.MIRROR:tool.startsWith("Szyk liniowy")?FeaturePattern.LINEAR:FeaturePattern.CIRCULAR;
-        String name=kind==FeaturePattern.MIRROR?"Lustro":kind==FeaturePattern.LINEAR?"Szyk liniowy":"Szyk kołowy";
-        if(!prepareSolidTool(name))return;
-        List<Integer> eligible=new ArrayList<>();List<String> titles=new ArrayList<>();
-        for(CadTimeline.Item item:CadTimeline.entries(project))if(item.kind==CadTimeline.Kind.FEATURE&&FeaturePattern.eligible(project.committedFeatures.get(item.featureIndex))) {
-            eligible.add(item.featureIndex);titles.add((item.featureIndex+1)+". "+item.title+" · "+BodyGraph.name(project,featureBody(project,item.featureIndex)));
-        }
-        final int bodyKind=kind==FeaturePattern.MIRROR?1:kind==FeaturePattern.LINEAR?2:3;
-        if(eligible.isEmpty()){operationMessage=name+": w historii nie ma operacji do powielenia – powielana jest cała bryła.";showBodyPatternDialog(bodyKind,-1);return;}
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Zaznacz operacje z historii (np. otwór, wycięcie) albo powiel całą bryłę. Kopie operacji śledzą późniejsze zmiany źródeł.");form.addView(info);
-        android.widget.Button whole=new android.widget.Button(getContext());whole.setText("Powiel całą bryłę…");form.addView(whole);
-        List<android.widget.CheckBox> boxes=new ArrayList<>();
-        for(int i=0;i<eligible.size();i++){android.widget.CheckBox box=new android.widget.CheckBox(getContext());box.setText(titles.get(i));box.setChecked(eligible.get(i)==highlightFeature||(eligible.size()==1));form.addView(box);boxes.add(box);}
-        new PropertyBuilder().setTitle(name+" · operacje źródłowe").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Dalej",(d,w)->{
-            List<Integer> chosen=new ArrayList<>();for(int i=0;i<boxes.size();i++)if(boxes.get(i).isChecked())chosen.add(eligible.get(i));
-            if(chosen.isEmpty()){operationMessage="Zaznacz co najmniej jedną operację";invalidate();return;}
-            int body=featureBody(project,chosen.get(0));for(int source:chosen)if(featureBody(project,source)!=body){operationMessage="Wybrane operacje należą do różnych brył – utwórz osobne szyki";invalidate();return;}
-            int[] sources=new int[chosen.size()];for(int i=0;i<sources.length;i++)sources[i]=chosen.get(i);
-            showPatternParameters(kind,sources,-1);
-        }).show();
-        whole.setOnClickListener(v->showBodyPatternDialog(bodyKind,-1));
-    }
-    /** Planar face currently selected in the viewport, as point + outward normal, or null. */
-    private double[] selectedPlanarFace() {
-        if(selectedFace<0||!isFacePlanar(selectedFace))return null;
-        double l=Math.sqrt(selectedNormalX*selectedNormalX+selectedNormalY*selectedNormalY+selectedNormalZ*selectedNormalZ);if(l<1e-9)return null;
-        return new double[]{selectedPointX,selectedPointY,selectedPointZ,selectedNormalX/l,selectedNormalY/l,selectedNormalZ/l};
-    }
-    private HoleThread.Cylinder selectedCylinder() {
-        for(HoleThread.Cylinder hole:holeCylinders)if(hole.face==selectedFace)return hole;return null;
-    }
-    private void showPatternParameters(int kind,int[] sources,int editIndex) {
-        double[] original=editIndex>=0?project.committedFeatures.get(editIndex):null;
-        final double[] face=selectedPlanarFace();final HoleThread.Cylinder cylinder=selectedCylinder();
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        List<String> choices=new ArrayList<>();List<double[]> frames=new ArrayList<>();
-        if(original!=null){choices.add("Bieżące odniesienie");frames.add(new double[]{original[3],original[4],original[5],original[6],original[7],original[8]});}
-        if(kind==FeaturePattern.MIRROR) {
-            choices.add("Płaszczyzna YZ (normalna X)");frames.add(new double[]{0,0,0,1,0,0});
-            choices.add("Płaszczyzna XZ (normalna Y)");frames.add(new double[]{0,0,0,0,1,0});
-            choices.add("Płaszczyzna XY (normalna Z)");frames.add(new double[]{0,0,0,0,0,1});
-            if(face!=null){choices.add("Płaszczyzna zaznaczonej ściany (stała)");frames.add(face);}
-        } else {
-            String noun=kind==FeaturePattern.LINEAR?"Kierunek":"Oś";
-            choices.add(noun+" X");frames.add(new double[]{0,0,0,1,0,0});
-            choices.add(noun+" Y");frames.add(new double[]{0,0,0,0,1,0});
-            choices.add(noun+" Z");frames.add(new double[]{0,0,0,0,0,1});
-            if(kind==FeaturePattern.LINEAR&&face!=null){choices.add("Normalna zaznaczonej ściany");frames.add(face);}
-            if(kind==FeaturePattern.CIRCULAR&&cylinder!=null){choices.add("Oś zaznaczonej ściany walcowej");frames.add(new double[]{cylinder.origin[0],cylinder.origin[1],cylinder.origin[2],cylinder.axis[0],cylinder.axis[1],cylinder.axis[2]});}
-        }
-        for(Datum d:datumsOf(kind==FeaturePattern.MIRROR?Datum.PLANE:Datum.AXIS)){choices.add("Konstrukcja: "+d.name);frames.add(d.frame());}
-        android.widget.TextView reference=new android.widget.TextView(getContext());reference.setText(kind==FeaturePattern.MIRROR?"Płaszczyzna lustra":kind==FeaturePattern.LINEAR?"Kierunek szyku":"Oś obrotu");form.addView(reference);
-        android.widget.Spinner frame=new android.widget.Spinner(getContext());frame.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,choices));form.addView(frame);
-        if(original==null&&((kind==FeaturePattern.MIRROR&&face!=null)||(kind==FeaturePattern.LINEAR&&face!=null)||(kind==FeaturePattern.CIRCULAR&&cylinder!=null)))frame.setSelection(choices.size()-1);
-        EditText offset=null,px=null,py=null,pz=null,count=null,value=null;android.widget.CheckBox reverse=null;
-        if(kind==FeaturePattern.MIRROR) offset=labeledCoordinate(form,"Odsunięcie płaszczyzny wzdłuż normalnej [mm]",0);
-        else {
-            if(kind==FeaturePattern.CIRCULAR) {
-                double[] o=original!=null?new double[]{original[3],original[4],original[5]}:new double[3];
-                px=labeledCoordinate(form,"Punkt osi X [mm] (dla osi X/Y/Z)",o[0]);py=labeledCoordinate(form,"Punkt osi Y [mm]",o[1]);pz=labeledCoordinate(form,"Punkt osi Z [mm]",o[2]);
-            }
-            count=labeledCoordinate(form,"Liczba wystąpień (z oryginałem)",original!=null?original[9]:kind==FeaturePattern.LINEAR?3:6);
-            value=labeledCoordinate(form,kind==FeaturePattern.LINEAR?"Odstęp [mm]":"Kąt całkowity [°] (360 = równo na obwodzie)",original!=null?Math.abs(original[10]):kind==FeaturePattern.LINEAR?20:360);
-            slider(form,count,2,50,1);if(kind==FeaturePattern.LINEAR)slider(form,value,.5,2*modelExtent(),.5);else slider(form,value,1,360,1);
-            reverse=new android.widget.CheckBox(getContext());reverse.setText(kind==FeaturePattern.LINEAR?"Przeciwny kierunek":"Przeciwny kierunek obrotu");reverse.setChecked(original!=null&&original[10]<0);
-            if(kind==FeaturePattern.LINEAR)form.addView(reverse);
-        }
-        final EditText fOffset=offset,fx=px,fy=py,fz=pz,fCount=count,fValue=value;final android.widget.CheckBox fReverse=reverse;
-        final android.widget.CheckBox flipAxis=new android.widget.CheckBox(getContext());
-        if(kind==FeaturePattern.CIRCULAR){flipAxis.setText("Przeciwny kierunek obrotu");form.addView(flipAxis);}
-        String title=(kind==FeaturePattern.MIRROR?"Lustro":kind==FeaturePattern.LINEAR?"Szyk liniowy":"Szyk kołowy")+" · "+sources.length+(sources.length==1?" operacja":" operacje");
-        android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
-        java.util.function.Supplier<CadProject> candidate=()-> {
-            double[] selected=frames.get(frame.getSelectedItemPosition()).clone();
-            double[] origin={selected[0],selected[1],selected[2]},direction={selected[3],selected[4],selected[5]};
-            int n=0;double v=0;
-            if(kind==FeaturePattern.MIRROR) {
-                double shift=parseCoordinate(fOffset),l=Math.sqrt(direction[0]*direction[0]+direction[1]*direction[1]+direction[2]*direction[2]);
-                for(int i=0;i<3;i++)origin[i]+=direction[i]/l*shift;
-            } else {
-                double countValue=parseCoordinate(fCount);if(countValue!=Math.floor(countValue))throw new IllegalArgumentException("Liczba wystąpień musi być całkowita");n=(int)countValue;
-                v=parseCoordinate(fValue);
-                if(kind==FeaturePattern.LINEAR){if(fReverse.isChecked())v=-Math.abs(v);else v=Math.abs(v);}
-                else {
-                    // The typed point defines the axis unless the axis of a picked cylinder is used.
-                    if(!choices.get(frame.getSelectedItemPosition()).startsWith("Oś zaznaczonej")&&!choices.get(frame.getSelectedItemPosition()).startsWith("Konstrukcja: ")){origin[0]=parseCoordinate(fx);origin[1]=parseCoordinate(fy);origin[2]=parseCoordinate(fz);}
-                    if(flipAxis.isChecked())for(int i=0;i<3;i++)direction[i]=-direction[i];
-                }
-            }
-            double[] record=FeaturePattern.create(kind,sources,origin,direction,n,v);
-            CadProject next=copyProject(project);
-            int body=featureBody(next,sources[0]);
-            if(editIndex>=0)next.committedFeatures.set(editIndex,record);
-            else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
-            FeaturePattern.validateSources(next.committedFeatures,editIndex>=0?editIndex:next.committedFeatures.size()-1);
-            return next;
-        };
-        new PropertyBuilder().setTitle(title).setView(form).setNegativeButton("Anuluj",null).setPositiveButton(editIndex>=0?"Zastosuj":"Utwórz",(d,w)->{
-            try {
-                String baseline=project.toJson().toString();CadProject next=candidate.get();
-                double[] record=next.committedFeatures.get(editIndex>=0?editIndex:next.committedFeatures.size()-1);
-                commitProjectAsync(next,baseline,(editIndex>=0?"Zaktualizowano: ":"Utworzono: ")+FeaturePattern.describe(record));
-            }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-        }).show();
-        attachLivePreview(form,candidate,status,"Podgląd szyku na bryle. Przeciągnij strzałkę odstępu lub Zastosuj.");
-        if(kind==FeaturePattern.LINEAR){double[] dir=frames.get(frame.getSelectedItemPosition());attachFieldHandle(new double[]{modelCenterX,modelCenterY,modelCenterZ},new double[]{dir[3],dir[4],dir[5]},fValue,.01,5000,"Odstęp");
-            // The arrow follows the chosen direction and the reverse switch.
-            if(fieldHandle!=null)fieldHandle.axisSource=()->{double[] d=frames.get(frame.getSelectedItemPosition());double sign=fReverse.isChecked()?-1:1;return new double[]{d[3]*sign,d[4]*sign,d[5]*sign};};}
-    }
-    private void showPatternEditor(int index) {
-        double[] f=project.committedFeatures.get(index);
-        StringBuilder info=new StringBuilder(FeaturePattern.describe(f)).append("\nŹródła:");
-        for(int source:FeaturePattern.sources(f))for(CadTimeline.Item item:CadTimeline.entries(project))if(item.kind==CadTimeline.Kind.FEATURE&&item.featureIndex==source)info.append("\n· ").append(source+1).append(". ").append(item.title);
-        android.widget.TextView text=new android.widget.TextView(getContext());text.setText(info);
-        new PropertyBuilder().setTitle(FeaturePattern.label(f)).setView(text).setNegativeButton("Zamknij",null)
-            .setNeutralButton("Pokaż źródła",(d,w)->{highlightFeature=FeaturePattern.sources(f)[0];operationMessage="Podświetlono pierwszą operację źródłową";invalidate();})
-            .setPositiveButton("Edytuj parametry",(d,w)->showPatternParameters(FeaturePattern.kind(f),FeaturePattern.sources(f),index)).show();
-    }
-
-    // ---- Boolean between document bodies ----
+    int featureBody(CadProject model,int index){return index<model.featureBodyOutputs.size()&&model.featureBodyOutputs.get(index)>0?model.featureBodyOutputs.get(index):1;}
+    /** Patterns and mirrors of history operations: sources, direction from a face, edge or axis, parameters, editing. */
+    final FeaturePatternTools featurePatternTools=new FeaturePatternTools(this);
     private void beginBodyCombine(int operation,int editIndex) {
         String name=operation==BodyCombine.JOIN?"Połącz bryły":operation==BodyCombine.CUT?"Odejmij bryły":"Część wspólna brył";
         if(editIndex<0&&!prepareSolidTool(name))return;
@@ -6775,7 +6310,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         new PropertyBuilder().setTitle("Edytuj: "+SweepLoft.label(f)).setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",apply).show();
         capturedPreview(form,apply,"Podgląd operacji.");
     }
-    private void showBodyPatternDialog(int kind,int editIndex) {
+    void showBodyPatternDialog(int kind,int editIndex) {
         double[] original=editIndex>=0?project.committedFeatures.get(editIndex):null;
         List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(ids.isEmpty()){operationMessage="Brak bryły do powielenia";invalidate();return;}
         String[] names=new String[ids.size()];for(int i=0;i<names.length;i++)names[i]=BodyGraph.name(project,ids.get(i));
@@ -6822,7 +6357,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private static final String[] DATUM_COMMANDS={"Płaszczyzna odsunięta","Płaszczyzna pod kątem","Płaszczyzna przez 3 punkty","Oś konstrukcyjna","Punkt konstrukcyjny"};
     /** Vertex picking for a datum: command, edited datum, picked points (model coordinates). */
     private String datumPickCommand;private Datum datumPickEdited;private final List<double[]> datumPickPoints=new ArrayList<>();private int datumPickNeeded;
-    private List<Datum> datumsOf(String kind){List<Datum> r=new ArrayList<>();for(Datum d:project.datums)if(d.kind.equals(kind))r.add(d);return r;}
+    List<Datum> datumsOf(String kind){List<Datum> r=new ArrayList<>();for(Datum d:project.datums)if(d.kind.equals(kind))r.add(d);return r;}
     private Datum datum(String id){for(Datum d:project.datums)if(d.id.equals(id))return d;return null;}
     private static String commandOf(Datum d) {
         if(d.plane())return d.method.equals("offset")?DATUM_COMMANDS[0]:d.method.equals("angle")?DATUM_COMMANDS[1]:DATUM_COMMANDS[2];
@@ -6833,7 +6368,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         labels.add("Płaszczyzna XY");frames.add(new double[]{0,0,0,0,0,1});
         labels.add("Płaszczyzna XZ");frames.add(new double[]{0,0,0,0,1,0});
         labels.add("Płaszczyzna YZ");frames.add(new double[]{0,0,0,1,0,0});
-        double[] face=selectedPlanarFace();if(face!=null){labels.add("Zaznaczona ściana (wartości stałe)");frames.add(face);}
+        double[] face=featurePatternTools.selectedPlanarFace();if(face!=null){labels.add("Zaznaczona ściana (wartości stałe)");frames.add(face);}
         for(Datum d:datumsOf(Datum.PLANE))if(d!=excluded){labels.add(d.name);frames.add(d.frame());}
     }
     private void axisReferences(List<String> labels,List<double[]> frames,Datum excluded) {
@@ -6842,13 +6377,13 @@ if (isInsideViewport(e.getX(), e.getY())) {
         for(Datum d:datumsOf(Datum.AXIS))if(d!=excluded){labels.add(d.name);frames.add(d.frame());}
     }
     /** Axis {point, direction} of the selected cylindrical/conical face from the exact face analysis, or null. */
-    private double[] selectedSurfaceAxis() {
+    double[] selectedSurfaceAxis() {
         if(selectedFace<0||!project.hasSolid()||project.importedMeshSource!=null)return null;
         String source=project.importedStep?importedSourceFile().getAbsolutePath():null;
         double[] row=GeometryMeasure.face(NativeCadEngine.faceAnalysis(modelWidth,modelHeight,modelDepth,project.importedStep?0:project.filletRadius,evaluationBase(),kernelFeatures(),source),selectedFace);
         if(row==null||(row[3]!=1&&row[3]!=2))return null;return new double[]{row[4],row[5],row[6],row[7],row[8],row[9]};
     }
-    private android.widget.Spinner choice(LinearLayout form,String label,List<String> items,int selected) {
+    android.widget.Spinner choice(LinearLayout form,String label,List<String> items,int selected) {
         android.widget.TextView title=new android.widget.TextView(getContext());title.setText(label);form.addView(title);
         android.widget.Spinner spinner=new android.widget.Spinner(getContext());spinner.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,items));
         spinner.setSelection(Math.max(0,Math.min(items.size()-1,selected)));form.addView(spinner);return spinner;
@@ -6858,7 +6393,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     /** Puts the tapped planar face into the base-plane choice of an open construction panel and selects it. */
     @SuppressWarnings("unchecked")
     private void useFaceAsDatumBase(android.widget.Spinner base,List<String> labels,List<double[]> frames,int at,Runnable changed) {
-        double[] face=selectedPlanarFace();if(face==null)return;
+        double[] face=featurePatternTools.selectedPlanarFace();if(face==null)return;
         int index=labels.indexOf(FACE_REFERENCE);if(index<0){index=Math.min(at,labels.size());labels.add(index,FACE_REFERENCE);frames.add(index,face);}else frames.set(index,face);
         ((android.widget.ArrayAdapter<String>)base.getAdapter()).notifyDataSetChanged();base.setSelection(index);changed.run();
         operationMessage="Płaszczyzna bazowa: wskazana ściana bryły";
@@ -6875,7 +6410,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             List<String> labels=new ArrayList<>();List<double[]> frames=new ArrayList<>();
             if(existing!=null){labels.add("Bieżące odniesienie: "+(existing.reference.isEmpty()?"zapisane":existing.reference));frames.add(java.util.Arrays.copyOf(v,6));}
             planeReferences(labels,frames,existing);
-            android.widget.Spinner base=choice(form,"Płaszczyzna bazowa",labels,existing==null&&selectedPlanarFace()!=null?3:0);
+            android.widget.Spinner base=choice(form,"Płaszczyzna bazowa",labels,existing==null&&featurePatternTools.selectedPlanarFace()!=null?3:0);
             EditText distance=labeledCoordinate(form,"Odsunięcie wzdłuż normalnej [mm]",existing!=null?v[6]:10);slider(form,distance,-2*modelExtent(),2*modelExtent(),.5);
             info.setText("Dotknij płaskiej ściany bryły, aby odsunąć płaszczyznę od tej ściany, albo wybierz płaszczyznę z listy. Przeciągnij strzałkę lub suwak, aby zmienić odległość.");
             offsetBase=base;offsetLabels=labels;offsetFrames=frames;offsetDistance=distance;offsetFirstFace=existing!=null?4:3;
@@ -7039,182 +6574,10 @@ if (isInsideViewport(e.getX(), e.getY())) {
     }
 
     // ---- Split a body by a plane ----
-    private void showBodySplit(int editIndex) {
-        double[] original=editIndex>=0?project.committedFeatures.get(editIndex):null;final double[] face=selectedPlanarFace();
-        final boolean loftOriginal=original!=null&&SurfaceSplit.isLoft(original);
-        final boolean surfaceOriginal=original!=null&&(SurfaceSplit.is(original)||loftOriginal);
-        List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(original!=null)ids.remove(Integer.valueOf(surfaceOriginal?(int)original[1]:BodySplit.created(original)));
-        if(ids.isEmpty()){operationMessage="Brak bryły do podziału";invalidate();return;}
-        String[] names=new String[ids.size()];for(int i=0;i<names.length;i++)names[i]=BodyGraph.name(project,ids.get(i));
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView info=new android.widget.TextView(getContext());info.setText("Płaszczyzna: część za nią pozostaje w bryle, część po stronie normalnej staje się nową bryłą. Powierzchnia z krzywej szkicu (linia, łuk, otwarty splajn — także falisty) przechodzi prostopadle do szkicu przez całą bryłę; część po lewej stronie kierunku krzywej zostaje.");form.addView(info);
-        android.widget.Spinner body=new android.widget.Spinner(getContext());body.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,names));form.addView(body);
-        body.setSelection(Math.max(0,ids.indexOf(original!=null?featureBody(project,editIndex):project.selectedBody)));if(original!=null)body.setEnabled(false);
-        List<String> choices=new ArrayList<>(java.util.Arrays.asList("Płaszczyzna YZ (normalna X)","Płaszczyzna XZ (normalna Y)","Płaszczyzna XY (normalna Z)"));if(face!=null)choices.add("Płaszczyzna zaznaczonej ściany (stała)");
-        final List<Datum> splitPlanes=datumsOf(Datum.PLANE);for(Datum d:splitPlanes)choices.add("Konstrukcja: "+d.name+" (odsunięcie)");
-        final int surfaceStart=choices.size();final List<SweepLoft.Placed> curves=new ArrayList<>();
-        for(SweepLoft.Placed e:SweepLoft.elements(project))if(SurfaceSplit.usable(e.shape)){curves.add(e);choices.add("Powierzchnia z krzywej: "+e.sketchName+" · "+sketchEntityName(e.shape));}
-        String originalRef=surfaceOriginal&&editIndex<project.committedProfileIds.size()?project.committedProfileIds.get(editIndex):null;
-        final int loftChoice=choices.size();if(curves.size()>=2)choices.add("Powierzchnia przez kilka krzywych (zaznacz poniżej, w kolejności)");
-        final List<android.widget.CheckBox> loftBoxes=new ArrayList<>();final LinearLayout loftList=new LinearLayout(getContext());loftList.setOrientation(LinearLayout.VERTICAL);
-        for(SweepLoft.Placed e:curves){android.widget.CheckBox box=new android.widget.CheckBox(getContext());box.setText(e.sketchName+" · "+sketchEntityName(e.shape));
-            if(loftOriginal&&originalRef!=null)for(String part:originalRef.substring(SurfaceSplit.LOFT_REF.length()).split("\\|"))if(part.equals(e.ref()))box.setChecked(true);
-            loftBoxes.add(box);loftList.addView(box);}
-        android.widget.Spinner plane=new android.widget.Spinner(getContext());plane.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,choices));form.addView(plane);
-        int axis=original==null||surfaceOriginal?0:Math.abs(original[5])>.5?0:Math.abs(original[6])>.5?1:2;plane.setSelection(original==null&&face!=null?3:axis);
-        if(surfaceOriginal&&!loftOriginal)for(int i=0;i<curves.size();i++)if(originalRef!=null&&originalRef.equals(SurfaceSplit.REF+curves.get(i).ref()))plane.setSelection(surfaceStart+i);
-        if(loftOriginal)plane.setSelection(loftChoice);
-        form.addView(loftList);loftList.setVisibility(plane.getSelectedItemPosition()==loftChoice?View.VISIBLE:View.GONE);
-        plane.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
-            public void onItemSelected(android.widget.AdapterView<?> parent,View view,int position,long id){loftList.setVisibility(position==loftChoice?View.VISIBLE:View.GONE);}
-            public void onNothingSelected(android.widget.AdapterView<?> parent){}});
-        double[] centre={modelCenterX,modelCenterY,modelCenterZ};
-        EditText offset=labeledCoordinate(form,"Położenie płaszczyzny [mm] (dla ściany: odsunięcie)",original!=null&&!surfaceOriginal?original[2+axis]:face!=null?0:centre[0]);
-        android.widget.CheckBox flip=new android.widget.CheckBox(getContext());flip.setText("Odwróć strony podziału");flip.setChecked(surfaceOriginal?SurfaceSplit.flipped(original):original!=null&&original[5+axis]<0);form.addView(flip);
-        android.content.DialogInterface.OnClickListener apply=(d,w)->{
-            try {
-                int choice=plane.getSelectedItemPosition();
-                if(choice==loftChoice&&curves.size()>=2) {
-                    List<SweepLoft.Placed> chosen=new ArrayList<>();for(int i=0;i<curves.size();i++)if(loftBoxes.get(i).isChecked())chosen.add(curves.get(i));
-                    int target=ids.get(body.getSelectedItemPosition());
-                    String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
-                    double[] record;String ref=SurfaceSplit.loftRef(chosen);
-                    if(editIndex>=0){record=SurfaceSplit.createLoft((int)original[1],chosen,flip.isChecked());next.committedFeatures.set(editIndex,record);next.committedProfileIds.set(editIndex,ref);}
-                    else {record=SurfaceSplit.createLoft(BodyGraph.allocate(next),chosen,flip.isChecked());next.committedFeatures.add(record);next.committedProfileIds.add(ref);next.featureBodyTargets.add(target);next.featureBodyOutputs.add(target);}
-                    BodyGraph.validate(next);commitProjectAsync(next,baseline,"Podział powierzchnią przez "+chosen.size()+" krzywe → nowa bryła: "+BodyGraph.name(next,(int)record[1]));
-                    return;
-                }
-                if(choice>=surfaceStart&&choice<loftChoice) {
-                    List<SweepLoft.Placed> chosen=java.util.Collections.singletonList(curves.get(choice-surfaceStart));
-                    int target=ids.get(body.getSelectedItemPosition());double[] fo=curves.get(choice-surfaceStart).frame;double reach=modelRadius+Math.sqrt(Math.pow(fo[0]-modelCenterX,2)+Math.pow(fo[1]-modelCenterY,2)+Math.pow(fo[2]-modelCenterZ,2));
-                    double depth=Math.min(20000,Math.max(10,Math.max(4*modelExtent(),2.4*reach)));// covers every body, wherever the sketch plane lies
-                    String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
-                    double[] record;String ref=SurfaceSplit.ref(chosen);
-                    if(editIndex>=0){int created=surfaceOriginal?(int)original[1]:BodySplit.created(original);record=SurfaceSplit.create(created,chosen,depth,flip.isChecked());next.committedFeatures.set(editIndex,record);next.committedProfileIds.set(editIndex,ref);}
-                    else {record=SurfaceSplit.create(BodyGraph.allocate(next),chosen,depth,flip.isChecked());next.committedFeatures.add(record);next.committedProfileIds.add(ref);next.featureBodyTargets.add(target);next.featureBodyOutputs.add(target);}
-                    BodyGraph.validate(next);commitProjectAsync(next,baseline,SurfaceSplit.describe(record)+" → nowa bryła: "+BodyGraph.name(next,SurfaceSplit.created(record)));
-                    return;
-                }
-                double value=parseCoordinate(offset),sign=flip.isChecked()?-1:1;double[] point=new double[3],normal=new double[3];
-                double[] reference=choice<3?null:face!=null&&choice==3?face:splitPlanes.get(choice-3-(face!=null?1:0)).frame();
-                if(choice<3){point[choice]=value;normal[choice]=sign;}else for(int i=0;i<3;i++){point[i]=reference[i]+reference[3+i]*value;normal[i]=reference[3+i]*sign;}
-                int target=ids.get(body.getSelectedItemPosition());
-                String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
-                double[] record;
-                if(editIndex>=0){record=BodySplit.create(surfaceOriginal?(int)original[1]:BodySplit.created(original),point,normal);next.committedFeatures.set(editIndex,record);next.committedProfileIds.set(editIndex,"");}
-                else {record=BodySplit.create(BodyGraph.allocate(next),point,normal);next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(target);next.featureBodyOutputs.add(target);}
-                BodyGraph.validate(next);commitProjectAsync(next,baseline,BodySplit.describe(record)+" → nowa bryła: "+BodyGraph.name(next,BodySplit.created(record)));
-            }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-        };
-        new PropertyBuilder().setTitle(editIndex>=0?"Edytuj podział bryły":"Podziel bryłę").setView(form).setNegativeButton("Anuluj",null).setPositiveButton(editIndex>=0?"Zastosuj":"Podziel",apply).show();
-        capturedPreview(form,apply,"Podgląd podziału.");
-    }
-
-    // ---- Move / rotate / scale a body ----
-    private void showBodyTransform(int kind,int editIndex) {
-        double[] original=editIndex>=0?project.committedFeatures.get(editIndex):null;
-        List<Integer> ids=new ArrayList<>(BodyGraph.bodies(project));if(ids.isEmpty()){operationMessage="Brak bryły do przekształcenia";invalidate();return;}
-        String[] names=new String[ids.size()];for(int i=0;i<names.length;i++)names[i]=BodyGraph.name(project,ids.get(i));
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView bodyLabel=new android.widget.TextView(getContext());bodyLabel.setText("Bryła");form.addView(bodyLabel);
-        android.widget.Spinner body=new android.widget.Spinner(getContext());body.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,names));form.addView(body);
-        body.setSelection(Math.max(0,ids.indexOf(original!=null?featureBody(project,editIndex):project.selectedBody)));if(original!=null)body.setEnabled(false);
-        double[] o=original!=null?original:new double[16];
-        EditText a=labeledCoordinate(form,kind==BodyTransform.MOVE?"Przesunięcie X [mm]":kind==BodyTransform.ROTATE?"Punkt osi X [mm]":"Środek skalowania X [mm]",o[2]);
-        EditText b=labeledCoordinate(form,kind==BodyTransform.MOVE?"Przesunięcie Y [mm]":kind==BodyTransform.ROTATE?"Punkt osi Y [mm]":"Środek skalowania Y [mm]",o[3]);
-        EditText c=labeledCoordinate(form,kind==BodyTransform.MOVE?"Przesunięcie Z [mm]":kind==BodyTransform.ROTATE?"Punkt osi Z [mm]":"Środek skalowania Z [mm]",o[4]);
-        android.widget.Spinner axis=new android.widget.Spinner(getContext());
-        EditText value=null;
-        if(kind==BodyTransform.ROTATE) {
-            android.widget.TextView axisLabel=new android.widget.TextView(getContext());axisLabel.setText("Oś obrotu");form.addView(axisLabel);
-            axis.setAdapter(new android.widget.ArrayAdapter<>(getContext(),android.R.layout.simple_spinner_dropdown_item,new String[]{"X","Y","Z"}));form.addView(axis);
-            axis.setSelection(original==null?2:Math.abs(o[5])>.5?0:Math.abs(o[6])>.5?1:2);
-            value=labeledCoordinate(form,"Kąt [°]",original!=null?(o[5]+o[6]+o[7]<0?-o[8]:o[8]):90);
-        } else if(kind==BodyTransform.SCALE)value=labeledCoordinate(form,"Współczynnik skali",original!=null?o[8]:2);
-        final EditText fValue=value;
-        String title=kind==BodyTransform.MOVE?"Przesuń bryłę":kind==BodyTransform.ROTATE?"Obróć bryłę":"Skaluj bryłę";
-        android.content.DialogInterface.OnClickListener apply=(d,w)->{
-            try {
-                double x=parseCoordinate(a),y=parseCoordinate(b),z=parseCoordinate(c);double[] record;
-                if(kind==BodyTransform.MOVE)record=BodyTransform.move(x,y,z);
-                else if(kind==BodyTransform.ROTATE){double[] dir=new double[3];dir[axis.getSelectedItemPosition()]=1;record=BodyTransform.rotate(new double[]{x,y,z},dir,parseCoordinate(fValue));}
-                else record=BodyTransform.scale(new double[]{x,y,z},parseCoordinate(fValue));
-                int target=ids.get(body.getSelectedItemPosition());
-                String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));BodyGraph.begin(next);
-                if(editIndex>=0)next.committedFeatures.set(editIndex,record);
-                else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(target);next.featureBodyOutputs.add(target);}
-                commitProjectAsync(next,baseline,BodyTransform.describe(record)+" · "+BodyGraph.name(next,target));
-            }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-        };
-        new PropertyBuilder().setTitle(editIndex>=0?"Edytuj: "+title:title).setView(form).setNegativeButton("Anuluj",null).setPositiveButton(editIndex>=0?"Zastosuj":"Wykonaj",apply).show();
-        capturedPreview(form,apply,"Podgląd przekształcenia bryły.");
-    }
-
-    // ---- Shell (hollow body) ----
-    private void beginShellTool(int editIndex) {
-        if(!prepareSolidTool("Powłoka"))return;
-        mode="Powłoka";shellEditIndex=editIndex;shellSelections.clear();
-        if(selectedFace>=0)shellTap(selectedFace);else showShellPanel();
-    }
-    private void shellTap(int face) {
-        if(face<0){clearViewportSelection();return;}
-        if(shellSelections.remove(face)!=null){showShellPanel();invalidate();return;}
-        if(!isFacePlanar(face)){operationMessage="Powłoka usuwa tylko płaskie ściany. Dotknij płaskiej ściany.";invalidate();return;}
-        Integer origin=faceFeatures.get(face);if(origin==null){operationMessage="Nie można ustalić operacji, która utworzyła tę ścianę";invalidate();return;}
-        try {
-            shellSelections.put(face,new ShellFeature.Face(new double[]{selectedPointX,selectedPointY,selectedPointZ},new double[]{selectedNormalX,selectedNormalY,selectedNormalZ},origin));
-        }catch(IllegalArgumentException error){operationMessage=error.getMessage();}
-        showShellPanel();invalidate();
-    }
-    private void showShellPanel() {
-        double[] original=shellEditIndex>=0&&shellEditIndex<project.committedFeatures.size()?project.committedFeatures.get(shellEditIndex):null;
-        LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView info=new android.widget.TextView(getContext());
-        info.setText(shellSelections.isEmpty()?"Dotknij płaskich ścian, które mają zostać otwarte. Bez wskazanych ścian bryła zostanie wydrążona z zamkniętą pustką.":"Usuwane ściany: "+shellSelections.size()+". Ponowne dotknięcie usuwa wybór.");form.addView(info);
-        EditText thickness=labeledCoordinate(form,"Grubość ścianki [mm]",original!=null?original[2]:2);slider(form,thickness,.1,Math.max(5,modelExtent()/2),.1);
-        android.widget.CheckBox outside=new android.widget.CheckBox(getContext());outside.setText("Grubość na zewnątrz bryły");outside.setChecked(original!=null&&original[3]==1);form.addView(outside);
-        android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
-        final int editIndex=shellEditIndex;
-        java.util.function.Supplier<CadProject> candidate=()-> {
-            double[] record=ShellFeature.create(new ArrayList<>(shellSelections.values()),parseCoordinate(thickness),outside.isChecked());
-            CadProject next=copyProject(project);
-            int body=1;
-            if(!shellSelections.isEmpty()){Integer first=shellSelections.keySet().iterator().next();body=faceBodies.getOrDefault(first,1);for(Integer face:shellSelections.keySet())if(faceBodies.getOrDefault(face,1)!=body)throw new IllegalArgumentException("Wskazane ściany należą do różnych brył");}
-            else body=project.selectedBody>0?project.selectedBody:1;
-            if(editIndex>=0){next.committedFeatures.set(editIndex,record);if(!shellSelections.isEmpty()&&featureBody(next,editIndex)!=body)throw new IllegalArgumentException("Ściany należą do innej bryły niż edytowana powłoka");}
-            else {next.committedFeatures.add(record);next.committedProfileIds.add("");next.featureBodyTargets.add(body);next.featureBodyOutputs.add(body);}
-            return next;
-        };
-        new PropertyBuilder().setTitle(shellEditIndex>=0?"Powłoka · wskaż ściany ponownie":"Powłoka").setView(form)
-            .setNegativeButton("Anuluj",(d,w)->{mode="Wybierz";shellSelections.clear();shellEditIndex=-1;})
-            .setPositiveButton(shellEditIndex>=0?"Zastosuj":"Utwórz powłokę",(d,w)->{
-                try {
-                    String baseline=project.toJson().toString();CadProject next=candidate.get();
-                    double[] record=next.committedFeatures.get(editIndex>=0?editIndex:next.committedFeatures.size()-1);
-                    shellEditIndex=-1;commitProjectAsync(next,baseline,(original!=null?"Zaktualizowano: ":"Utworzono: ")+ShellFeature.describe(record));
-                }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-            }).show();
-        attachLivePreview(form,candidate,status,"Podgląd powłoki. Przeciągnij strzałkę grubości, dotknij kolejnych ścian lub Zastosuj.");
-        if(!shellSelections.isEmpty()){ShellFeature.Face face=shellSelections.values().iterator().next();attachFieldHandle(face.point,new double[]{-face.normal[0],-face.normal[1],-face.normal[2]},thickness,.05,500,"Grubość");}
-    }
-    private void showShellEditor(int index) {
-        double[] f=project.committedFeatures.get(index);LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
-        android.widget.TextView info=new android.widget.TextView(getContext());info.setText(ShellFeature.describe(f));form.addView(info);
-        EditText thickness=labeledCoordinate(form,"Grubość ścianki [mm]",f[2]);slider(form,thickness,.1,Math.max(5,modelExtent()/2),.1);
-        android.widget.CheckBox outside=new android.widget.CheckBox(getContext());outside.setText("Grubość na zewnątrz bryły");outside.setChecked(f[3]==1);form.addView(outside);
-        android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
-        java.util.function.Supplier<CadProject> candidate=()->{CadProject next=copyProject(project,false);next.committedFeatures.set(index,ShellFeature.withThickness(f,parseCoordinate(thickness),outside.isChecked()));return next;};
-        new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle("Edytuj powłokę").setView(form).setNegativeButton("Anuluj",null)
-            .setNeutralButton("Wskaż ściany ponownie",(d,w)->beginShellTool(index))
-            .setPositiveButton("Zastosuj",(d,w)->{
-                try {
-                    String baseline=project.toJson().toString();CadProject next=candidate.get();
-                    commitProjectAsync(next,baseline,"Zaktualizowano: "+ShellFeature.describe(next.committedFeatures.get(index)));
-                }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
-            }).show();
-        attachLivePreview(form,candidate,status,"Podgląd zmienionej grubości ścianek.");
-    }
-
+    /** Body split (plane, surface, surface through curves) and body move / rotate / scale dialogs. */
+    final BodyTools bodyTools=new BodyTools(this);
+    /** Shell: picking open faces, wall thickness with preview, editing. */
+    final ShellTools shellTools=new ShellTools(this);
     private void showFaceFeatureDialog(SketchPrimitive profile) {
         new PropertyBuilder().setTitle("Wyciągnięcie · operacja").setItems(new String[]{"Nowa bryła · osobny obiekt","Połącz z bryłą","Wytnij","Część wspólna"},(d,index)->chooseExtrusionBody(profile,new String[]{"new","add","cut","common"}[index])).setNegativeButton("Anuluj",null).show();showExtrusionSketch=true;
     }
@@ -7318,7 +6681,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         bindSourceExtrusion(profile.id,BodyGraph.profileBody(project,profile.id),input,reverse,symmetric,origin,axis,preview);showExtrusionSketch=true;
     }
 
-    private android.widget.CheckBox directionCheck(double depth) {
+    android.widget.CheckBox directionCheck(double depth) {
         android.widget.CheckBox result=new android.widget.CheckBox(getContext());
         result.setText("Odwróć kierunek");result.setChecked(depth<0);return result;
     }
@@ -7394,7 +6757,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private double cameraDistance = 420.0;
     private boolean orthographicView;
     private static final double ORTHOGRAPHIC_DISTANCE = 1.0e6;
-    private double modelRadius;
+    double modelRadius;
     private double viewDistance() { return orthographicView ? ORTHOGRAPHIC_DISTANCE : cameraDistance; }
 
     /** Standard named orientation (model Y is screen-up in the front view). */
@@ -7614,7 +6977,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     public File importedStepFile() { return projectRepository.importedStepFile(); }
 
-    private File importedSourceFile() {
+    File importedSourceFile() {
         return new File(projectRepository.importedStepFile().getParentFile(), project.importedStepSource);
     }
 
@@ -7763,7 +7126,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }catch(Exception error){return null;}
         finally{project=keep;modelWidth=w;modelHeight=h;modelDepth=d;}
     }
-    private boolean commitModelChange(Runnable change) {
+    boolean commitModelChange(Runnable change) {
         long perfStart=android.os.SystemClock.uptimeMillis();try{return commitModelChangeTimed(change);}finally{perf("commitModelChange",perfStart);}
     }
     /** Timing of model operations in logcat (tag TabletCAD-perf) to find slow steps on the device. */
@@ -8230,25 +7593,25 @@ if (isInsideViewport(e.getX(), e.getY())) {
         try{activateTopToolNow(tool);}finally{startingTool=outer;}
     }
     /** Commits the open sketch in the background and restarts the toolbar command (if any) once the model is rebuilt. */
-    private void finishSketchThenRetry() {
+    void finishSketchThenRetry() {
         final String retry=startingTool;
         finishSketchWork(retry==null?null:()->activateTopTool(retry));
     }
     private void activateTopToolNow(String tool) {
         if(viewCommand(tool))return;
-        if(tool.equals("Gwint")){beginThreadTool();return;}
+        if(tool.equals("Gwint")){threadTools.begin();return;}
         if(projectRepository.readOnly()){operationMessage=projectRepository.loadNotice();invalidate();return;}
-        if(tool.equals("Powłoka")){beginShellTool(-1);return;}
+        if(tool.equals("Powłoka")){shellTools.begin(-1);return;}
         if(tool.equals("Otwór")){beginHoleTool();return;}
         if(tool.equals("Pochyl ściany")){beginDraftTool(-1);return;}
         if(tool.equals("Odsuń ścianę")){beginFaceOffsetTool();return;}
         if(tool.equals("Przejście")){if(prepareProfileTool("Przejście"))showLoftDialog();return;}
         if(tool.equals("Przeciągnij")){if(prepareProfileTool("Przeciągnięcie"))showSweepDialog();return;}
         if(tool.equals("Lustro bryły")||tool.equals("Szyk liniowy bryły")||tool.equals("Szyk kołowy bryły")){if(prepareSolidTool(tool))showBodyPatternDialog(tool.startsWith("Lustro")?1:tool.startsWith("Szyk liniowy")?2:3,-1);return;}
-        if(tool.equals("Podziel bryłę")){if(prepareSolidTool(tool))showBodySplit(-1);return;}
-        if(tool.equals("Przesuń bryłę")||tool.equals("Obróć bryłę")||tool.equals("Skaluj bryłę")){if(prepareSolidTool(tool))showBodyTransform(tool.startsWith("Przesuń")?BodyTransform.MOVE:tool.startsWith("Obróć")?BodyTransform.ROTATE:BodyTransform.SCALE,-1);return;}
+        if(tool.equals("Podziel bryłę")){if(prepareSolidTool(tool))bodyTools.showSplit(-1);return;}
+        if(tool.equals("Przesuń bryłę")||tool.equals("Obróć bryłę")||tool.equals("Skaluj bryłę")){if(prepareSolidTool(tool))bodyTools.showTransform(tool.startsWith("Przesuń")?BodyTransform.MOVE:tool.startsWith("Obróć")?BodyTransform.ROTATE:BodyTransform.SCALE,-1);return;}
         if(tool.equals("Połącz bryły")||tool.equals("Odejmij bryły")||tool.equals("Część wspólna brył")){beginBodyCombine(tool.equals("Połącz bryły")?BodyCombine.JOIN:tool.equals("Odejmij bryły")?BodyCombine.CUT:BodyCombine.INTERSECT,-1);return;}
-        if(tool.equals("Lustro operacji")||tool.equals("Szyk liniowy operacji")||tool.equals("Szyk kołowy operacji")){beginPatternTool(tool);return;}
+        if(tool.equals("Lustro operacji")||tool.equals("Szyk liniowy operacji")||tool.equals("Szyk kołowy operacji")){featurePatternTools.begin(tool);return;}
         if(!project.threePointDraft.isEmpty()&&!tool.equals(project.threePointTool)&&!tool.equals("Anuluj szkic")){showThreePointActions(tool);return;}
         if(!arcDraft.isEmpty()&&!tool.equals("Łuk")){showArcDraftActions(tool);return;}
         if(!project.polylineDraft.isEmpty()) {showPolylineActions(tool);return;}
@@ -8286,8 +7649,8 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(tool.equals("Odsunięcie")){mode="Edytuj szkic";showSketchOffset();invalidate();return;}
         if(tool.equals("Rzutuj")){if(!hadSketchPlane)operationMessage="Najpierw wybierz płaszczyznę szkicu";else {mode="Edytuj szkic";showEdgeProjection();}invalidate();return;}
         if(tool.equals("Przedłuż")){mode="Edytuj szkic";extendSelectedLine();invalidate();return;}
-        if(tool.equals("Szyk liniowy")||tool.equals("Szyk kołowy")){mode="Edytuj szkic";showSketchPattern(tool.equals("Szyk kołowy"));invalidate();return;}
-        if(tool.equals("Edytuj szyk")){mode="Edytuj szkic";editSketchPattern();invalidate();return;}
+        if(tool.equals("Szyk liniowy")||tool.equals("Szyk kołowy")){mode="Edytuj szkic";sketchPatternTools.show(tool.equals("Szyk kołowy"));invalidate();return;}
+        if(tool.equals("Edytuj szyk")){mode="Edytuj szkic";sketchPatternTools.edit();invalidate();return;}
         if(tool.equals("Wymiar")) {
             if(!hadSketchPlane)operationMessage="Najpierw wybierz płaszczyznę szkicu";
             else {mode="Edytuj szkic";dimensionMode=true;operationMessage="Dotknij elementu, aby nadać mu wymiar sterujący";}
@@ -8358,7 +7721,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(tool.equals("Połóż na stole")){layFlatSelectedFace();return;}
         if(tool.equals("Nowy komponent")){showNewComponent();return;}
         if(tool.equals("Wstaw wystąpienie")){if(prepareSolidTool(tool))showInstanceDialog(null);return;}
-        if(tool.equals("Dosuń ściany")){beginMate();return;}
+        if(tool.equals("Dosuń ściany")){mateTools.begin();return;}
         if(tool.equals("Kolizje")){showInterference();return;}
         if(tool.equals("Lista części")){showBillOfMaterials();return;}
         for(String command:DATUM_COMMANDS)if(tool.equals(command)){mode="Wybierz";showDatumEditor(command,null,null);return;}
@@ -8455,7 +7818,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             extrudeSketchProfile();
         } else if (tool.equals("Głębokość")) showDepthEditor();
         else if (tool.equals("Zaokrąglij")) showFilletEditor();
-        else if (tool.equals("Fazuj")) showEdgeTreatmentEditor(-1,true);
+        else if (tool.equals("Fazuj")) edgeTools.show(-1,true);
         else if (tool.equals("Zmierz")) {
             mode = "Zmierz";
             measurePointMode=project.importedMeshSource!=null;measureFaceMode=0;
@@ -9130,11 +8493,11 @@ if (isInsideViewport(e.getX(), e.getY())) {
         text(canvas, value, x + w / 2, y + h / 2 + dp(5), 14, textColor, true, Paint.Align.CENTER);
     }
 
-    private void text(Canvas canvas, String value, float x, float y, float sp, int color, boolean bold) {
+    void text(Canvas canvas, String value, float x, float y, float sp, int color, boolean bold) {
         text(canvas, value, x, y, sp, color, bold, Paint.Align.LEFT);
     }
 
-    private void text(Canvas canvas, String value, float x, float y, float sp, int color, boolean bold, Paint.Align align) {
+    void text(Canvas canvas, String value, float x, float y, float sp, int color, boolean bold, Paint.Align align) {
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(color);
         paint.setTextSize(sp * getResources().getDisplayMetrics().scaledDensity);
