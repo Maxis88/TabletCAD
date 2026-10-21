@@ -42,6 +42,8 @@ import pl.tabletcad.app.storage.ProjectRepository;
  * Touch-first CAD viewport backed by tessellated Open CASCADE B-Rep geometry.
  */
 public final class CadWorkspaceView extends View {
+    /** History operation editor: opens the right dialog for each kind of operation */
+    final FeatureEditorTools featureEditorTools=new FeatureEditorTools(this);
     /** Project files and settings: rename, project browser, copies, trash, parameters, units, drawing metadata */
     final ProjectFileTools projectFileTools=new ProjectFileTools(this);
     interface DocumentChange{void apply(CadProject next);}
@@ -66,7 +68,7 @@ public final class CadWorkspaceView extends View {
     /** Unselected on-model option chips: dark, so their white labels are readable over the white model view. */
     private static final int CHIP_DARK = Color.argb(235, 38, 50, 56);
     static final int INK = Color.rgb(28, 39, 49);
-    private static final int MUTED = Color.rgb(101, 116, 130);
+    static final int MUTED = Color.rgb(101, 116, 130);
     static final int ACCENT = Color.rgb(13, 148, 136);
     private static final int GRID = Color.rgb(220, 227, 232);
     // Chrome palette: graphite bars around a light work area, teal accent for the active state.
@@ -663,7 +665,7 @@ public final class CadWorkspaceView extends View {
                         switch(item.kind) {
                             case BASE:showDepthEditor(true);break;
                             case ACTIVE:showDepthEditor();break;
-                            case FEATURE:showCommittedFeatureEditor(item.featureIndex);break;
+                            case FEATURE:featureEditorTools.showCommittedFeatureEditor(item.featureIndex);break;
                             case SKETCH:showSavedSketchPicker();break;
                             case FILLET:showAllEdgesFilletEditor();break;
                             case START:cameraYaw=-28;cameraPitch=22;zoom=1;panX=panY=0;invalidate();break;
@@ -1499,7 +1501,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         highlightFeature=origin;highlightBody=0;highlightSketch=false;
         if(origin>=0&&origin<project.committedFeatures.size()) {
             String title="Operacja";for(CadTimeline.Item item:CadTimeline.entries(project))if(item.kind==CadTimeline.Kind.FEATURE&&item.featureIndex==origin)title=item.title;
-            showCommittedFeatureEditor(origin);operationMessage="Ściana z operacji „"+title+"” (nr "+(origin+1)+"). Szkic użyje tej ściany.";
+            featureEditorTools.showCommittedFeatureEditor(origin);operationMessage="Ściana z operacji „"+title+"” (nr "+(origin+1)+"). Szkic użyje tej ściany.";
         } else if(origin==-1&&project.featureBase!=null&&!project.importedStep) {
             showDepthEditor(true);operationMessage="Ściana bryły bazowej. Szkic użyje tej ściany.";
         }
@@ -3328,7 +3330,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         text.setText(uses.isEmpty()?"Ten profil nie steruje jeszcze żadną operacją bryłową.":"Bezpośrednio korzystają z profilu:\n\n"+android.text.TextUtils.join("\n",uses)+"\n\nZakończ przelicza również dalszą historię. Niepoprawna przebudowa zachowuje poprzednią bryłę.");
         new PropertyBuilder().setTitle("Powiązania profilu").setView(text).setNeutralButton("Edytuj profil źródłowy",(d,w)->editSourceProfile(id)).setNegativeButton("Zamknij",null).show();
     }
-    private void editSourceProfile(String id) {
+    void editSourceProfile(String id) {
         if(id==null||id.isEmpty()){operationMessage="Wybrana operacja nie ma profilu źródłowego";invalidate();return;}
         ModelTree.Row owner=null;
         for(ModelTree.Row row:ModelTree.rows(project,new java.util.HashSet<>()))if(row.sketch()&&row.entities.contains(id)) {
@@ -3730,7 +3732,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             return;
         }
         if(project.importedStep) {
-            if(!project.committedFeatures.isEmpty()) showCommittedFeatureEditor(project.committedFeatures.size()-1);
+            if(!project.committedFeatures.isEmpty()) featureEditorTools.showCommittedFeatureEditor(project.committedFeatures.size()-1);
             else operationMessage="Import STEP nie ma głębokości bazowej. Najpierw utwórz operację ze szkicu.";
             invalidate();return;
         }
@@ -4522,7 +4524,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         return latestClosedProfile();
     }
 
-    private double[] activeFeatureValues() {
+    double[] activeFeatureValues() {
         SketchPrimitive p = featureProfile();
         if (p == null || project.featureOperation.equals("none")) return null;
         return p.appendVertices(new double[] {p.featureType(),
@@ -4571,155 +4573,6 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         if (active != null) System.arraycopy(active, 0, packed, offset, active.length);
         return packed;
-    }
-
-    private void showCommittedFeatureEditor(int index) {
-        double[] feature = project.committedFeatures.get(index);
-        if(project.extrusionExtents.containsKey(index)){showExtrusionExtentEditor(index);return;}
-        if(HoleThread.is(feature)){showThreadFeatureEditor(index);return;}
-        if(FeaturePattern.is(feature)){featurePatternTools.showEditor(index);return;}
-        if(ShellFeature.is(feature)){shellTools.showEditor(index);return;}
-        if(BodyCombine.is(feature)){beginBodyCombine((int)feature[1],index);return;}
-        if(BodySplit.is(feature)){bodyTools.showSplit(index);return;}
-        if(SurfaceSplit.is(feature)||SurfaceSplit.isLoft(feature)){bodyTools.showSplit(index);return;}
-        if(SweepLoft.bodyPattern(feature)){showBodyPatternDialog((int)feature[1],index);return;}
-        if(SweepLoft.loft(feature)||SweepLoft.sweep(feature)){showLoftSweepEditor(index);return;}
-        if(DraftFeature.is(feature)){showDraftEditor(index);return;}
-        if(FaceOffset.is(feature)){showFaceOffsetEditor(index);return;}
-        if(MateFeature.is(feature)){mateTools.showEditor(index);return;}
-        if(BodyInstance.is(feature)){int created=BodyInstance.created(feature);Component c=Component.of(project.components,created);
-            if(c!=null&&c.instance())assemblyTools.showInstanceDialog(c);else{operationMessage="Wystąpienie bez komponentu – usuń je z historii i wstaw ponownie";invalidate();}return;}
-        if(BodyTransform.is(feature)){bodyTools.showTransform((int)feature[1],index);return;}
-        if(HoleFeature.is(feature)){holeEditIndex=index;double[] f=feature;holeReference=new double[]{f[2],f[3],f[4],f[5],f[6],f[7],f[8]};mode="Otwór";holeTools.showPanel();return;}
-        if(Revolve.is(feature)){String id=project.committedProfileIds.get(index);revolveTools.show(Revolve.profile(id,feature),feature,index,false);return;}
-        if(EdgeFillet.is(feature)||EdgeChamfer.is(feature)){edgeTools.showFillet(index);return;}
-        String linkedProfileId=index<project.committedProfileIds.size()?project.committedProfileIds.get(index):null;
-        if(feature[0]>=5 || project.isProfileDimensioned(linkedProfileId) || ProfileDependencies.consumers(project,linkedProfileId).size()>1) {
-            EditText depth=bound(coordinateInput("Głębokość [mm]",Math.abs(feature[6])),UserParameters.depthKey(index));
-            android.widget.CheckBox reverse=extrusionDialogs.directionCheck(feature[6]);
-            android.widget.CheckBox symmetric=extrusionDialogs.symmetricCheck(FeatureDirection.isSymmetric(feature[1]),reverse);
-            LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);form.addView(depth);form.addView(reverse);
-            form.addView(symmetric);
-            android.widget.TextView status=new android.widget.TextView(getContext());form.addView(status);
-            new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle((feature[0]>=5?"Kontur":"Profil źródłowy")+" · głębokość [mm]").setView(form)
-                .setNeutralButton("Edytuj profil źródłowy",(d,w)->editSourceProfile(linkedProfileId))
-                .setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)-> {
-                    try {
-                        double value=FeatureDirection.signed(parseCoordinate(depth),reverse.isChecked(),symmetric.isChecked());
-                        double[] candidate=feature.clone();candidate[6]=value;
-                        candidate[1]=FeatureDirection.withSymmetric(feature[1],symmetric.isChecked());
-                        if(commitModelChange(() -> {project.committedFeatures.set(index,candidate);bindField(project,UserParameters.depthKey(index),depth);}))
-                            operationMessage="Gotowe: przeliczono operację konturu";
-                    }catch(IllegalArgumentException e){operationMessage="Głębokość: 0,1–5000 mm";}
-                    invalidate();
-                }).show();
-            bindCommittedPreview(index,new EditText[]{depth},reverse,symmetric,status,()-> {
-                double[] candidate=feature.clone();candidate[6]=FeatureDirection.signed(parseCoordinate(depth),reverse.isChecked(),symmetric.isChecked());
-                candidate[1]=FeatureDirection.withSymmetric(feature[1],symmetric.isChecked());return candidate;
-            });return;
-        }
-        LinearLayout fields = new LinearLayout(getContext());
-        fields.setOrientation(LinearLayout.VERTICAL);
-        fields.setPadding((int)dp(16), 0, (int)dp(16), 0);
-        String[] labels = {"X1 / środek X [mm]", "Y1 / środek Y [mm]",
-            feature[0] == 1 ? "Punkt promienia X [mm]" : "X2 [mm]",
-            feature[0] == 1 ? "Punkt promienia Y [mm]" : "Y2 [mm]", "Głębokość [mm]"};
-        EditText[] inputs = new EditText[5];
-        for (int i = 0; i < inputs.length; i++) {
-            android.widget.TextView label = new android.widget.TextView(getContext());
-            label.setText(Units.label(labels[i],project.units));
-            label.setTextColor(MUTED);
-            label.setTextSize(12);
-            fields.addView(label);
-            inputs[i] = coordinateInput(labels[i], i==4?Math.abs(feature[6]):feature[i + 2]);
-            if(i==4)bound(inputs[i],UserParameters.depthKey(index));
-            fields.addView(inputs[i]);
-        }
-        android.widget.CheckBox reverse=extrusionDialogs.directionCheck(feature[6]);fields.addView(reverse);
-        android.widget.CheckBox symmetric=extrusionDialogs.symmetricCheck(FeatureDirection.isSymmetric(feature[1]),reverse);fields.addView(symmetric);
-        android.widget.TextView status=new android.widget.TextView(getContext());fields.addView(status);
-        android.widget.ScrollView scroll = new android.widget.ScrollView(getContext());
-        scroll.addView(fields);
-        new PropertyBuilder()
-            .setTitle((FeatureDirection.isCut(feature[1]) ? "Wycięcie " : "Dodanie ") + (index + 1) + " — profil i głębokość")
-            .setView(scroll)
-            .setNegativeButton("Anuluj", null)
-            .setPositiveButton("Zastosuj", (dialog, which) -> {
-                try {
-                    double[] candidate = feature.clone();
-                    boolean valid = true;
-                    for (int i = 0; i < inputs.length; i++) {
-                        candidate[i + 2] = parseCoordinate(inputs[i]);
-                        valid &= Double.isFinite(candidate[i + 2])
-                            && Math.abs(candidate[i + 2]) <= 5000;
-                    }
-                    valid &= candidate[6] >= 0.1;
-                    if(valid)candidate[6]=FeatureDirection.signed(candidate[6],reverse.isChecked(),symmetric.isChecked());
-                    candidate[1]=FeatureDirection.withSymmetric(feature[1],symmetric.isChecked());
-                    if (!valid) {
-                        operationMessage = "Współrzędne: ±5000 mm, głębokość: 0,1–5000 mm";
-                    } else {
-                        if (commitModelChange(() -> {
-                            project.committedFeatures.set(index, candidate);
-                            bindField(project,UserParameters.depthKey(index),inputs[4]);
-                            String profileId = index < project.committedProfileIds.size()
-                                ? project.committedProfileIds.get(index) : "";
-                            SketchPrimitive changed=SketchPrimitive.fromFeature(profileId,candidate[0]==1?"Okrąg":"Prostokąt",candidate,2,16);
-                            ProfileDependencies.propagate(project,profileId,changed);
-                            for (int i = 0; i < project.sketch.size(); i++) {
-                                SketchPrimitive p = project.sketch.get(i);
-                                if (p.id.equals(profileId)) project.sketch.set(i,changed.withConstruction(p.construction));
-                            }
-                        })) operationMessage = "Gotowe: przeliczono historię modelu";
-                    }
-                } catch (NumberFormatException error) {
-                    operationMessage = "Niepoprawna głębokość";
-                }
-                invalidate();
-            }).show();
-        bindCommittedPreview(index,inputs,reverse,symmetric,status,()-> {
-            double[] candidate=feature.clone();
-            for(int i=0;i<4;i++) {
-                candidate[i+2]=parseCoordinate(inputs[i]);
-                if(!Double.isFinite(candidate[i+2])||Math.abs(candidate[i+2])>5000)throw new IllegalArgumentException("Współrzędne: ±5000 mm");
-            }
-            candidate[6]=FeatureDirection.signed(parseCoordinate(inputs[4]),reverse.isChecked(),symmetric.isChecked());
-            candidate[1]=FeatureDirection.withSymmetric(feature[1],symmetric.isChecked());return candidate;
-        });
-    }
-
-    private void bindCommittedPreview(int index,EditText[] inputs,android.widget.CheckBox reverse,android.widget.CheckBox symmetric,
-            android.widget.TextView status,java.util.function.Supplier<double[]> proposed) {
-        android.widget.ScrollView owner=propertyEditor;
-        Runnable preview=()-> {
-            if(owner==null||propertyEditor!=owner)return;
-            invalidateGeometryPreview();
-            try {
-                double[] candidate=proposed.get(),active=activeFeatureValues();
-                int length=active==null?0:active.length;
-                for(int i=0;i<project.committedFeatures.size();i++)length+=(i==index?candidate:project.committedFeatures.get(i)).length;
-                double[] packed=new double[length];int offset=0;
-                for(int i=0;i<project.committedFeatures.size();i++) {
-                    double[] record=i==index?candidate:project.committedFeatures.get(i);
-                    System.arraycopy(record,0,packed,offset,record.length);offset+=record.length;
-                }
-                if(active!=null)System.arraycopy(active,0,packed,offset,active.length);
-                status.setText("Obliczanie podglądu…");
-                submitGeometryPreview(owner,meshPreviewQuery(project.featureBase,packed,project.filletRadius,modelDepth),mesh->{
-                    if(mesh.length>0)status.setText("Podgląd · "+Math.abs(candidate[6])+" mm"+(FeatureDirection.isSymmetric(candidate[1])?" · symetrycznie":candidate[6]<0?" · odwrotnie":"")+". Zastosuj zapisuje zmianę.");
-                    else status.setText(previewFailure("Brak poprawnego wyniku. Zmień głębokość lub kierunek."));
-                });
-            }catch(IllegalArgumentException error){status.setText(error.getMessage());}
-            invalidate();
-        };
-        for(EditText input:inputs)input.addTextChangedListener(new android.text.TextWatcher() {
-            public void beforeTextChanged(CharSequence s,int start,int count,int after){}
-            public void onTextChanged(CharSequence s,int start,int before,int count){invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,350);}
-            public void afterTextChanged(android.text.Editable text){}
-        });
-        reverse.setOnCheckedChangeListener((button,checked)->{invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,100);});
-        symmetric.setOnCheckedChangeListener((button,checked)->{reverse.setEnabled(!checked);invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,100);});
-        postDelayed(preview,100);
     }
 
     /** Sketch text tools (insert, edit, emboss/engrave) live in {@link TextTools}. */
@@ -5047,7 +4900,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             invalidate();
         });
     }
-    private void showThreadFeatureEditor(int index) {
+    void showThreadFeatureEditor(int index) {
         double[] original=project.committedFeatures.get(index);LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         EditText diameter=coordinateInput("Średnica nominalna [mm]",original[9]*2),pitch=coordinateInput("Skok [mm]",original[10]),depth=coordinateInput("Głębokość [mm]",original[11]);form.addView(diameter);form.addView(pitch);form.addView(depth);
         android.widget.CheckBox left=new android.widget.CheckBox(getContext());left.setText("Gwint lewy");left.setChecked(original[1]<0);form.addView(left);
@@ -5064,7 +4917,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     private void showTimelineActions(CadTimeline.Item item) {
         int index=item.featureIndex;boolean suppressed=project.suppressedFeatures.contains(index);
         List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
-        labels.add("Edytuj operację");actions.add(()->showCommittedFeatureEditor(index));
+        labels.add("Edytuj operację");actions.add(()->featureEditorTools.showCommittedFeatureEditor(index));
         labels.add(suppressed?"Przywróć operację (włącz)":"Wygaś operację (pomiń w przeliczeniu)");actions.add(()->changeHistory(next->FeatureHistory.setSuppressed(next,index,!suppressed),suppressed?"Przywrócono: "+item.title:"Wygaszono: "+item.title+" (pozostaje w historii)"));
         if(index>0)labels.add("Przesuń wcześniej ◀");if(index>0)actions.add(()->changeHistory(next->FeatureHistory.swap(next,index-1),"Przesunięto wcześniej: "+item.title));
         if(index+1<project.committedFeatures.size()){labels.add("Przesuń później ▶");actions.add(()->changeHistory(next->FeatureHistory.swap(next,index),"Przesunięto później: "+item.title));}
@@ -5126,7 +4979,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
     int featureBody(CadProject model,int index){return index<model.featureBodyOutputs.size()&&model.featureBodyOutputs.get(index)>0?model.featureBodyOutputs.get(index):1;}
     /** Patterns and mirrors of history operations: sources, direction from a face, edge or axis, parameters, editing. */
     final FeaturePatternTools featurePatternTools=new FeaturePatternTools(this);
-    private void beginBodyCombine(int operation,int editIndex) {
+    void beginBodyCombine(int operation,int editIndex) {
         String name=operation==BodyCombine.JOIN?"Połącz bryły":operation==BodyCombine.CUT?"Odejmij bryły":"Część wspólna brył";
         if(editIndex<0&&!prepareSolidTool(name))return;
         CadProject view=project;
@@ -5225,7 +5078,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         faceOffsetRef=new double[]{selectedPointX,selectedPointY,selectedPointZ,selectedNormalX,selectedNormalY,selectedNormalZ,origin,faceBodies.getOrDefault(face,1)};
         showFaceOffsetPanel();invalidate();
     }
-    private void showFaceOffsetEditor(int index) {
+    void showFaceOffsetEditor(int index) {
         double[] f=project.committedFeatures.get(index);int body=index<project.featureBodyTargets.size()?project.featureBodyTargets.get(index):1;
         mode="Odsuń ścianę";faceOffsetEditIndex=index;faceOffsetRef=new double[]{f[2],f[3],f[4],f[5],f[6],f[7],f[8],body};showFaceOffsetPanel();
     }
@@ -5253,7 +5106,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         capturedPreview(form,apply,"Podgląd odsuniętej ściany.");
         attachFieldHandle(new double[]{ref[0],ref[1],ref[2]},new double[]{ref[3],ref[4],ref[5]},distance,-5000,5000,"Odsunięcie");
     }
-    private void showDraftEditor(int index) {
+    void showDraftEditor(int index) {
         double[] f=project.committedFeatures.get(index);LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         EditText angle=labeledCoordinate(form,"Kąt pochylenia [°]",f[2]);slider(form,angle,-45,45,.5);
         android.content.DialogInterface.OnClickListener apply=(d,w)->{
@@ -5335,7 +5188,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         new PropertyBuilder().setTitle("Przeciągnięcie po ścieżce").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Utwórz",apply).show();
         capturedPreview(form,apply,"Podgląd przeciągnięcia.");
     }
-    private void showLoftSweepEditor(int index) {
+    void showLoftSweepEditor(int index) {
         double[] f=project.committedFeatures.get(index);LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         android.widget.TextView info=new android.widget.TextView(getContext());info.setText(SweepLoft.label(f)+": kształt pochodzi ze wskazanych elementów szkiców – edytuj szkic, a operacja zostanie przeliczona.");form.addView(info);
         android.widget.CheckBox ruled=new android.widget.CheckBox(getContext());ruled.setText("Ściany prostokreślne");ruled.setChecked(f[3]==1);if(SweepLoft.loft(f))form.addView(ruled);
