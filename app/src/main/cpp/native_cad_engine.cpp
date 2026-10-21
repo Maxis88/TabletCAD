@@ -964,6 +964,7 @@ Java_pl_tabletcad_app_NativeCadEngine_nativeApplyFaceFeature(
 
 
 namespace {
+static std::mutex g_threadToolMutex;static std::map<std::vector<double>,TopoDS_Shape> g_threadTools;
 TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
     if(shape.IsNull()||(f[1]!=1&&f[1]!=-1)||f[8]<=0||f[9]<=f[8]||f[10]<.05||f[11]<.1||f[11]/f[10]>200)return {};
     if(f[12]!=0&&f[12]<f[11])return {};for(int i=13;i<16;i++)if(f[i]!=0)return {};
@@ -979,6 +980,7 @@ TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
     BRepBuilderAPI_MakeWire wire(spine);if(!wire.IsDone())return {};
     BRepBuilderAPI_MakePolygon profile;profile.Add(gp_Pnt(inner,0,start-halfWidth));profile.Add(gp_Pnt(outer,0,start));profile.Add(gp_Pnt(inner,0,start+halfWidth));profile.Close();
     if(!profile.IsDone())return {};
+    auto pipeT0=std::chrono::steady_clock::now();
     BRepOffsetAPI_MakePipeShell pipe(wire.Wire());pipe.SetMode(true);pipe.Add(profile.Wire(),false,false);pipe.Build();
     if(!pipe.IsDone()||!pipe.MakeSolid())return {};
     // Use one canonical sweep frame for either entry end. Reversing the input
@@ -995,18 +997,30 @@ TopoDS_Shape threadedHole(const TopoDS_Shape& shape,const double* f) {
     // at least a fifth of the tool volume.
     const bool full=f[12]!=0&&depth>=f[12]-1e-6;
     const double attempts[][2]={{0,0},{.41,0},{1.37,0},{2.6,0},{0,.1},{.9,.1},{2.1,.1}};
-    GProp_GProps baseProps;BRepGProp::VolumeProperties(shape,baseProps);const double baseVolume=std::abs(baseProps.Mass());
+    auto bv0=std::chrono::steady_clock::now();GProp_GProps baseProps;BRepGProp::VolumeProperties(shape,baseProps);if(std::getenv("TABLETCAD_PERF"))std::fprintf(stderr,"perf thread basevol %.1f\n",std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-bv0).count());const double baseVolume=std::abs(baseProps.Mass());
+    if(std::getenv("TABLETCAD_PERF"))std::fprintf(stderr,"perf thread pipe %.1f ms\n",std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-pipeT0).count());
+    int attempt=0;auto threadT0=std::chrono::steady_clock::now();
     for(const auto& at:attempts) {
+        attempt++;if(std::getenv("TABLETCAD_PERF"))std::fprintf(stderr,"perf thread attempt %d at %.1f ms\n",attempt,std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-threadT0).count());
+        auto lap=[&](const char* w){if(std::getenv("TABLETCAD_PERF"))std::fprintf(stderr,"perf thread %s %.1f\n",w,std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-threadT0).count());};
         const double inset=at[1];
-        BRepAlgoAPI_Common clipped(pipe.Shape(),BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0,0,inset),gp_Dir(0,0,1)),outer+.1,depth-inset-(full?inset:0)).Shape());clipped.Build();if(!clipped.IsDone())continue;
+        // The clipped helical tool depends only on the thread parameters: holes of the same size
+        // share it (the clip is ~0.8 s of OCCT work per thread).
+        std::vector<double> key={f[1],f[8],f[9],f[10],f[11],f[12],static_cast<double>(attempt)};TopoDS_Shape clippedShape;
+        {std::lock_guard<std::mutex> guard(g_threadToolMutex);auto hit=g_threadTools.find(key);if(hit!=g_threadTools.end())clippedShape=hit->second;}
+        if(clippedShape.IsNull()){
+            BRepAlgoAPI_Common clipped(pipe.Shape(),BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(0,0,inset),gp_Dir(0,0,1)),outer+.1,depth-inset-(full?inset:0)).Shape());clipped.Build();if(!clipped.IsDone())continue;
+            clippedShape=clipped.Shape();std::lock_guard<std::mutex> guard(g_threadToolMutex);if(g_threadTools.size()>32)g_threadTools.clear();g_threadTools[key]=clippedShape;}
+        lap("clip");
         gp_Trsf phase;phase.SetRotation(gp_Ax1(gp_Pnt(0,0,0),gp_Dir(0,0,1)),at[0]);
-        TopoDS_Shape tool=BRepBuilderAPI_Transform(clipped.Shape(),placement*phase,true).Shape();
-        if(tool.IsNull()||!BRepCheck_Analyzer(tool).IsValid()){kernelReason("Narzędzie gwintu ma niepoprawną topologię");continue;}
-        GProp_GProps toolProps;BRepGProp::VolumeProperties(tool,toolProps);const double toolVolume=std::abs(toolProps.Mass());
-        TopoDS_Shape result=applyProfileFeature(shape,tool,true);
+        TopoDS_Shape tool=BRepBuilderAPI_Transform(clippedShape,placement*phase,true).Shape();
+        if(tool.IsNull()||!BRepCheck_Analyzer(tool).IsValid()){kernelReason("Narzędzie gwintu ma niepoprawną topologię");continue;}lap("check");
+        GProp_GProps toolProps;BRepGProp::VolumeProperties(tool,toolProps);const double toolVolume=std::abs(toolProps.Mass());lap("toolvol");
+        TopoDS_Shape result=applyProfileFeature(shape,tool,true);lap("apply");
         if(result.IsNull()||countShapes(result,TopAbs_SOLID)!=countShapes(shape,TopAbs_SOLID))continue;
-        GProp_GProps after;BRepGProp::VolumeProperties(result,after);
+        GProp_GProps after;BRepGProp::VolumeProperties(result,after);lap("aftervol");
         if(baseVolume-std::abs(after.Mass())<.2*toolVolume){kernelReason("Gwint usunął zbyt mało materiału");continue;}
+        if(std::getenv("TABLETCAD_PERF"))std::fprintf(stderr,"perf thread done at %.1f ms (faces %d)\n",std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-threadT0).count(),countShapes(result,TopAbs_FACE));
         return result;
     }
     return {};
