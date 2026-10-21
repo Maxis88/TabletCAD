@@ -12,18 +12,24 @@ import java.util.Arrays;
 final class DepthRaster {
     private int w,h;private int[] pixels=new int[0];private float[] depth=new float[0];private Bitmap bitmap;
     private float scale=1;private int left,top;
+    /** Camera distance D: depth is stored as (q·D − 1)·D, affine in q (exact interpolation) and ≈ z, so
+     *  the huge distance of the orthographic view does not wash out float precision. */
+    private double distance=1;
+    private static final float EMPTY=-Float.MAX_VALUE;
     private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
     /** Starts a frame for the viewport rectangle (view pixels) at the given resolution factor. */
-    void begin(Rect viewport,float resolution) {
+    void begin(Rect viewport,float resolution){begin(viewport,resolution,1);}
+    void begin(Rect viewport,float resolution,double cameraDistance) {
+        distance=cameraDistance>0?cameraDistance:1;
         scale=resolution;left=viewport.left;top=viewport.top;
         int width=Math.max(1,(int)Math.ceil(viewport.width()*resolution)),height=Math.max(1,(int)Math.ceil(viewport.height()*resolution));
         if(width!=w||height!=h){w=width;h=height;pixels=new int[w*h];depth=new float[w*h];bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);}
-        Arrays.fill(pixels,0);Arrays.fill(depth,0f);
+        Arrays.fill(pixels,0);Arrays.fill(depth,EMPTY);
     }
     /** Triangle in view pixels with the perspective factor q = 1/(distance − z) per vertex. */
     void triangle(float ax,float ay,float aq,float bx,float by,float bq,float cx,float cy,float cq,int color) {
         if(!(aq>0&&bq>0&&cq>0))return;
-        float x0=(ax-left)*scale,y0=(ay-top)*scale,x1=(bx-left)*scale,y1=(by-top)*scale,x2=(cx-left)*scale,y2=(cy-top)*scale,q0=aq,q1=bq,q2=cq;
+        float x0=(ax-left)*scale,y0=(ay-top)*scale,x1=(bx-left)*scale,y1=(by-top)*scale,x2=(cx-left)*scale,y2=(cy-top)*scale,q0=key(aq),q1=key(bq),q2=key(cq);
         float area=(x1-x0)*(y2-y0)-(x2-x0)*(y1-y0);
         if(area<0){float t=x1;x1=x2;x2=t;t=y1;y1=y2;y2=t;t=q1;q1=q2;q2=t;area=-area;}
         if(!(area>1e-7f))return;
@@ -57,10 +63,10 @@ final class DepthRaster {
             double t=(double)k/steps;int px=(int)(x0+(x1-x0)*t),py=(int)(y0+(y1-y0)*t);
             double q=aq+(bq-aq)*t;boolean visible=true;
             if(q>0&&px>=0&&py>=0&&px<w&&py<h) {
-                float stored=depth[py*w+px];
-                // Nearest surface among the pixel and its neighbours (an edge lies between two faces).
-                for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++){int x=px+dx,y=py+dy;if(x>=0&&y>=0&&x<w&&y<h)stored=Math.min(stored,depth[y*w+x]==0?stored:depth[y*w+x]);}
-                if(stored>0&&1/q>1/stored+tolerance)visible=false;
+                float stored=depth[py*w+px],edge=key(q);
+                // Farthest surface among the pixel and its neighbours (an edge lies between two faces).
+                for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++){int x=px+dx,y=py+dy;if(x>=0&&y>=0&&x<w&&y<h&&depth[y*w+x]!=EMPTY)stored=stored==EMPTY?depth[y*w+x]:Math.min(stored,depth[y*w+x]);}
+                if(stored!=EMPTY&&edge<stored-tolerance)visible=false;
             }
             if(visible&&start<0)start=t;
             if(!visible&&start>=0){out.add(new double[]{start,t});start=-1;}
@@ -68,6 +74,7 @@ final class DepthRaster {
         if(start>=0)out.add(new double[]{start,1});
         return out;
     }
+    private float key(double q){return (float)((q*distance-1)*distance);}
     void draw(Canvas canvas,Rect viewport) {
         bitmap.setPixels(pixels,0,w,0,0,w,h);
         canvas.drawBitmap(bitmap,new Rect(0,0,w,h),new RectF(viewport.left,viewport.top,viewport.left+w/scale,viewport.top+h/scale),paint);

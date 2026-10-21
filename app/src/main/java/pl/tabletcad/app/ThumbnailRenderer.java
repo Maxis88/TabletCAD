@@ -23,7 +23,7 @@ public final class ThumbnailRenderer {
         }
         double scale=Math.min((width*.84)/Math.max(1e-9,maxX-minX),(height*.84)/Math.max(1e-9,maxY-minY));
         double ox=width/2.0-(minX+maxX)/2*scale,oy=height/2.0-(minY+maxY)/2*scale;
-        DepthRaster raster=new DepthRaster();raster.begin(new Rect(0,0,width,height),1f);
+        DepthRaster raster=new DepthRaster();raster.begin(new Rect(0,0,width,height),1f,1);
         float[] px=new float[3],py=new float[3],pq=new float[3];
         for(int o=0;o+12<mesh.length;o+=13) {
             double nx=mesh[o+9],ny=mesh[o+10],nz=mesh[o+11];

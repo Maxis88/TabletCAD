@@ -1991,7 +1991,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             double[] prev=null;
             for(int k=0;k<=12;k++) {
                 double t=-half+2*half*k/12;double[] q=axis==0?projectWorldPoint(t,0,c):projectWorldPoint(c,0,t);
-                if(q[2]<=1e-6||!Double.isFinite(q[0])||!Double.isFinite(q[1])){prev=null;continue;}
+                if(q[2]<=0||!Double.isFinite(q[0])||!Double.isFinite(q[1])){prev=null;continue;}
                 if(prev!=null)canvas.drawLine((float)prev[0],(float)prev[1],(float)q[0],(float)q[1],paint);prev=q;
             }
         }
@@ -2022,7 +2022,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         // While orbiting a heavy model the fill runs at half resolution; a sharp frame follows at rest.
         android.graphics.Rect viewport=canvas.getClipBounds();long now=android.os.SystemClock.uptimeMillis();boolean moving=now-lastSolidFrame<150;lastSolidFrame=now;
         float resolution=moving&&slowFullFrame?.5f:1f;long started=System.nanoTime();
-        depthRaster.begin(viewport,resolution);
+        depthRaster.begin(viewport,resolution,viewDistance());
         colorIndex=0;
         for(ProjectedTriangle triangle:projectedTriangles){int color=surfaceColors[colorIndex];colorIndex+=3;
             depthRaster.triangle(triangle.sx[0],triangle.sy[0],(float)triangle.q[0],triangle.sx[1],triangle.sy[1],(float)triangle.q[1],triangle.sx[2],triangle.sy[2],(float)triangle.q[2],color);}
