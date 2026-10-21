@@ -42,6 +42,7 @@ import pl.tabletcad.app.storage.ProjectRepository;
  * Touch-first CAD viewport backed by tessellated Open CASCADE B-Rep geometry.
  */
 public final class CadWorkspaceView extends View {
+    interface DocumentChange{void apply(CadProject next);}
     /** Sketch mirror (about lines and axes) and the geometry tool menu */
     final SketchMirrorTools sketchMirrorTools=new SketchMirrorTools(this);
     private int bottomSystemInset;
@@ -6598,7 +6599,6 @@ if (isInsideViewport(e.getX(), e.getY())) {
             }else next.parameters.add(value);
         },"Zapisano parametr")).show();
     }
-    interface DocumentChange{void apply(CadProject next);}
     private void changeParameters(DocumentChange change,String success) {
         try {
             String baseline=project.toJson().toString();CadProject next=CadProject.fromJson(new org.json.JSONObject(baseline));
