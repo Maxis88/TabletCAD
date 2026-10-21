@@ -13,6 +13,8 @@ public final class TextKernelProbe {
             case "O":return new SketchText.Glyph(1.0,Arrays.asList(new double[]{0,0,.8,0,.8,1,0,1},new double[]{.2,.2,.2,.8,.6,.8,.6,.2}));
             case "I":return new SketchText.Glyph(.4,Collections.singletonList(new double[]{0,0,.2,0,.2,1,0,1}));
             case "L":return new SketchText.Glyph(.8,Collections.singletonList(new double[]{0,0,.6,0,.6,.2,.2,.2,.2,1,0,1}));
+            // Overlapping contours like real fonts: L stem plus a slanted stroke crossing it.
+            case "Ł":return new SketchText.Glyph(.8,Arrays.asList(new double[]{0,0,.6,0,.6,.2,.3,.2,.3,1,.1,1,.1,.2,0,.2},new double[]{-.05,.35,.45,.6,.45,.75,-.05,.5}));
             case " ":return new SketchText.Glyph(.4,Collections.emptyList());
             default:return null;
         }
@@ -68,6 +70,9 @@ public final class TextKernelProbe {
         // Letters floating beside the plate do not join silently.
         CadProject f=plate();SketchPrimitive far=SketchText.create("t","II",SketchText.params(150,20,5,0,0,0,0,2),FONT);f.sketch.add(far);add(f,far,"join",2);
         String why=failure(f);check(why!=null&&why.contains("nie styka"),"letters off the body are reported: "+why);
+        // Overlapping outlines (non-zero winding) are united, not rejected.
+        SketchPrimitive ol=SketchText.create("t","Ł",SketchText.params(20,20,10,SketchText.FLAT,0,0,0,0),FONT);CadProject op=plate();op.sketch.add(ol);add(op,ol,"cut",1);
+        String olWhy=failure(op);check(olWhy==null,"overlapping glyph contours engrave"+(olWhy==null?"":": "+olWhy));double removed=120000-volume(op);check(removed>0&&removed<(.6*.2+.2*.8+.5*.15)*100,"overlap counted once ("+removed+" mm³)");
         // Free-standing letters as a new body beside the plate.
         CadProject e=plate();SketchPrimitive free=SketchText.create("t","OIL",SketchText.params(150,20,5,0,0,0,0,0),FONT);e.sketch.add(free);
         e.committedFeatures.add(SketchText.feature(e,free,"new",3,false,false));e.committedProfileIds.add(SketchText.REF+e.sketchId+"/"+free.id);e.featureBodyTargets.add(0);e.featureBodyOutputs.add(BodyGraph.allocate(e));

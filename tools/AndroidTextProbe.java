@@ -12,6 +12,14 @@ public final class AndroidTextProbe {
             SketchText.Glyph b=font.glyph("B",f);check(b.loops.size()==3,"font "+f+": B has two islands");check(font.glyph("Ł",f)!=null&&font.glyph("ą",f)!=null,"font "+f+": Polish letters");}
         SketchPrimitive t=SketchText.create("t","TabletCAD 2026 ŻÓŁW",SketchText.params(5,25,6,SketchText.FLAT,0,0,0,0),font);
         SketchPrimitive caps=SketchText.create("c","HELLO",SketchText.params(0,0,6,SketchText.FLAT,0,0,0,0),font);check(Math.abs((caps.y2-caps.y1)-6)<.25,"capital height of HELLO is 6 mm ("+(caps.y2-caps.y1)+")");
+        // Every character of every font engraves on its own (diagnostics name the failing ones).
+        StringBuilder bad=new StringBuilder();
+        for(int f=0;f<SketchText.FONTS.length;f++)for(String ch:new String[]{"A","B","O","Ł","Ż","Ó","ą","ę","ś","ć","ź","ń","0","2","6","8","@","&","%","g","Q","R","S"}){
+            SketchPrimitive one=SketchText.create("o",ch,SketchText.params(20,20,8,SketchText.FLAT,0,0,f,0),font);
+            CadProject q1=new CadProject();q1.emptyDocument=false;q1.width=100;q1.height=60;q1.depth=10;q1.featureBase=new double[]{0,0,0,100,60,0,10};BodyGraph.begin(q1);q1.sketchOriginZ=10;q1.sketch.add(one);
+            q1.committedFeatures.add(SketchText.feature(q1,one,"cut",.5,false,false));q1.committedProfileIds.add(SketchText.REF+q1.sketchId+"/"+one.id);q1.featureBodyTargets.add(1);q1.featureBodyOutputs.add(1);
+            if(NativeCadEngine.bodyProperties(q1.width,q1.height,q1.depth,0,q1.featureBase,BodyGraph.pack(q1,packed(q1)),null).length!=7)bad.append(" ").append(f).append(":").append(ch).append("(").append(SketchText.loopCount(one.textLoops())).append(")");}
+        check(bad.length()==0,"every character engraves:"+bad);
         CadProject p=new CadProject();p.emptyDocument=false;p.width=150;p.height=60;p.depth=10;p.featureBase=new double[]{0,0,0,150,60,0,10};BodyGraph.begin(p);p.sketchOriginZ=10;p.sketch.add(t);
         p.committedFeatures.add(SketchText.feature(p,t,"cut",.6,false,false));p.committedProfileIds.add(SketchText.REF+p.sketchId+"/"+t.id);p.featureBodyTargets.add(1);p.featureBodyOutputs.add(1);
         double[] r=NativeCadEngine.bodyProperties(p.width,p.height,p.depth,0,p.featureBase,BodyGraph.pack(p,packed(p)),null);

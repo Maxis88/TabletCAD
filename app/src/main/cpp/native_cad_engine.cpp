@@ -448,20 +448,34 @@ TopoDS_Shape textPrism(const double* f,int payload,bool cut,bool symmetric) {
     const gp_Dir plane=gp_Dir(u.Crossed(v));
     auto wire=[&](const Loop& l,bool ccw){BRepBuilderAPI_MakePolygon polygon;const int n=static_cast<int>(l.p.size()/2);const bool reverse=(l.area>0)!=ccw;
         for(int k=0;k<n;k++){int i=reverse?n-1-k:k;polygon.Add(start.Translated(u*l.p[2*i]+v*l.p[2*i+1]));}polygon.Close();return polygon.IsDone()?polygon.Wire():TopoDS_Wire();};
-    NCollection_List<TopoDS_Shape> solids;
-    for(size_t i=0;i<list.size();i++) {
+    auto fuseAll=[](const NCollection_List<TopoDS_Shape>& solids)->TopoDS_Shape{
+        if(solids.IsEmpty())return {};if(solids.Size()==1)return solids.First();
+        NCollection_List<TopoDS_Shape> first,rest;bool head=true;for(const auto& s:solids){if(head){first.Append(s);head=false;}else rest.Append(s);}
+        BRepAlgoAPI_Fuse fuse;fuse.SetArguments(first);fuse.SetTools(rest);fuse.SetRunParallel(true);fuse.Build();if(!fuse.IsDone())return {};fuse.SimplifyResult(true,true);return fuse.Shape();};
+    auto prismOf=[&](const Loop& l)->TopoDS_Shape{TopoDS_Wire w=wire(l,true);if(w.IsNull())return {};BRepBuilderAPI_MakeFace face(gp_Pln(start,plane),w);
+        if(!face.IsDone()||!BRepCheck_Analyzer(face.Face()).IsValid())return {};return BRepPrimAPI_MakePrism(face.Face(),normal*depth).Shape();};
+    // Fast path: nested loops (even depth = material with its odd-depth holes), one face per region.
+    TopoDS_Shape result;bool fast=true;
+    {NCollection_List<TopoDS_Shape> solids;
+    for(size_t i=0;i<list.size()&&fast;i++) {
         if(list[i].depth%2!=0)continue;
-        TopoDS_Wire outer=wire(list[i],true);if(outer.IsNull())return {};
-        BRepBuilderAPI_MakeFace face(gp_Pln(start,plane),outer);if(!face.IsDone())return {};
-        for(size_t j=0;j<list.size();j++)if(list[j].parent==static_cast<int>(i)&&list[j].depth%2==1){TopoDS_Wire hole=wire(list[j],false);if(hole.IsNull())return {};face.Add(hole);}
-        if(!face.IsDone()||!BRepCheck_Analyzer(face.Face()).IsValid())return {};
-        TopoDS_Shape prism=BRepPrimAPI_MakePrism(face.Face(),normal*depth).Shape();if(prism.IsNull())return {};solids.Append(prism);
+        TopoDS_Wire outer=wire(list[i],true);if(outer.IsNull()){fast=false;break;}
+        BRepBuilderAPI_MakeFace face(gp_Pln(start,plane),outer);if(!face.IsDone()){fast=false;break;}
+        for(size_t j=0;j<list.size();j++)if(list[j].parent==static_cast<int>(i)&&list[j].depth%2==1){TopoDS_Wire hole=wire(list[j],false);if(hole.IsNull()){fast=false;break;}face.Add(hole);}
+        if(!fast||!face.IsDone()||!BRepCheck_Analyzer(face.Face()).IsValid()){fast=false;break;}
+        TopoDS_Shape prism=BRepPrimAPI_MakePrism(face.Face(),normal*depth).Shape();if(prism.IsNull()){fast=false;break;}solids.Append(prism);
     }
-    if(solids.IsEmpty())return {};
-    TopoDS_Shape result;
-    if(solids.Size()==1)result=solids.First();
-    else {NCollection_List<TopoDS_Shape> first,rest;bool head=true;for(const auto& s:solids){if(head){first.Append(s);head=false;}else rest.Append(s);}
-        BRepAlgoAPI_Fuse fuse;fuse.SetArguments(first);fuse.SetTools(rest);fuse.SetRunParallel(true);fuse.Build();if(!fuse.IsDone())return {};fuse.SimplifyResult(true,true);result=fuse.Shape();}
+    if(fast)result=fuseAll(solids);}
+    if(!fast||result.IsNull()||!BRepCheck_Analyzer(result).IsValid()) {
+        // Font outlines may overlap (e.g. Ł drawn as L plus a stroke): non-zero winding. Loops turning
+        // like the largest one are material (fused), the others are holes (cut from the material).
+        size_t largest=0;for(size_t i=1;i<list.size();i++)if(std::abs(list[i].area)>std::abs(list[largest].area))largest=i;
+        const bool positive=list[largest].area>0;NCollection_List<TopoDS_Shape> material,holes;
+        for(const auto& l:list){TopoDS_Shape p=prismOf(l);if(p.IsNull())return {};((l.area>0)==positive?material:holes).Append(p);}
+        result=fuseAll(material);if(result.IsNull())return {};
+        if(!holes.IsEmpty()){TopoDS_Shape h=fuseAll(holes);if(h.IsNull())return {};
+            BRepAlgoAPI_Cut cutter(result,h);cutter.Build();if(!cutter.IsDone())return {};cutter.SimplifyResult(true,true);result=cutter.Shape();}
+    }
     if(result.IsNull()||!BRepCheck_Analyzer(result).IsValid())return {};
     return result;
 }
