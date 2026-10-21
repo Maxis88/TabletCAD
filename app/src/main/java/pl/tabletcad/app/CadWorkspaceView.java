@@ -3579,20 +3579,34 @@ if (isInsideViewport(e.getX(), e.getY())) {
         SketchPrimitive source=null;
         for(SketchPrimitive entity:project.sketch)if(entity.id.equals(selectedSketchId))source=entity;
         if(source==null){operationMessage="Zaznacz element szkicu (Edytuj), a następnie wybierz Odsunięcie";return;}
+        // A line or arc of a closed chain: the whole loop is outlined (sharp corners, concentric arcs).
+        SketchContours.Result chainFound=null;
+        if(!source.closedGeometry()&&(source.type.equals("Linia")||source.type.equals("Łuk"))){try{chainFound=SketchContours.join(project.sketch,source.id);}catch(IllegalArgumentException notClosed){chainFound=null;}}
+        final SketchContours.Result chain=chainFound;
+        if(chain!=null)source=chain.profile;
         final SketchPrimitive selected=source;
         LinearLayout form=new LinearLayout(getContext());form.setOrientation(LinearLayout.VERTICAL);
         EditText distance=coordinateInput("Odległość [mm]",2);form.addView(distance);
         android.widget.CheckBox inward=new android.widget.CheckBox(getContext());
         inward.setText(selected.closedGeometry()?"Do wewnątrz":selected.type.equals("Linia")||selected.type.equals("Pomocnicza")?"Na drugą stronę linii":"Zmniejsz promień");
         form.addView(inward);
-        android.widget.CheckBox replace=new android.widget.CheckBox(getContext());replace.setText("Zastąp oryginał (obrys: powiększ / pomniejsz kształt)");replace.setChecked(selected.closedGeometry());form.addView(replace);
+        android.widget.CheckBox replace=new android.widget.CheckBox(getContext());replace.setText("Zastąp oryginał (obrys: powiększ / pomniejsz kształt)");replace.setChecked(selected.closedGeometry()&&chain==null);form.addView(replace);
+        if(chain!=null){android.widget.TextView about=new android.widget.TextView(getContext());about.setText("Cały zamknięty kontur: "+chain.consumed.size()+" elementów");form.addView(about);}
         android.widget.TextView status=new android.widget.TextView(getContext());status.setText("Kopia odsunięta o stałą odległość. Narożniki ostre, łuki współśrodkowe.");form.addView(status);
         slider(form,distance,.1,Math.max(20,modelExtent()),.1);
         Runnable ghost=()->{sketchGhost.clear();try{double value=parseCoordinate(distance);if(inward.isChecked())value=-value;sketchGhost.add(SketchOffset.offset(selected,"ghost",value));status.setText("Kopia odsunięta o stałą odległość. Narożniki ostre, łuki współśrodkowe.");}catch(IllegalArgumentException error){status.setText(error.getMessage());}invalidate();};
-        new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle("Odsunięcie · "+selected.type).setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
+        new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle("Odsunięcie · "+(chain!=null?"kontur":selected.type)).setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",(d,w)->{
             try {
                 double value=parseCoordinate(distance);if(inward.isChecked())value=-value;
                 SketchPrimitive copy=SketchOffset.offset(selected,UUID.randomUUID().toString(),value);
+                if(replace.isChecked()&&chain!=null) {
+                    for(SketchConstraints.Link link:project.coincidences)if(chain.consumed.contains(link.a)||chain.consumed.contains(link.b))throw new IllegalArgumentException("Usuń więzy linii konturu przed zastąpieniem go obrysem (albo odznacz „Zastąp oryginał”)");
+                    org.json.JSONObject json=copy.toJson();json.put("id",chain.profile.id);SketchPrimitive outline=SketchPrimitive.fromJson(json);
+                    checkpoint();SketchTransactions.join(project,chain);preserveExtrudedBase();commitActiveFeature();
+                    project.sketch.removeIf(p->chain.consumed.contains(p.id));project.sketch.add(outline);
+                    project.featureProfileId=null;project.sketchExtruded=false;selectedSketchId=outline.id;mode="Edytuj szkic";projectRepository.save(project);
+                    operationMessage=(value>0?"Powiększono":"Pomniejszono")+" zamknięty kontur ("+chain.consumed.size()+" elementów) o "+formatMm(Math.abs(value))+". Zakończ zatwierdza szkic.";invalidate();return;
+                }
                 if(replace.isChecked()) {
                     // Same identity: operations built on this profile follow the new outline.
                     org.json.JSONObject json=copy.toJson();json.put("id",selected.id);SketchPrimitive outline=SketchPrimitive.fromJson(json);
@@ -5904,8 +5918,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         EditText depth=labeledCoordinate(form,"Głębokość [mm]",1);slider(form,depth,.1,Math.max(30,modelExtent()),.1);
         android.widget.CheckBox reverse=new android.widget.CheckBox(getContext());reverse.setText("Odwróć kierunek");form.addView(reverse);
         android.widget.CheckBox symmetric=new android.widget.CheckBox(getContext());symmetric.setText("Symetrycznie");form.addView(symmetric);
-        // Engraving goes into the face the text was drawn on: the default direction is reversed for a cut.
-        operation.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onItemSelected(android.widget.AdapterView<?> a,View v,int i,long l){reverse.setChecked(ops[i].equals("cut"));}public void onNothingSelected(android.widget.AdapterView<?> a){}});
+        // A cut goes into the face the text was drawn on, an addition out of it ("Odwróć" swaps either).
         final int target=project.selectedBody>0?project.selectedBody:1;
         android.content.DialogInterface.OnClickListener apply=(d,w)->{
             try {
@@ -5918,8 +5931,14 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 commitProjectAsync(next,baseline,SketchText.describe(feature));
             }catch(org.json.JSONException|IllegalArgumentException error){operationMessage=error.getMessage();invalidate();}
         };
+        operation.setSelection(1);
         new PropertyBuilder().setTitle("Wyciągnij napis „"+text.text()+"”").setView(form).setNegativeButton("Anuluj",null).setPositiveButton("Zastosuj",apply).show();
         capturedPreview(form,apply,"Podgląd napisu.");
+        // Orange arrow on the model at the text anchor: dragging it sets the depth (direction follows "Odwróć").
+        double[] tp=text.textParams();double[] anchor=sketchToWorld(tp[0],tp[1]);
+        double[] normal={project.sketchUy*project.sketchVz-project.sketchUz*project.sketchVy,project.sketchUz*project.sketchVx-project.sketchUx*project.sketchVz,project.sketchUx*project.sketchVy-project.sketchUy*project.sketchVx};
+        attachFieldHandle(anchor,normal,depth,.1,5000,"Głębokość");
+        if(fieldHandle!=null)fieldHandle.axisSource=()->(reverse.isChecked()^ops[operation.getSelectedItemPosition()].equals("cut"))?new double[]{-normal[0],-normal[1],-normal[2]}:normal;
     }
     private void extrudeSketchProfile() {
         if(project.importedMeshSource!=null){operationMessage="Wyciąganie wymaga bryły B-Rep albo pustego dokumentu";invalidate();return;}

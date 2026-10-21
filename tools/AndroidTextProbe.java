@@ -13,7 +13,7 @@ public final class AndroidTextProbe {
         SketchPrimitive t=SketchText.create("t","TabletCAD 2026 ŻÓŁW",SketchText.params(5,25,6,SketchText.FLAT,0,0,0,0),font);
         check(Math.abs((t.y2-t.y1)-6)<1.5,"capital height close to 6 mm ("+(t.y2-t.y1)+")");
         CadProject p=new CadProject();p.emptyDocument=false;p.width=150;p.height=60;p.depth=10;p.featureBase=new double[]{0,0,0,150,60,0,10};BodyGraph.begin(p);p.sketchOriginZ=10;p.sketch.add(t);
-        p.committedFeatures.add(SketchText.feature(p,t,"cut",.6,true,false));p.committedProfileIds.add(SketchText.REF+p.sketchId+"/"+t.id);p.featureBodyTargets.add(1);p.featureBodyOutputs.add(1);
+        p.committedFeatures.add(SketchText.feature(p,t,"cut",.6,false,false));p.committedProfileIds.add(SketchText.REF+p.sketchId+"/"+t.id);p.featureBodyTargets.add(1);p.featureBodyOutputs.add(1);
         double[] r=NativeCadEngine.bodyProperties(p.width,p.height,p.depth,0,p.featureBase,BodyGraph.pack(p,packed(p)),null);
         check(r.length==7,"real-font text engraved: "+(r.length==7?"":NativeCadEngine.lastFailure().getMessage()));check(r[0]<90000&&r[0]>90000-150*60*.6,"engraving removed material ("+(90000-r[0])+" mm³)");
         SketchPrimitive ring=SketchText.create("r","TABLETCAD",SketchText.params(75,30,5,SketchText.OUTSIDE,90,18,1,0),font);

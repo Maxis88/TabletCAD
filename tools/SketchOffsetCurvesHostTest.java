@@ -26,6 +26,11 @@ public final class SketchOffsetCurvesHostTest {
         SketchPrimitive open=new SketchPrimitive("o",new double[]{0,0,20,10,40,0,60,10},"Splajn");SketchPrimitive left=SketchOffset.offset(open,"l",2);
         d=distances(SketchSpline.sample(open.vertices,64),SketchSpline.sample(left.vertices,8));check(Math.abs(d[0]-2)<.02&&Math.abs(d[1]-2)<.02,"open spline offset 2 mm");
         check(left.vertices[1]>0,"open spline offset goes to the left");
+        // A closed chain of separate lines is outlined as one contour.
+        java.util.List<SketchPrimitive> lines=java.util.Arrays.asList(new SketchPrimitive("a","Linia",0,0,40,0),new SketchPrimitive("b","Linia",40,0,40,20),new SketchPrimitive("c","Linia",40,20,0,20),new SketchPrimitive("d","Linia",0,20,0,0));
+        SketchContours.Result chain=SketchContours.join(lines,"b");check(chain.consumed.size()==4,"chain of 4 lines found from one of them");
+        SketchPrimitive grown=SketchOffset.offset(chain.profile,"g",3);check(Math.abs(Math.abs(SketchContours.area(grown.vertices))-46*26)<1e-6,"chain outline grows 40×20 to 46×26");
+        SketchPrimitive shrunk=SketchOffset.offset(chain.profile,"s",-3);check(Math.abs(Math.abs(SketchContours.area(shrunk.vertices))-34*14)<1e-6,"chain outline shrinks to 34×14");
         System.out.println("PASS SketchOffsetCurvesHostTest: "+checks+" checks");
     }
 }
