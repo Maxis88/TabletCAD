@@ -726,7 +726,11 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchOrbit)return true;
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&fingerNavigates()){operationMessage="Rysik rysuje, palec przesuwa widok. Palec też może rysować: panel szkicu → Palec rysuje";invalidate();return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Punkt")){pointTap(e.getX(),e.getY());return true;}
-                    if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Napis")){double[] at=snappedSketchPoint(e.getX(),e.getY(),null,null,null);snapMarker=null;showTextEditor(null,at[0],at[1]);return true;}
+                    // An open text panel is never discarded by a tap: the tap moves the text there.
+                    if(mode.equals("Szkic")&&sketchPlaneChosen&&textTools.placing()){double[] at=snappedSketchPoint(e.getX(),e.getY(),null,null,null);snapMarker=null;textTools.place(at[0],at[1]);invalidate();return true;}
+                    if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Napis")){
+                        SketchPrimitive hit=findSketchAt(e.getX(),e.getY());if(hit!=null&&hit.isText()){showTextEditor(hit,hit.textParams()[0],hit.textParams()[1]);return true;}
+                        double[] at=snappedSketchPoint(e.getX(),e.getY(),null,null,null);snapMarker=null;showTextEditor(null,at[0],at[1]);return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&(sketchTool.equals("Okrąg 3 pkt")||sketchTool.equals("Szczelina")||sketchTool.equals("Elipsa"))){threePointTap(e.getX(),e.getY());return true;}
                     if(mode.equals("Szkic")&&sketchPlaneChosen&&sketchTool.equals("Łuk")){arcTap(e.getX(),e.getY());return true;}
                     if(filletSelectionChanged!=null) {

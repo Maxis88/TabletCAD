@@ -14,6 +14,10 @@ final class TextTools {
     TextTools(CadWorkspaceView view){v=view;}
     SketchText.Font font(){if(font==null)font=new AndroidTextFont();return font;}
     /** New text at (x, y) or edit of an existing one: content, height, flat or along a circle, font. */
+    private Object owner;private EditText placeX,placeY;
+    /** The text panel is open: a tap on the sketch moves the anchor instead of closing the panel. */
+    boolean placing(){return owner!=null&&owner==v.propertyEditor;}
+    void place(double x,double y){if(!placing())return;placeX.setText(Units.input(x,v.project.units));placeY.setText(Units.input(y,v.project.units));v.operationMessage="Przesunięto punkt zaczepienia napisu – dotknij innego miejsca albo Wstaw/Zastosuj";}
     void showEditor(SketchPrimitive existing,double x,double y) {
         double[] p=existing!=null?existing.textParams():SketchText.params(x,y,5,SketchText.FLAT,0,20,0,0);
         LinearLayout form=new LinearLayout(v.getContext());form.setOrientation(LinearLayout.VERTICAL);
@@ -35,7 +39,7 @@ final class TextTools {
                     if(existing==null) {
                         SketchPrimitive t=SketchText.create(UUID.randomUUID().toString(),value,params,font());
                         v.checkpoint();v.preserveExtrudedBase();v.commitActiveFeature();v.project.sketch.add(t);v.selectedSketchId=t.id;v.projectRepository.save(v.project);
-                        v.operationMessage="Napis „"+value+"” · "+SketchText.loopCount(t.textLoops())+" konturów. Wyciągnij: dodaj na ścianie albo wytnij (grawer).";
+                        v.operationMessage="Napis „"+value+"” · "+SketchText.loopCount(t.textLoops())+" konturów. Wyciągnij: dodaj na ścianie albo wytnij (grawer). Aby przesunąć lub zmienić: narzędzie Napis → dotknij napisu.";
                     } else {
                         SketchPrimitive t=SketchText.with(existing,value,params,font());v.replaceSketchEntity(existing,t,true);v.selectedSketchId=t.id;
                         v.operationMessage="Zmieniono napis „"+value+"”";
@@ -60,6 +64,7 @@ final class TextTools {
             v.invalidate();
         };
         v.watchFields(form,preview);preview.run();
+        owner=v.propertyEditor;placeX=ax;placeY=ay;
     }
     /** Embossing or engraving of a sketch text (or letters as a new body): depth, operation, direction. */
     void showExtrusion(SketchPrimitive text) {
