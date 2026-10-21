@@ -18,7 +18,10 @@ import android.widget.TextView;
  */
 public final class PanelStyle {
     private PanelStyle() {}
-    public static final int INK=Color.rgb(28,39,49),MUTED=Color.rgb(101,116,130),LINE=Color.rgb(214,222,228),SURFACE=Color.rgb(246,248,250),DANGER=Color.rgb(196,64,52);
+    public static final int DANGER_LIGHT=Color.rgb(196,64,52);
+    /** Theme colours (Opcje → Motyw), assigned by {@link AppOptions#apply}. */
+    public static int INK=Color.rgb(28,39,49),MUTED=Color.rgb(101,116,130),FIELD=Color.WHITE,LINE=Color.rgb(214,222,228),SURFACE=Color.rgb(246,248,250);
+    public static final int DANGER=DANGER_LIGHT;
     /** Accent colours chosen in Opcje (see {@link AppOptions}). */
     public static int ACCENT=Color.rgb(13,148,136),ACCENT_DARK=Color.rgb(10,118,108);
 
@@ -42,12 +45,12 @@ public final class PanelStyle {
     /** Secondary action (Anuluj, Do powierzchni…). */
     public static void secondary(Button b) {
         Context c=b.getContext();base(b,c,46);b.setTypeface(Typeface.DEFAULT);b.setTextColor(INK);
-        b.setBackground(ripple(c,shape(c,Color.WHITE,LINE,10),Color.argb(40,13,148,136)));
+        b.setBackground(ripple(c,shape(c,FIELD,LINE,10),Color.argb(40,13,148,136)));
     }
     /** Destructive secondary action (Usuń…). */
     public static void danger(Button b) {
         Context c=b.getContext();base(b,c,46);b.setTextColor(DANGER);
-        b.setBackground(ripple(c,shape(c,Color.WHITE,Color.argb(110,196,64,52),10),Color.argb(40,196,64,52)));
+        b.setBackground(ripple(c,shape(c,FIELD,Color.argb(110,196,64,52),10),Color.argb(40,196,64,52)));
     }
     /** Row of a context menu: left aligned, full width, light surface. */
     public static void row(Button b) {

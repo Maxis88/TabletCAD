@@ -64,6 +64,17 @@ public final class RegionUiProbe {
         ui(()->call(view,"showOptions",new Class<?>[0]));instrumentation.waitForIdleSync();Thread.sleep(300);
         ui(()->{View panel=(View)field(view,"propertyEditor");check(panel!=null,"Opcje open as a panel");check(find(panel,"Pokazuj gwinty modelowane")!=null,"thread display option present");Button cancel=WorkspaceUiProbe.button(panel,"Anuluj");check(cancel!=null,"options can be cancelled");cancel.performClick();});
         TabletFlowProbe.screenshot(activity,"region-03-after-options");
+        // Dark theme palette (in memory only; the device owner's saved choice is untouched).
+        Class<?> options=Class.forName("pl.tabletcad.app.AppOptions");java.lang.reflect.Field active=options.getDeclaredField("activeTheme");active.setAccessible(true);
+        java.lang.reflect.Method applyOptions=options.getDeclaredMethod("apply");applyOptions.setAccessible(true);int previous=active.getInt(null);
+        try {
+            active.setInt(null,1);applyOptions.invoke(null);ui(()->call(view,"applyAppOptions",new Class<?>[0]));instrumentation.waitForIdleSync();Thread.sleep(300);
+            int[] pixel={0};ui(()->{Bitmap bitmap=Bitmap.createBitmap(view.getWidth(),view.getHeight(),Bitmap.Config.ARGB_8888);view.draw(new Canvas(bitmap));
+                int left=(int)(float)(Float)call(view,"leftWidth",new Class<?>[0]);pixel[0]=bitmap.getPixel(left+20,view.getHeight()/2);bitmap.recycle();});
+            int lum=(Color.red(pixel[0])*3+Color.green(pixel[0])*6+Color.blue(pixel[0]))/10;check(lum<90,"dark theme: dark work area ("+Integer.toHexString(pixel[0])+")");
+            java.lang.reflect.Field ink=CadWorkspaceView.class.getDeclaredField("INK");ink.setAccessible(true);int c2=ink.getInt(null);check((Color.red(c2)+Color.green(c2)+Color.blue(c2))/3>180,"dark theme: light text colour");
+            TabletFlowProbe.screenshot(activity,"region-04-dark-theme");
+        } finally {active.setInt(null,previous);applyOptions.invoke(null);ui(()->call(view,"applyAppOptions",new Class<?>[0]));}
         System.out.println("PASS RegionUiProbe");
     }
     static CheckBox find(View v,String text){if(v instanceof CheckBox&&((CheckBox)v).getText().toString().equals(text))return (CheckBox)v;if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++){CheckBox f=find(((ViewGroup)v).getChildAt(i),text);if(f!=null)return f;}return null;}

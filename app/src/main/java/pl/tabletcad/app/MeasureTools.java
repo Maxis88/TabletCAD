@@ -141,7 +141,7 @@ final class MeasureTools {
     }
 
     void drawMeasuredCurve(Canvas canvas) {
-        boolean visible=false;ws.paint.setStrokeWidth(ws.dp(3));ws.paint.setColor(Color.rgb(45,90,190));
+        boolean visible=false;ws.paint.setStrokeWidth(ws.dp(3));ws.paint.setColor(CadWorkspaceView.MEASURE);
         for(int i=0;i+15<ws.measureEdges.length;i+=16)if(ws.measureEdges[i+15]==ws.measuredCurve[15]) {
             double[] a=ws.projectWorldPoint(ws.measureEdges[i+9],ws.measureEdges[i+10],ws.measureEdges[i+11]);
             double[] b=ws.projectWorldPoint(ws.measureEdges[i+12],ws.measureEdges[i+13],ws.measureEdges[i+14]);
@@ -162,7 +162,7 @@ final class MeasureTools {
         ws.paint.setStrokeWidth(ws.dp(1));canvas.drawLine(ax,ay,ax+nx*1.3f,ay+ny*1.3f,ws.paint);canvas.drawLine(bx,by,bx+nx*1.3f,by+ny*1.3f,ws.paint);
         canvas.drawLine(ax+nx,ay+ny,bx+nx,by+ny,ws.paint);
         canvas.drawCircle(ax+nx,ay+ny,ws.dp(2.5f),ws.paint);canvas.drawCircle(bx+nx,by+ny,ws.dp(2.5f),ws.paint);
-        ws.text(canvas,label,(ax+bx)/2+nx,(ay+by)/2+ny-ws.dp(8),12,Color.rgb(45,90,190),true,Paint.Align.CENTER);
+        ws.text(canvas,label,(ax+bx)/2+nx,(ay+by)/2+ny-ws.dp(8),12,CadWorkspaceView.MEASURE,true,Paint.Align.CENTER);
     }
 
     CadWorkspaceView.MeasurePoint nearestMeasurePoint(float x, float y) {

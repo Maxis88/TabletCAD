@@ -65,6 +65,7 @@ public final class MainActivity extends Activity {
         if(report!=null){prefs.edit().putLong("seen",System.currentTimeMillis()).apply();
             Toast.makeText(this,"Poprzednie uruchomienie zakończyło się błędem. Raport: Android/data/pl.tabletcad.app/files/"+CrashReport.NAME,Toast.LENGTH_LONG).show();}
         AppOptions.load(this);
+        if(AppOptions.activityTheme()!=0)setTheme(AppOptions.activityTheme());
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setDecorFitsSystemWindows(false);
         // IME insets shorten only the native panel; editing never pans/resizes the CAD camera.

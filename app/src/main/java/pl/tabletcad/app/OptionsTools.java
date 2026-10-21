@@ -19,6 +19,7 @@ final class OptionsTools {
         TextView info=new TextView(ws.getContext());info.setText("Ustawienia programu na tym tablecie. Nie zmieniają geometrii zapisanej w projektach.");info.setTextColor(PanelStyle.MUTED);form.addView(info);
         CheckBox threads=check(form,"Pokazuj gwinty modelowane",AppOptions.showThreads);
         TextView threadInfo=new TextView(ws.getContext());threadInfo.setText("Wyłączone: gwinty są pomijane w widoku i pomiarach (otwór gładki, szybsze przeliczanie). Eksport STEP/STL/OBJ/3MF zawsze zawiera gwint.");threadInfo.setTextColor(PanelStyle.MUTED);threadInfo.setTextSize(12);form.addView(threadInfo);
+        Spinner theme=choice(form,"Motyw interfejsu (po ponownym uruchomieniu)",AppOptions.THEMES,AppOptions.theme);
         Spinner background=choice(form,"Tło obszaru roboczego",AppOptions.BACKGROUNDS,AppOptions.background);
         Spinner accent=choice(form,"Kolor akcentu (przyciski, zaznaczenia)",AppOptions.ACCENTS,AppOptions.accent);
         Spinner model=choice(form,"Kolor bryły",AppOptions.MODEL_COLORS,AppOptions.modelColor);
@@ -28,19 +29,30 @@ final class OptionsTools {
         int unitIndex=0;for(int i=0;i<Units.CODES.length;i++)if(Units.CODES[i].equals(AppOptions.defaultUnits))unitIndex=i;
         Spinner units=choice(form,"Jednostki nowych projektów",Units.NAMES,unitIndex);
         ws.new PropertyBuilder().setTitle("Opcje").setView(form).setNegativeButton("Anuluj",null).setNeutralButton("Domyślne",(d,w)->{
-            boolean threadsChanged=!AppOptions.showThreads;
-            AppOptions.showThreads=true;AppOptions.showGrid=true;AppOptions.showViewCube=true;AppOptions.showSketchDimensions=true;AppOptions.background=0;AppOptions.accent=0;AppOptions.modelColor=0;AppOptions.defaultUnits="mm";
+            boolean threadsChanged=!AppOptions.showThreads;themeChanged=AppOptions.theme!=0;
+            AppOptions.theme=0;AppOptions.showThreads=true;AppOptions.showGrid=true;AppOptions.showViewCube=true;AppOptions.showSketchDimensions=true;AppOptions.background=0;AppOptions.accent=0;AppOptions.modelColor=0;AppOptions.defaultUnits="mm";
             finish(threadsChanged);
         }).setPositiveButton("Zapisz",(d,w)->{
-            boolean threadsChanged=threads.isChecked()!=AppOptions.showThreads;
+            boolean threadsChanged=threads.isChecked()!=AppOptions.showThreads;themeChanged=theme.getSelectedItemPosition()!=AppOptions.theme;
+            AppOptions.theme=theme.getSelectedItemPosition();
             AppOptions.showThreads=threads.isChecked();AppOptions.showGrid=grid.isChecked();AppOptions.showViewCube=cube.isChecked();AppOptions.showSketchDimensions=dims.isChecked();
             AppOptions.background=background.getSelectedItemPosition();AppOptions.accent=accent.getSelectedItemPosition();AppOptions.modelColor=model.getSelectedItemPosition();
             AppOptions.defaultUnits=Units.CODES[units.getSelectedItemPosition()];
             finish(threadsChanged);
         }).show();
     }
+    private boolean themeChanged;
     private void finish(boolean threadsChanged) {
         AppOptions.save(ws.getContext());ws.applyAppOptions();
+        if(themeChanged&&AppOptions.themePending()&&ws.getContext() instanceof android.app.Activity) {
+            themeChanged=false;android.app.Activity activity=(android.app.Activity)ws.getContext();
+            new android.app.AlertDialog.Builder(activity).setTitle("Motyw "+AppOptions.THEMES[AppOptions.theme])
+                .setMessage("Nowy motyw obejmie cały program po ponownym uruchomieniu. Projekt jest zapisany. Uruchomić ponownie teraz?")
+                .setNegativeButton("Później",(d,w)->{ws.operationMessage="Motyw zostanie zastosowany przy następnym uruchomieniu";ws.invalidate();})
+                .setPositiveButton("Uruchom ponownie",(d,w)->activity.recreate()).show();
+            if(!threadsChanged){ws.invalidate();return;}
+        }
+        themeChanged=false;
         if(threadsChanged)ws.rebuildForOptions(AppOptions.showThreads?"Gwinty widoczne – przeliczanie modelu…":"Gwinty ukryte – przeliczanie modelu…");
         else{ws.operationMessage="Zapisano opcje";ws.invalidate();}
     }

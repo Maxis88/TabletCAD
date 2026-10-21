@@ -74,11 +74,14 @@ public final class CadWorkspaceView extends View {
         void requestOpenStep();
     }
     private static final int BG = Color.rgb(242, 245, 247);
-    private static final int PANEL = Color.rgb(255, 255, 255);
+    /** Theme colours (Opcje → Motyw); assigned by {@link AppOptions#apply}. */
+    static int PANEL = Color.rgb(255, 255, 255);
     /** Unselected on-model option chips: dark, so their white labels are readable over the white model view. */
     private static final int CHIP_DARK = Color.argb(235, 38, 50, 56);
-    static final int INK = Color.rgb(28, 39, 49);
-    static final int MUTED = Color.rgb(101, 116, 130);
+    static int INK = Color.rgb(28, 39, 49);
+    static int MUTED = Color.rgb(101, 116, 130);
+    static int SKETCH_LINE = Color.rgb(30, 105, 210), DIMENSION = Color.rgb(117, 70, 160), MEASURE = Color.rgb(45, 90, 190),
+        SELECTION_ROW = Color.rgb(226, 242, 240), ROW_BG = Color.rgb(244, 247, 249), SKETCH_POINT = Color.rgb(90, 110, 130);
     /** Accent colour chosen in Opcje (see {@link AppOptions}). */
     static int ACCENT = Color.rgb(13, 148, 136);
     private static final int GRID = Color.rgb(220, 227, 232);
@@ -86,7 +89,7 @@ public final class CadWorkspaceView extends View {
     private static final int CHROME = Color.rgb(20, 26, 33);
     private static final int CHROME_RAISED = Color.rgb(33, 42, 52);
     private static final int CHROME_TEXT = Color.rgb(196, 206, 214);
-    private static final int DIVIDER = Color.rgb(214, 222, 228);
+    static int DIVIDER = Color.rgb(214, 222, 228);
     /** Layout tokens: one 64 dp top bar (project + tools + files), collapsible model tree. */
     private static final float STRIP_DP = 44f, TOP_BAR_DP = 64f, TOOLBAR_X_DP = 224f, PANEL_DP = 272f;
     private boolean treeCollapsed;
@@ -235,7 +238,7 @@ public final class CadWorkspaceView extends View {
     private void drawSketchPoint(Canvas canvas,SketchPrimitive p) {
         if(!sketchPointVisible(p.x1,p.y1))return;PointF s=projectSketchPoint(p.x1,p.y1);
         boolean selected=p.id.equals(selectedSketchId)||sketchMulti.contains(p.id);
-        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(selected?2:1.5f));paint.setColor(ghostDrawing?Color.argb(150,13,148,136):selected?Color.rgb(245,145,20):Color.rgb(90,110,130));
+        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(selected?2:1.5f));paint.setColor(ghostDrawing?Color.argb(150,13,148,136):selected?Color.rgb(245,145,20):SKETCH_POINT);
         float r=dp(5);canvas.drawLine(s.x-r,s.y,s.x+r,s.y,paint);canvas.drawLine(s.x,s.y-r,s.x,s.y+r,paint);
         paint.setStyle(Paint.Style.FILL);canvas.drawCircle(s.x,s.y,dp(2),paint);
     }
@@ -1373,7 +1376,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         canvas.save();canvas.clipRect(0,treeTop(),left,timelineTop());
         for(int i=0;i<modelTreeRows.size();i++) {
             ModelTree.Row entry=modelTreeRows.get(i);float y=treeTop()+i*dp(36)-treeScroll;if(y+dp(36)<treeTop()||y>getHeight())continue;
-            if(entry.key.equals(selectedTreeKey)){paint.setColor(Color.rgb(226,242,240));canvas.drawRoundRect(new RectF(dp(8),y,dp(220),y+dp(34)),dp(6),dp(6),paint);}
+            if(entry.key.equals(selectedTreeKey)){paint.setColor(SELECTION_ROW);canvas.drawRoundRect(new RectF(dp(8),y,dp(220),y+dp(34)),dp(6),dp(6),paint);}
             if(entry.datum()) {
                 Datum d=datumTools.datum(entry.datum);String glyph=d==null?"?":d.plane()?"▱":d.axis()?"⟋":"⊕";
                 text(canvas,glyph,dp(34),y+dp(23),13,Color.rgb(214,137,16),true);
@@ -2207,7 +2210,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         if(!sketchGhost.isEmpty()){ghostDrawing=true;for(SketchPrimitive ghost:sketchGhost)drawSketchEntity(canvas,ghost);ghostDrawing=false;paint.setPathEffect(null);}
         if(inSketch() && showSketchDimensions){drawPositionDimensions(canvas,displayedSketch);drawAngleDimensions(canvas,displayedSketch);drawDistanceDimensions(canvas,displayedSketch);}
-        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1.5f));paint.setColor(Color.rgb(117,70,160));
+        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1.5f));paint.setColor(DIMENSION);
         if(inSketch())for(SketchConstraints.Link link:project.coincidences)for(SketchPrimitive p:displayedSketch)if(p.id.equals(link.a)) {
             double[] a=SketchConstraints.anchor(p,link.ai);
             if(sketchPointVisible(a[0],a[1])) {
@@ -2220,7 +2223,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                     double[] b=SketchConstraints.anchor(second,link.bi);
                     if(sketchPointVisible(b[0],b[1])) {
                         PointF other=projectSketchPoint(b[0],b[1]);paint.setStyle(Paint.Style.FILL);
-                        text(canvas,NonlinearConstraints.relation(link.kind)?NonlinearConstraints.symbol(link.kind):link.kind.equals("horizontal")?"H":"V",(point.x+other.x)/2+dp(8),(point.y+other.y)/2-dp(8),10,Color.rgb(117,70,160),true);
+                        text(canvas,NonlinearConstraints.relation(link.kind)?NonlinearConstraints.symbol(link.kind):link.kind.equals("horizontal")?"H":"V",(point.x+other.x)/2+dp(8),(point.y+other.y)/2-dp(8),10,DIMENSION,true);
                         paint.setStyle(Paint.Style.STROKE);
                     }
                 }
@@ -2359,7 +2362,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         PointF p2 = projectSketchPoint(entity.x2, entity.y2);
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(dp(selected ? 3.5f : 2f));
-        paint.setColor(selected ? Color.rgb(245, 145, 20) : Color.rgb(30, 105, 210));
+        paint.setColor(selected ? Color.rgb(245, 145, 20) : SKETCH_LINE);
         if(entity.construction) paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(8),dp(5)},0));
         if(ghostDrawing){paint.setColor(Color.rgb(46,160,90));paint.setStrokeWidth(dp(2.2f));paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(6),dp(4)},0));}
         if(entity.isEllipseArc()) {double[] e=EllipseArc.sample(entity.ellipseArc(),96);for(int i=0;i+3<e.length;i+=2)drawSketchSegment(canvas,e[i],e[i+1],e[i+2],e[i+3]);}
@@ -2467,7 +2470,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         PointF a=projectSketchPoint(entity.x1,entity.y1),b=projectSketchPoint(entity.x2,entity.y2),axis=projectSketchPoint(entity.x1+1,entity.y1);
         float start=(float)Math.toDegrees(Math.atan2(axis.y-a.y,axis.x-a.x)),end=(float)Math.toDegrees(Math.atan2(b.y-a.y,b.x-a.x));
         float sweep=(float)Math.IEEEremainder(end-start,360),radius=dp(36);
-        paint.setStyle(Paint.Style.STROKE);paint.setColor(Color.rgb(117,70,160));paint.setStrokeWidth(dp(1));
+        paint.setStyle(Paint.Style.STROKE);paint.setColor(DIMENSION);paint.setStrokeWidth(dp(1));
         canvas.drawArc(new RectF(a.x-radius,a.y-radius,a.x+radius,a.y+radius),start,sweep,false,paint);paint.setStyle(Paint.Style.FILL);
         double angle=Math.toRadians(start+sweep/2);float x=a.x+(float)Math.cos(angle)*dp(52),y=a.y+(float)Math.sin(angle)*dp(52);
         String label=String.format(java.util.Locale.US,"α %.2f°",SketchDimensions.angle(entity));paint.setTextSize(dp(10));float half=paint.measureText(label)/2+dp(10);
@@ -2477,7 +2480,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             if(!collision&&bounds.left>leftWidth()&&bounds.right<viewportRight()&&bounds.top>viewTop()+dp(46))break;
             double candidate=angle+(attempt%4+1)*Math.PI/2;float distance=dp(60+attempt/4*24);x=a.x+(float)Math.cos(candidate)*distance;y=a.y+(float)Math.sin(candidate)*distance;bounds.set(x-half,y-dp(18),x+half,y+dp(8));
         }
-        text(canvas,label,x,y,10,Color.rgb(117,70,160),true,Paint.Align.CENTER);dimensionHits.add(new DimensionHit(entity.id,"angle",0,bounds));
+        text(canvas,label,x,y,10,DIMENSION,true,Paint.Align.CENTER);dimensionHits.add(new DimensionHit(entity.id,"angle",0,bounds));
     }
     private boolean dimensionReplay,dimensionMoving;private double dimensionStartOffset;
     private float sketchPixelsPerMm(){PointF a=projectSketchPoint(0,0),b=projectSketchPoint(1,0);return (float)Math.max(1e-3,Math.hypot(b.x-a.x,b.y-a.y));}
@@ -2761,11 +2764,11 @@ if (isInsideViewport(e.getX(), e.getY())) {
             PointF c=projectSketchPoint(cx,cy),pa=projectSketchPoint(cx+da[0],cy+da[1]),pb=projectSketchPoint(cx+db[0],cy+db[1]);
             double sa=Math.atan2(pa.y-c.y,pa.x-c.x),sb=Math.atan2(pb.y-c.y,pb.x-c.x),sweep=Math.IEEEremainder(sb-sa,Math.PI*2);
             float radius=dp(46);RectF oval=new RectF(c.x-radius,c.y-radius,c.x+radius,c.y+radius);
-            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(Color.rgb(117,70,160));
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(DIMENSION);
             canvas.drawArc(oval,(float)Math.toDegrees(sa),(float)Math.toDegrees(sweep),false,paint);
             double mid=sa+sweep/2;float lx=c.x+(float)Math.cos(mid)*(radius+dp(16)),ly=c.y+(float)Math.sin(mid)*(radius+dp(16));
             String label="∠ "+formatAngle(Math.abs(link.x));
-            text(canvas,label,lx,ly+dp(4),10,Color.rgb(117,70,160),true,Paint.Align.CENTER);
+            text(canvas,label,lx,ly+dp(4),10,DIMENSION,true,Paint.Align.CENTER);
             paint.setTextSize(dp(10));float width=paint.measureText(label);
             dimensionHits.add(new DimensionHit("angle:"+index,"angle",0,new RectF(lx-width/2-dp(10),ly-dp(14),lx+width/2+dp(10),ly+dp(10))));
         }
@@ -2789,7 +2792,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             if(!sketchPointVisible(pa[0],pa[1])||!sketchPointVisible(end[0],end[1]))continue;
             PointF from=projectSketchPoint(end[0],end[1]),to=projectSketchPoint(pa[0],pa[1]),reference=projectSketchPoint(pb[0],pb[1]);
             if(Math.hypot(from.x-reference.x,from.y-reference.y)>dp(2)) {
-                paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(Color.rgb(117,70,160));
+                paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(DIMENSION);
                 paint.setPathEffect(new android.graphics.DashPathEffect(new float[]{dp(4),dp(3)},0));canvas.drawLine(reference.x,reference.y,from.x,from.y,paint);paint.setPathEffect(null);
             }
             double value=SketchConstraints.measure(geometry,link);
@@ -2842,14 +2845,14 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if(inside!=null&&nx*(inside.x-(a.x+b.x)/2)+ny*(inside.y-(a.y+b.y)/2)>0){nx=-nx;ny=-ny;}
         String offsetKey=drawingDimension==null?null:drawingDimension.key();
         float offset=dp(22)+(float)(offsetKey==null?0:project.dimensionOffsets.getOrDefault(offsetKey,0.0)*sketchPixelsPerMm()),ax=a.x+nx*offset,ay=a.y+ny*offset,bx=b.x+nx*offset,by=b.y+ny*offset;
-        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(Color.rgb(117,70,160));
+        paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(DIMENSION);
         canvas.drawLine(a.x,a.y,ax+nx*dp(4),ay+ny*dp(4),paint);canvas.drawLine(b.x,b.y,bx+nx*dp(4),by+ny*dp(4),paint);
         canvas.drawLine(ax,ay,bx,by,paint);
         canvas.drawLine(ax-nx*dp(3),ay-ny*dp(3),ax+nx*dp(3),ay+ny*dp(3),paint);
         canvas.drawLine(bx-nx*dp(3),by-ny*dp(3),bx+nx*dp(3),by+ny*dp(3),paint);
         float angle=(float)Math.toDegrees(Math.atan2(dy,dx));if(angle>90||angle<-90)angle+=180;
         canvas.save();canvas.translate((ax+bx)/2,(ay+by)/2);canvas.rotate(angle);
-        text(canvas,label,0,-dp(5),10,Color.rgb(117,70,160),true,Paint.Align.CENTER);canvas.restore();
+        text(canvas,label,0,-dp(5),10,DIMENSION,true,Paint.Align.CENTER);canvas.restore();
         if(drawingDimension!=null) {
             float width=paint.measureText(label);RectF bounds=new RectF(-width/2-dp(10),-dp(22),width/2+dp(10),dp(7));
             android.graphics.Matrix transform=new android.graphics.Matrix();transform.setRotate(angle);transform.postTranslate((ax+bx)/2,(ay+by)/2);transform.mapRect(bounds);
@@ -2951,7 +2954,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             boolean selected) {
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(dp(selected ? 3.5f : 2f));
-        paint.setColor(selected ? Color.rgb(245, 145, 20) : Color.rgb(30, 105, 210));
+        paint.setColor(selected ? Color.rgb(245, 145, 20) : SKETCH_LINE);
         if (type.equals("Linia") || type.equals("Pomocnicza")) {
             canvas.drawLine(x1, y1, x2, y2, paint);
         } else if (type.equals("Okrąg")) {
@@ -4224,7 +4227,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         }
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(dp(2f));
-        paint.setColor(Color.rgb(45, 90, 190));
+        paint.setColor(MEASURE);
         canvas.drawCircle(measureA.sx, measureA.sy, dp(7), paint);
         if (measureB != null) {
             canvas.drawCircle(measureB.sx, measureB.sy, dp(7), paint);
@@ -4235,7 +4238,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             float mx = (measureA.sx + measureB.sx) / 2f;
             float my = (measureA.sy + measureB.sy) / 2f - dp(12);
             text(canvas, formatMm(measureA.distanceTo(measureB)), mx, my,
-                12, Color.rgb(45, 90, 190), true, Paint.Align.CENTER);
+                12, MEASURE, true, Paint.Align.CENTER);
         }
     }
 
@@ -6585,7 +6588,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     private void labelValue(Canvas canvas, float right, String label, String value, float y) {
         text(canvas, label, right + dp(18), y, 12, MUTED, false);
-        paint.setColor(Color.rgb(244, 247, 249));
+        paint.setColor(ROW_BG);
         canvas.drawRoundRect(new RectF(right + dp(18), y + dp(10), getWidth() - dp(18), y + dp(52)), dp(8), dp(8), paint);
         text(canvas, value, right + dp(32), y + dp(37), 14, INK, false);
     }
@@ -6596,7 +6599,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
 
     private void treeRow(Canvas canvas, String id, String value, float top, float bottom) {
         if (id.equals(treeSelection)) {
-            paint.setColor(Color.rgb(226, 242, 240));
+            paint.setColor(SELECTION_ROW);
             canvas.drawRoundRect(new RectF(dp(10), top, dp(214), bottom), dp(7), dp(7), paint);
             paint.setColor(ACCENT);
             canvas.drawRoundRect(new RectF(dp(10), top, dp(14), bottom), dp(2), dp(2), paint);
