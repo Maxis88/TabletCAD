@@ -122,7 +122,7 @@ final class SketchConstraintTools {
             ws.new PropertyBuilder().setCompact(Float.NaN,Float.NaN).setTitle("Styczność okręgów").setItems(new String[]{"Zewnętrzna","Wewnętrzna"},(d,w)->addSketchConstraint(new SketchConstraints.Link(kind,a.id,0,b.id,0,w==0?1:-1,0))).setNegativeButton("Anuluj",null).show();
         } else {
             double side=1;
-            if(kind.equals("tangent")){SketchPrimitive circle=a.type.equals("Okrąg")?a:b,line=a.type.equals("Okrąg")?b:a;side=Math.copySign(1,(circle.x1-line.x1)*(line.y2-line.y1)-(circle.y1-line.y1)*(line.x2-line.x1));}
+            if(kind.equals("tangent")){boolean round=a.type.equals("Okrąg")||a.isEllipse();SketchPrimitive circle=round?a:b,line=round?b:a;side=Math.copySign(1,(circle.x1-line.x1)*(line.y2-line.y1)-(circle.y1-line.y1)*(line.x2-line.x1));}
             addSketchConstraint(new SketchConstraints.Link(kind,a.id,ai,b.id,0,side,0));
         }
         ws.invalidate();

@@ -14,6 +14,7 @@ final class MeasureTools {
     private final CadWorkspaceView ws;
     MeasureTools(CadWorkspaceView view){ws=view;}
     void handleMeasureTap(float x, float y) {
+        if(loading){ws.operationMessage="Wczytywanie geometrii pomiarów… dotknij ponownie za chwilę";ws.invalidate();return;}
         if(ws.measurementOutput==null)showMeasurementPanel();
         if(ws.measureFaceMode>0&&ws.project.importedMeshSource==null){measureFaceTap(x,y);return;}
         if(ws.findFaceAt(x,y)<0&&nearestBrepVertex(x,y)==null&&nearestMeasurePoint(x,y)==null){ws.clearViewportSelection();return;}
@@ -50,6 +51,7 @@ final class MeasureTools {
 
     /** Angle (two picks: straight edges, planar faces or surface axes) or exact face area. */
     void measureFaceTap(float x,float y) {
+        if(loading){ws.operationMessage="Wczytywanie geometrii pomiarów… dotknij ponownie za chwilę";ws.invalidate();return;}
         double distance=ws.dp(14);int selected=-1;
         if(ws.measureFaceMode==1)for(int i=0;i+15<ws.measureEdges.length;i+=16) {
             double[] a=ws.projectWorldPoint(ws.measureEdges[i+9],ws.measureEdges[i+10],ws.measureEdges[i+11]),b=ws.projectWorldPoint(ws.measureEdges[i+12],ws.measureEdges[i+13],ws.measureEdges[i+14]);
@@ -83,11 +85,23 @@ final class MeasureTools {
         if(!ws.project.hasSolid()||ws.project.importedMeshSource!=null)return;
         String source=ws.project.importedStep?ws.importedSourceFile().getAbsolutePath():null;
         double radius=ws.project.importedStep?0:ws.project.filletRadius;
-        ws.measureEdges=NativeCadEngine.modelEdges(ws.modelWidth,ws.modelHeight,ws.modelDepth,radius,ws.evaluationBase(),ws.kernelFeatures(),source);
-        ws.measureProperties=NativeCadEngine.edgeMeasurements(ws.modelWidth,ws.modelHeight,ws.modelDepth,radius,ws.evaluationBase(),ws.kernelFeatures(),source);
-        ws.measureFaces=NativeCadEngine.faceAnalysis(ws.modelWidth,ws.modelHeight,ws.modelDepth,radius,ws.evaluationBase(),ws.kernelFeatures(),source);
         ws.measureDirections.clear();ws.measuredFace=null;ws.measuredFaceIndex=-1;
+        final double w=ws.modelWidth,h=ws.modelHeight,d=ws.modelDepth;final double[] base=ws.evaluationBase(),features=ws.kernelFeatures();
+        final int generation=++loads;
+        // Kernel queries of a large model take seconds on the tablet: they run on a worker thread;
+        // taps meanwhile see an empty edge list and the panel says the geometry is still loading.
+        if(!ws.isAttachedToWindow()){apply(NativeCadEngine.modelEdges(w,h,d,radius,base,features,source),NativeCadEngine.edgeMeasurements(w,h,d,radius,base,features,source),NativeCadEngine.faceAnalysis(w,h,d,radius,base,features,source));return;}
+        loading=true;ws.measureFaces=new double[0];
+        new Thread(()->{
+            double[] edges,props,faces;
+            try{edges=NativeCadEngine.modelEdges(w,h,d,radius,base,features,source);props=NativeCadEngine.edgeMeasurements(w,h,d,radius,base,features,source);faces=NativeCadEngine.faceAnalysis(w,h,d,radius,base,features,source);}
+            catch(RuntimeException error){edges=props=faces=new double[0];}
+            final double[] e=edges,pr=props,f=faces;
+            ws.post(()->{if(generation!=loads)return;loading=false;apply(e,pr,f);if(ws.mode.equals("Zmierz"))updateMeasurementOutput();ws.invalidate();});
+        },"TabletCAD-measure").start();
     }
+    private int loads;boolean loading;
+    private void apply(double[] edges,double[] props,double[] faces){ws.measureEdges=edges;ws.measureProperties=props;ws.measureFaces=faces;}
 
     void showMeasurementPanel() {
         android.widget.RadioGroup types=new android.widget.RadioGroup(ws.getContext());
@@ -115,6 +129,7 @@ final class MeasureTools {
     }
 
     void updateMeasurementOutput() {
+        if(loading){if(ws.measurementOutput!=null)ws.measurementOutput.setText("Wczytywanie geometrii pomiarów…");return;}
         if(ws.measurementOutput==null)return;
         if(ws.measureFaceMode==1) {
             if(ws.measureDirections.isEmpty())ws.measurementOutput.setText("Dotknij pierwszej ściany płaskiej, prostej krawędzi albo ściany walcowej (oś).");

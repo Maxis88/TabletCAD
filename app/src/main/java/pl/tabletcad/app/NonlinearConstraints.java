@@ -21,10 +21,16 @@ public final class NonlinearConstraints {
         }
         int[] indices(int index){if(source.type.equals("Prostokąt"))return new int[][]{{0,1},{2,1},{2,3},{0,3}}[index];return new int[]{2*index,2*index+1};}
         boolean circle(){return source.type.equals("Okrąg");}
+        boolean ellipse(){return source.isEllipse();}
         boolean line(){return source.type.equals("Linia")||source.type.equals("Pomocnicza");}
     }
     private static Block block(Map<String,Block> blocks,String id){Block b=blocks.get(id);if(b==null)throw new IllegalArgumentException("Brak geometrii więzu");return b;}
     private static double length(double[] p){return Math.hypot(p[2]-p[0],p[3]-p[1]);}
+    /** Distance from the centre of an ellipse (data: centre, end of the semi-major axis) to its tangent line with unit normal n. */
+    static double support(double[] e,double minor,double nx,double ny) {
+        double a=length(e);if(a<1e-9)throw new IllegalArgumentException("Zerowa elipsa");double ux=(e[2]-e[0])/a,uy=(e[3]-e[1])/a,nu=nx*ux+ny*uy,nv=-nx*uy+ny*ux;
+        return Math.sqrt(a*a*nu*nu+minor*minor*nv*nv);
+    }
     private static void line(Block b){if(!b.line())throw new IllegalArgumentException("Ten więz wymaga dwóch pojedynczych linii");}
     private static double[] axis(Link l,Map<String,Block> blocks,double[] all) {
         if(l.axis.equals("@X"))return new double[]{0,0,1,0};if(l.axis.equals("@Y"))return new double[]{0,0,0,1};
@@ -93,11 +99,19 @@ public final class NonlinearConstraints {
                 if(!a.circle()||!b.circle())throw new IllegalArgumentException("Współśrodkowość wymaga okręgów");out.add(p[0]-q[0]);out.add(p[1]-q[1]);break;
             case "pointOn": {
                 double[] point=a.point(all,l.ai);if(b.line()) {double d=length(q);if(d<.001)throw new IllegalArgumentException("Zerowa linia");out.add(((point[0]-q[0])*(q[3]-q[1])-(point[1]-q[1])*(q[2]-q[0]))/d);}
-                else if(b.circle())out.add(Math.hypot(point[0]-q[0],point[1]-q[1])-length(q));else throw new IllegalArgumentException("Punkt na obiekcie: wybierz linię albo okrąg");break;
+                else if(b.circle())out.add(Math.hypot(point[0]-q[0],point[1]-q[1])-length(q));
+                else if(b.ellipse()){double ea=length(q),ux=(q[2]-q[0])/ea,uy=(q[3]-q[1])/ea,dx=point[0]-q[0],dy=point[1]-q[1],lu=(dx*ux+dy*uy)/ea,lv=(-dx*uy+dy*ux)/b.source.minor;out.add((Math.hypot(lu,lv)-1)*Math.min(ea,b.source.minor));}
+                else throw new IllegalArgumentException("Punkt na obiekcie: wybierz linię, okrąg albo elipsę");break;
             }
             case "tangent": {
+                if((a.ellipse()&&b.line())||(a.line()&&b.ellipse())) {
+                    // Line tangent to an ellipse: signed distance of the centre = ± support distance along the line normal.
+                    Block el=a.ellipse()?a:b,edge=a.ellipse()?b:a;double[] c=el.data(all),e=edge.data(all);double len=length(e);if(len<.001)throw new IllegalArgumentException("Zerowa linia");
+                    double nx=(e[3]-e[1])/len,ny=-(e[2]-e[0])/len,distance=(c[0]-e[0])*nx+(c[1]-e[1])*ny;
+                    out.add(distance-(l.x<0?-1:1)*support(c,el.source.minor,nx,ny));break;
+                }
                 if(a.circle()&&b.circle()){out.add(Math.hypot(p[0]-q[0],p[1]-q[1])-(l.x<0?Math.abs(length(p)-length(q)):length(p)+length(q)));break;}
-                Block circle=a.circle()?a:b,edge=a.circle()?b:a;if(!circle.circle()||!edge.line())throw new IllegalArgumentException("Styczność: okrąg i linia lub dwa okręgi");
+                Block circle=a.circle()?a:b,edge=a.circle()?b:a;if(!circle.circle()||!edge.line())throw new IllegalArgumentException("Styczność: okrąg lub elipsa z linią, albo dwa okręgi");
                 double[] c=circle.data(all),e=edge.data(all);double len=length(e);if(len<.001)throw new IllegalArgumentException("Zerowa linia");
                 double distance=((c[0]-e[0])*(e[3]-e[1])-(c[1]-e[1])*(e[2]-e[0]))/len;out.add(distance-(l.x<0?-1:1)*length(c));break;
             }
@@ -241,6 +255,11 @@ public final class NonlinearConstraints {
                 if(a.circle()&&b.circle()) {
                     double distance=l.x<0?Math.abs(length(p)-length(q)):length(p)+length(q),angle=Math.atan2(q[1]-p[1],q[0]-p[0]),dx=p[0]+distance*Math.cos(angle)-q[0],dy=p[1]+distance*Math.sin(angle)-q[1];
                     q[0]+=dx;q[1]+=dy;q[2]+=dx;q[3]+=dy;put(b,all,q);break;
+                }
+                if((a.ellipse()&&b.line())||(a.line()&&b.ellipse())) {
+                    Block el=a.ellipse()?a:b,edge=a.ellipse()?b:a;double[] c=el.data(all),e=edge.data(all);double len=length(e);if(len<.001)break;double nx=(e[3]-e[1])/len,ny=-(e[2]-e[0])/len;
+                    double shift=(l.x<0?-1:1)*support(c,el.source.minor,nx,ny)-((c[0]-e[0])*nx+(c[1]-e[1])*ny);
+                    if(el==b){for(int i=0;i<4;i+=2){c[i]+=nx*shift;c[i+1]+=ny*shift;}put(el,all,c);}else{for(int i=0;i<4;i+=2){e[i]-=nx*shift;e[i+1]-=ny*shift;}put(edge,all,e);}break;
                 }
                 Block circle=a.circle()?a:b,edge=a.circle()?b:a;if(!circle.circle()||!edge.line())break;
                 double[] c=circle.data(all),e=edge.data(all);double len=length(e),nx=(e[3]-e[1])/len,ny=-(e[2]-e[0])/len;
