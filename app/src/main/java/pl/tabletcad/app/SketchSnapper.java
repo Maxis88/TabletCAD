@@ -7,14 +7,19 @@ import pl.tabletcad.app.model.SketchPrimitive;
 public final class SketchSnapper {
     private SketchSnapper() {}
     public static double[] anchors(SketchPrimitive p) {
-        if(p.curves!=null)return SketchCurves.samples(p.curves,16);
-        if(p.vertices!=null)return p.vertices.clone();
-        if(p.type.equals("Prostokąt"))return new double[]{p.x1,p.y1,p.x2,p.y1,p.x2,p.y2,p.x1,p.y2,(p.x1+p.x2)/2,p.y1,p.x2,(p.y1+p.y2)/2,(p.x1+p.x2)/2,p.y2,p.x1,(p.y1+p.y2)/2};
+        if(p.curves!=null)return withCentre(p,SketchCurves.samples(p.curves,16));
+        if(p.vertices!=null)return withCentre(p,p.vertices.clone());
+        if(p.type.equals("Prostokąt"))return new double[]{p.x1,p.y1,p.x2,p.y1,p.x2,p.y2,p.x1,p.y2,(p.x1+p.x2)/2,p.y1,p.x2,(p.y1+p.y2)/2,(p.x1+p.x2)/2,p.y2,p.x1,(p.y1+p.y2)/2,(p.x1+p.x2)/2,(p.y1+p.y2)/2};
         if(p.isEllipseArc()){double[] d=p.ellipseArc(),m=EllipseArc.point(d,(d[5]+d[6])/2);return new double[]{p.x1,p.y1,p.x2,p.y2,d[0],d[1],m[0],m[1]};}
         if(p.isEllipse()){double a=p.major(),ux=(p.x2-p.x1)/a,uy=(p.y2-p.y1)/a,b=p.minor;return new double[]{p.x1,p.y1,p.x1+ux*a,p.y1+uy*a,p.x1-ux*a,p.y1-uy*a,p.x1-uy*b,p.y1+ux*b,p.x1+uy*b,p.y1-ux*b};}
         if(p.type.equals("Okrąg")){double r=Math.hypot(p.x2-p.x1,p.y2-p.y1);return new double[]{p.x1,p.y1,p.x1+r,p.y1,p.x1-r,p.y1,p.x1,p.y1+r,p.x1,p.y1-r};}
         if(p.isPoint())return new double[]{p.x1,p.y1};
         return new double[]{p.x1,p.y1,p.x2,p.y2,(p.x1+p.x2)/2,(p.y1+p.y2)/2};
+    }
+    /** Adds the surface centre of a closed contour so a moved shape can be centred on a point. */
+    private static double[] withCentre(SketchPrimitive p,double[] anchors) {
+        double[] c=SketchCenters.center(p);if(c==null)return anchors;
+        double[] r=java.util.Arrays.copyOf(anchors,anchors.length+2);r[anchors.length]=c[0];r[anchors.length+1]=c[1];return r;
     }
     /** Snap actual moving geometry, independent of where the finger grabbed it. */
     public static double[] translation(SketchPrimitive source,double dx,double dy,List<SketchPrimitive> geometry,double tolerance) {
@@ -84,6 +89,12 @@ public final class SketchSnapper {
         int ends=points.size();
         for(double[] l:lines) points.add(new double[]{(l[0]+l[2])/2,(l[1]+l[3])/2});
         int mids=points.size();
+        // Centres of enclosed surfaces (rectangles, polygons, closed contours); circle/ellipse centres are already end points.
+        for(SketchPrimitive p:geometry) {
+            if(p.id.equals(excluded)||p.type.equals("Okrąg")||p.isEllipse()||!SketchCenters.has(p))continue;
+            double[] c=SketchCenters.center(p);if(c!=null)points.add(c);
+        }
+        int centres=points.size();
         // Bounded segment intersections; construction lines remain ordinary finite guides.
         java.util.ArrayList<double[]> nearby=new java.util.ArrayList<>();
         for(double[] l:lines) {
@@ -114,7 +125,7 @@ public final class SketchSnapper {
             double d=Math.hypot(x-p[0],y-p[1]);
             if(d<best) {best=d;result=p;hit=i;}
         }
-        if(best<tolerance){lastKind=hit<ends?"Punkt":hit<mids?"Środek":hit<crossings?"Przecięcie":hit<tangents?"Styczna":"Prostopadła";return result;} // endpoints/intersections before projected positions
+        if(best<tolerance){lastKind=hit<ends?"Punkt":hit<mids?"Środek":hit<centres?"Środek obszaru":hit<crossings?"Przecięcie":hit<tangents?"Styczna":"Prostopadła";return result;} // endpoints/intersections before projected positions
         for(double[] l:lines) {
             double dx=l[2]-l[0],dy=l[3]-l[1],length=dx*dx+dy*dy;
             if(length<1e-12) continue;

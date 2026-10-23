@@ -310,6 +310,8 @@ public final class CadWorkspaceView extends View {
     private boolean previewViewDetached;
     private EditText extrusionDimension;
     private android.widget.CheckBox extrusionReverse,extrusionSymmetric;
+    /** +1 when a positive signed depth points above the sketch plane (join/new), −1 when it points below it (cut). The on-model value is shown relative to the plane. */
+    double extrusionPlaneSign=1;
     private double[] extrusionOrigin,extrusionAxis;
     private double extrusionWorldScale=1;
     private PointF extrusionHandle;
@@ -2244,6 +2246,11 @@ if (isInsideViewport(e.getX(), e.getY())) {
             drawSketchEntity(canvas,shown);
             if(inSketch() && showSketchDimensions)drawSketchDrivingDimensions(canvas,shown);
         }
+        if(inSketch())for(SketchPrimitive entity:displayedSketch) {
+            SketchPrimitive shown=dragSolvedPreview==null&&dragPreview!=null&&dragPreview.id.equals(entity.id)?dragPreview:entity;
+            drawSurfaceCentre(canvas,shown,shown.id.equals(selectedSketchId)||sketchMulti.contains(shown.id));
+        }
+        if(inSketch()&&threePointPreview!=null&&!project.threePointDraft.isEmpty())drawSurfaceCentre(canvas,threePointPreview,true);
         if(!sketchGhost.isEmpty()){ghostDrawing=true;for(SketchPrimitive ghost:sketchGhost)drawSketchEntity(canvas,ghost);ghostDrawing=false;paint.setPathEffect(null);}
         if(inSketch() && showSketchDimensions){drawPositionDimensions(canvas,displayedSketch);drawAngleDimensions(canvas,displayedSketch);drawDistanceDimensions(canvas,displayedSketch);}
         paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1.5f));paint.setColor(DIMENSION);
@@ -2275,6 +2282,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         if (sketchRect != null && sketching) {
             drawSketchPreview(canvas, sketchTool, sketchStartX, sketchStartY,
                 sketchEndX, sketchEndY);
+            drawPreviewCentre(canvas,sketchTool,sketchStartX,sketchStartY,sketchEndX,sketchEndY);
             double[] a=screenToSketch(sketchStartX,sketchStartY),b=screenToSketch(sketchEndX,sketchEndY);
             double angle=Math.toDegrees(Math.atan2(b[1]-a[1],b[0]-a[0]));
             text(canvas,formatMm(Math.hypot(b[0]-a[0],b[1]-a[1]))+String.format(java.util.Locale.US," · %.1f°",angle),
@@ -2291,6 +2299,32 @@ if (isInsideViewport(e.getX(), e.getY())) {
             text(canvas, (mode.equals("Edytuj szkic") ? "Edytuj szkic na: " : "Szkic na: ") + sketchPlane,
                 (left + right) / 2f, dp(151), 12, ACCENT, true, Paint.Align.CENTER);
         }
+    }
+
+    /** Centre-of-surface mark (small cross in a ring) for closed sketch shapes: circle, rectangle, polygon, ellipse, closed contour. */
+    private void drawSurfaceCentre(Canvas canvas,SketchPrimitive shape,boolean emphasized) {
+        double[] c=SketchCenters.center(shape);
+        if(c==null||!sketchPointVisible(c[0],c[1]))return;
+        PointF p=projectSketchPoint(c[0],c[1]);
+        if(!Float.isFinite(p.x)||!Float.isFinite(p.y))return;
+        Paint.Style style=paint.getStyle();float width=paint.getStrokeWidth();
+        int color=emphasized?Color.rgb(245,145,20):Color.argb(200,Color.red(SKETCH_LINE),Color.green(SKETCH_LINE),Color.blue(SKETCH_LINE));
+        if(shape.construction&&!emphasized)color=Color.argb(140,Color.red(SKETCH_LINE),Color.green(SKETCH_LINE),Color.blue(SKETCH_LINE));
+        float arm=dp(emphasized?7:5);
+        paint.setPathEffect(null);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1.3f));paint.setColor(color);
+        canvas.drawLine(p.x-arm,p.y,p.x+arm,p.y,paint);canvas.drawLine(p.x,p.y-arm,p.x,p.y+arm,paint);
+        canvas.drawCircle(p.x,p.y,arm*.45f,paint);
+        paint.setStyle(style);paint.setStrokeWidth(width);
+    }
+
+    /** Centre of the shape being dragged out right now, from the same construction used on release. */
+    private void drawPreviewCentre(Canvas canvas,String type,float x1,float y1,float x2,float y2) {
+        try {
+            double[] a=screenToSketch(x1,y1),b=screenToSketch(x2,y2);
+            if(Math.hypot(b[0]-a[0],b[1]-a[1])<.01)return;
+            SketchPrimitive shape=SketchShapes.drag("preview",type,a[0],a[1],b[0],b[1],project.polygonSides);
+            drawSurfaceCentre(canvas,shape,true);
+        }catch(IllegalArgumentException ignored){}
     }
 
     private void drawCurves(Canvas canvas,double[] curves) {
@@ -4011,7 +4045,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             android.widget.CheckBox symmetric,double[] origin,double[] axis,Runnable preview) {
         if(propertyEditor==null)return;
         extrusionDimension=dimension;extrusionReverse=reverse;extrusionSymmetric=symmetric;
-        extrusionWorldScale=1;
+        extrusionWorldScale=1;extrusionPlaneSign=1;
         extrusionOrigin=origin;extrusionAxis=axis;extrusionPreview=preview;
         double length=Math.sqrt(axis[0]*axis[0]+axis[1]*axis[1]+axis[2]*axis[2]);
         if(!Double.isFinite(length)||length<1e-10){extrusionDimension=null;return;}
@@ -4071,7 +4105,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
             float x=at[0],y=at[1];
             extrusionValueBounds.set(x,y,x+dp(116),y+dp(40));
             paint.setColor(PANEL);canvas.drawRoundRect(extrusionValueBounds,dp(8),dp(8),paint);
-            text(canvas,formatMm(depth),x+dp(58),y+dp(26),13,ACCENT,true,Paint.Align.CENTER);
+            text(canvas,ExtrusionSign.label(depth,extrusionPlaneSign,extrusionSymmetric.isChecked(),this::formatMm),x+dp(58),y+dp(26),13,ACCENT,true,Paint.Align.CENTER);
             // Small options right at the arrow: flip and symmetric (the panel keeps the rest).
             extrusionFlipBounds.set(x,y+dp(44),x+dp(56),y+dp(74));extrusionSymBounds.set(x+dp(60),y+dp(44),x+dp(116),y+dp(74));
             paint.setColor(extrusionReverse!=null&&extrusionReverse.isChecked()?ACCENT:CHIP_DARK);canvas.drawRoundRect(extrusionFlipBounds,dp(8),dp(8),paint);
@@ -4738,6 +4772,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
                 double[] axis={sign*(project.sketchUy*project.sketchVz-project.sketchUz*project.sketchVy),sign*(project.sketchUz*project.sketchVx-project.sketchUx*project.sketchVz),sign*(project.sketchUx*project.sketchVy-project.sketchUy*project.sketchVx)};
                 if(extrusionDimension!=first){bindExtrusionManipulator(first,reverse,symmetric,origin,axis,extrusionSelectionChanged);extrusionOperation=operation;}
                 else {extrusionOrigin=origin;extrusionAxis=axis;}
+                extrusionPlaneSign=operation.getSelectedItemPosition()==3?-1:1;
             }
             try {
                 boolean automatic=operation.getSelectedItemPosition()==0,hasBody=project.hasSolid();
@@ -4802,7 +4837,7 @@ if (isInsideViewport(e.getX(), e.getY())) {
         Runnable preview=()->{if(propertyEditor!=owner)return;try{status.setText("Obliczanie podglądu…");submitGeometryPreview(owner,candidateQuery(candidate.get()),mesh->status.setText(mesh.length>0?"Przeciągnij strzałkę lub wpisz długość. Zastosuj zapisuje zmianę.":previewFailure("Niepoprawny zakres wyciągania")));}catch(IllegalArgumentException error){status.setText(error.getMessage());}invalidate();};
         android.text.TextWatcher watcher=new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){invalidateGeometryPreview();removeCallbacks(preview);postDelayed(preview,300);}public void afterTextChanged(android.text.Editable e){}};
         first.addTextChangedListener(watcher);second.addTextChangedListener(watcher);reverse.setOnCheckedChangeListener((button,checked)->preview.run());symmetric.setOnCheckedChangeListener((button,checked)->{reverse.setEnabled(!checked);preview.run();});
-        double[] origin,axis;
+        double[] origin,axis;double planeSign=1;
         if(index<0&&!ExtrusionPlan.placedBase(feature)) {
             double[] c=profileCenter(SketchPrimitive.fromFeature("manipulator",feature[0]==1?"Okrąg":"Prostokąt",feature,1,7));int plane=FeatureDirection.basePlane(feature[5]);
             origin=plane==1?new double[]{c[0],0,c[1]}:plane==2?new double[]{0,c[0],c[1]}:new double[]{c[0],c[1],0};axis=plane==1?new double[]{0,1,0}:plane==2?new double[]{1,0,0}:new double[]{0,0,1};
@@ -4812,8 +4847,9 @@ if (isInsideViewport(e.getX(), e.getY())) {
             double[] n={f[11]*f[15]-f[12]*f[14],f[12]*f[13]-f[10]*f[15],f[10]*f[14]-f[11]*f[13]};
             origin=new double[3];axis=new double[3];double flip=index<0?Math.signum(f[6])*Math.signum(oldRange[0]):1;
             for(int i=0;i<3;i++){origin[i]=f[7+i]+c[0]*f[10+i]+c[1]*f[13+i]+n[i]*cut*Math.signum(f[6])*oldRange[1];axis[i]=n[i]*cut*flip;}
+            planeSign=cut*(flip<0?-1:1);
         }
-        bindSourceExtrusion(index<0?project.featureBaseProfileId:index<project.committedProfileIds.size()?project.committedProfileIds.get(index):null,index<0?1:featureBody(project,index),first,reverse,symmetric,origin,axis,preview);post(preview);
+        bindSourceExtrusion(index<0?project.featureBaseProfileId:index<project.committedProfileIds.size()?project.committedProfileIds.get(index):null,index<0?1:featureBody(project,index),first,reverse,symmetric,origin,axis,preview);extrusionPlaneSign=planeSign;post(preview);
     }
 
     private static double[] profileCenter(SketchPrimitive shape) {
