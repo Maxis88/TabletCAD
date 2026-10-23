@@ -110,7 +110,7 @@ final class ExtrusionDialogs {
         double[] axis={sign*(ws.project.sketchUy*ws.project.sketchVz-ws.project.sketchUz*ws.project.sketchVy),
             sign*(ws.project.sketchUz*ws.project.sketchVx-ws.project.sketchUx*ws.project.sketchVz),
             sign*(ws.project.sketchUx*ws.project.sketchVy-ws.project.sketchUy*ws.project.sketchVx)};
-        ws.bindSourceExtrusion(profile.id,BodyGraph.profileBody(ws.project,profile.id),input,reverse,symmetric,origin,axis,preview);ws.showExtrusionSketch=true;
+        ws.bindSourceExtrusion(profile.id,BodyGraph.profileBody(ws.project,profile.id),input,reverse,symmetric,origin,axis,preview);ws.extrusionPlaneSign=sign;ws.showExtrusionSketch=true;
     }
 
     android.widget.CheckBox directionCheck(double depth) {
